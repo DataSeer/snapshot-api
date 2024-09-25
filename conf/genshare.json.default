@@ -1,0 +1,7 @@
+{
+  "processPDF": {
+    "url": "https://api.genshare.ai/processPDF",
+    "method": "POST",
+    "apiKey": "your_genshare_api_key_for_processPDF"
+  }
+}
