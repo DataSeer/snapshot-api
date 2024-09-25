@@ -21,7 +21,7 @@ function saveUsers(users) {
 }
 
 function generateToken(userId) {
-  return jwt.sign({ id: userId }, config.jwtSecret, { expiresIn: '30d' });
+  return jwt.sign({ id: userId }, config.jwtSecret);
 }
 
 function addUser(userId, rateLimit) {
