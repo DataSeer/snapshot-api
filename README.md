@@ -114,7 +114,8 @@ Example curl commands:
 
 1. Get API information:
 ```
-curl -H "Authorization: Bearer <your_token>" http://localhost:3000/```
+curl -H "Authorization: Bearer <your_token>" http://localhost:3000/
+```
 
 2. Process a PDF with options:
 ```
