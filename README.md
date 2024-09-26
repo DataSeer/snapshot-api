@@ -17,6 +17,36 @@ This project is a Node.js REST API that implements JWT authentication and integr
 
 ## Installation
 
+### Using Docker
+
+1. Clone the repository:
+   ```
+   git clone https://github.com/yourusername/genshare-api.git
+   cd genshare-api
+   ```
+
+2. Build image:
+   ```
+   docker build -t genshare-api .
+   ```
+
+3. Run container:
+   ```
+   # using default conf & env files
+   docker run -it -p 3000:3000 --network host --name genshare-api-instance genshare-api
+
+   # using custom conf & env files
+   docker run -it -p 3000:3000 --network host --name genshare-api-instance -v $(pwd)/.env:/usr/src/app/.env -v $(pwd)/conf:/usr/src/app/conf genshare-api
+   ```
+
+4. Interact with the container:
+   ```
+   # using default conf & env files
+   docker exec -it genshare-api-1 /bin/bash
+   ```
+
+### Direct Installation
+
 1. Clone the repository:
    ```
    git clone https://github.com/yourusername/genshare-api.git
