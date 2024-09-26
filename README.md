@@ -1,6 +1,7 @@
-# Node.js REST API with JWT Authentication
+# Snapshot API 
 
-This project is a Node.js REST API that implements JWT authentication and integrates with the Genshare API for PDF processing. It features user-specific rate limiting, script-based user management, and secure token handling.
+The Snapshot API allow processing of PDF documents through a verification system in respect of the OSI (Open Science Indicators). 
+This project provides a Node.js REST API that implements JWT authentication and integrates with the DataSeer AI "Genshare" API for PDF processing. It features user-specific rate limiting, script-based user management, and secure token handling.
 
 ## Features
 
