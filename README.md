@@ -233,7 +233,6 @@ Requests without a valid token will receive a 401 (Unauthorized) or 403 (Forbidd
 - `conf/`: Configuration files
   - `genshare.json`: Genshare API configuration
   - `users.json`: User data storage (managed by scripts)
-- `uploads/`: Temporary storage for uploaded files (automatically managed)
 
 ## Configuration Files
 
@@ -263,7 +262,6 @@ Rate limiting is implemented in `src/utils/rateLimiter.js` and can be further cu
 - All routes require JWT authentication
 - JWT tokens are stored separately and managed through a dedicated script
 - The main application can only read tokens, not modify them
-- Uploaded files are temporarily stored and then deleted after processing
 - Rate limiting is implemented to prevent API abuse
 - Sensitive configuration files (`users.json` and `genshare.json`) are not committed to version control
 
