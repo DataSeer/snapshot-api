@@ -42,7 +42,7 @@ This project is a Node.js REST API that implements JWT authentication and integr
 4. Interact with the container:
    ```
    # using default conf & env files
-   docker exec -it genshare-api-1 /bin/bash
+   docker exec -it genshare-api-instance /bin/bash
    ```
 
 ### Direct Installation
