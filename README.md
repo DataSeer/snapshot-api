@@ -33,9 +33,9 @@ This project is a Node.js REST API that implements JWT authentication and integr
      ```json
       {
         "processPDF": {
-          "url": "https://api.genshare.ai/processPDF",
+          "url": "http://localhost:5000/process/pdf",
           "method": "POST",
-          "apiKey": "your_genshare_api_key_for_processPDF"
+          "apiKey": "your_genshare_api_key_for_process_pdf"
         }
       }
      ```
@@ -100,7 +100,7 @@ All API endpoints require authentication using a JWT token.
 - `POST /processPDF`: Process a PDF file
   - Requires authentication
   - Form data:
-    - `input`: PDF file
+    - `file`: PDF file
     - `options`: JSON string of processing options
   - The `options` parameter must be a valid JSON object. If it's not well-formed or is not a valid JSON object, the API will return a 400 Bad Request error.
 
@@ -120,7 +120,7 @@ curl -H "Authorization: Bearer <your_token>" http://localhost:3000/
 2. Process a PDF with options:
 ```
 curl -X POST -H "Authorization: Bearer <your_token>" \
-     -F "input=@path/to/your/file.pdf" \
+     -F "file=@path/to/your/file.pdf" \
      -F 'options={"key":"value","anotherKey":123}' \
      http://localhost:3000/processPDF
 ```
@@ -129,11 +129,74 @@ Note: Ensure that the `options` parameter is a valid JSON object. Invalid JSON w
 
 ### Error Handling
 
-The API includes error handling for various scenarios:
-
 - If no file is uploaded, a 400 Bad Request error is returned.
+  - HTTP 400: 'Required "file" missing' (parameter not set)
+  - HTTP 400: 'Required "file" invalid. Must have mimetype "application/pdf".' (file with incorrect mimetype)
 - If the `options` parameter is not a valid JSON object, a 400 Bad Request error is returned with a descriptive message.
-- For server errors during PDF processing, a 500 Internal Server Error is returned with error details.
+  - HTTP 400: 'Required "options" missing.' (parameter not set)
+  - HTTP 400: 'Required "options" invalid. Must be a valid JSON object.' (data are not JSON)
+  - HTTP 400: 'Required "options" invalid. Must be a JSON object.' (data are JSON but not an object)
+- If an error occurs during the GenShare process, the GenShare HTTP status code is returned.
+
+#### "file" errors
+
+HTTP 400: 'Required "file" missing' (parameter not set)
+```
+curl -X POST -H "Authorization: Bearer <your_token>" \
+     -F 'options={"key":"value","anotherKey":123}' \
+     http://localhost:3000/processPDF
+# HTTP 400 Bad Request 
+Required "file" missing
+```
+
+HTTP 400: 'Required "file" invalid. Must have mimetype "application/pdf".' (file with incorrect mimetype)
+```
+curl -X POST -H "Authorization: Bearer <your_token>" \
+     -F "file=@path/to/your/file.xml" \
+     -F 'options={"key":"value","anotherKey":123}' \
+     http://localhost:3000/processPDF
+# HTTP 400 Bad Request 
+Required "file" invalid. Must have mimetype "application/pdf".
+```
+
+#### "options" errors
+
+HTTP 400: 'Required "options" missing.' (parameter not set)
+```
+curl -X POST -H "Authorization: Bearer <your_token>" \
+     -F "file=@path/to/your/file.pdf" \
+     http://localhost:3000/processPDF
+# HTTP 400 Bad Request 
+Required "options" missing.
+```
+
+HTTP 400: 'Required "options" invalid. Must be a valid JSON object.' (data are not JSON)
+```
+curl -X POST -H "Authorization: Bearer <your_token>" \
+     -F "file=@path/to/your/file.pdf" \
+     -F 'options="key value anotherKey 123"' \
+     http://localhost:3000/processPDF
+# HTTP 400 Bad Request 
+Required "options" invalid. Must be a valid JSON object.
+```
+
+HTTP 400: 'Required "options" invalid. Must be a JSON object.' (data are JSON but not an object)
+```
+curl -X POST -H "Authorization: Bearer <your_token>" \
+     -F "file=@path/to/your/file.pdf" \
+     -F 'options=["key","value","anotherKey",123]' \
+     http://localhost:3000/processPDF
+# HTTP 400 Bad Request 
+Required "options" invalid. Must be a JSON object.
+```
+
+### GenShare Response
+
+If no error occured during the GenShare process, the response will be a JSON as below :
+
+```
+#TO DO : Add an example of a GenShare JSON
+```
 
 ### Authentication
 

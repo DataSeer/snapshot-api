@@ -6,9 +6,9 @@ const { processPDF } = require('../controllers/genshareController');
 const router = express.Router();
 
 // Configure multer for file uploads
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({ storage: multer.memoryStorage() });
 
 // processPDF route at root level
-router.post('/', upload.single('input'), processPDF);
+router.post('/', upload.single('file'), processPDF);
 
 module.exports = router;
