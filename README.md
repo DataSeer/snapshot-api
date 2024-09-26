@@ -33,10 +33,10 @@ This project is a Node.js REST API that implements JWT authentication and integr
 3. Run container:
    ```
    # using default conf & env files
-   docker run -it -p 3000:3000 --network host --name genshare-api-instance genshare-api
+   docker run -d -it -p 3000:3000 --network host --name genshare-api-instance genshare-api
 
    # using custom conf & env files
-   docker run -it -p 3000:3000 --network host --name genshare-api-instance -v $(pwd)/.env:/usr/src/app/.env -v $(pwd)/conf:/usr/src/app/conf genshare-api
+   docker run -d -it -p 3000:3000 --network host --name genshare-api-instance -v $(pwd)/.env:/usr/src/app/.env -v $(pwd)/conf:/usr/src/app/conf genshare-api
    ```
 
 4. Interact with the container:
