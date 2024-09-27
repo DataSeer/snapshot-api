@@ -16,7 +16,7 @@ If you need an API token or have issues with authentication, please contact Data
 
 ### 1. Get API Information
 
-Retrieves information about available API routes.
+Return information about available API routes.
 
 - **URL**: `/`
 - **Method**: `GET`
@@ -67,7 +67,7 @@ Note: The version field in the response corresponds to the version specified in 
 
 ### 2. Process PDF
 
-Processes a PDF file according to the Open Science Indicators (OSI) verification system.
+Process a PDF with GenShare.
 
 - **URL**: `/processPDF`
 - **Method**: `POST`
