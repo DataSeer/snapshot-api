@@ -160,10 +160,10 @@ Note: Ensure that the `options` parameter is a valid JSON object. Invalid JSON w
 
 ### Error Handling
 
-- If no file is uploaded, a 400 Bad Request error is returned.
+- If the `file` parameter is not provided, a 400 Bad Request error is returned.
   - HTTP 400: 'Required "file" missing' (parameter not set)
   - HTTP 400: 'Required "file" invalid. Must have mimetype "application/pdf".' (file with incorrect mimetype)
-- If the `options` parameter is not a valid JSON object, a 400 Bad Request error is returned with a descriptive message.
+- If the `options` parameter is not provided or not a valid JSON object, a 400 Bad Request error is returned with a descriptive message.
   - HTTP 400: 'Required "options" missing.' (parameter not set)
   - HTTP 400: 'Required "options" invalid. Must be a valid JSON object.' (data are not JSON)
   - HTTP 400: 'Required "options" invalid. Must be a JSON object.' (data are JSON but not an object)
