@@ -3,7 +3,7 @@ const express = require('express');
 const morgan = require('morgan');
 const routes = require('./routes');
 const { authenticateToken } = require('./middleware/auth');
-const customRateLimiter = require('./utils/rateLimiter');
+const { httpLogger } = require('./utils/logger');
 const config = require('./config');
 
 const app = express();
@@ -11,13 +11,13 @@ const app = express();
 app.use(express.json());
 app.use(morgan('combined'));
 
+// Use the HTTP logger middleware
+app.use(httpLogger);
+
 // Apply authentication to all routes except the root
 app.use('/', (req, res, next) => {
   authenticateToken(req, res, next);
 });
-
-// Apply rate limiting after authentication
-app.use(customRateLimiter);
 
 app.use('/', routes);
 
