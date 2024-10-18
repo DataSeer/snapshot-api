@@ -4,12 +4,12 @@ const config = require('../config');
 
 const getUserById = (userId) => {
   const users = JSON.parse(fs.readFileSync(config.usersPath, 'utf8'));
-  return users[userId];
+  return { id: userId, ...users[userId] };
 };
 
 const updateUser = (userId, userData) => {
   const users = JSON.parse(fs.readFileSync(config.usersPath, 'utf8'));
-  users[userId] = { ...users[userId], ...userData };
+  users[userId] = { id: userId, ...users[userId], ...userData };
   fs.writeFileSync(config.usersPath, JSON.stringify(users, null, 2));
 };
 

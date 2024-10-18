@@ -28,14 +28,7 @@ const customRateLimiter = rateLimit({
       return user.rateLimit.windowMs === 0; // Skip rate limiting if windowMs is 0
     }
     return false;
-  },
-  windowMs: (req) => {
-    if (req.user) {
-      const user = getUserById(req.user.id);
-      return user.rateLimit.windowMs || 15 * 60 * 1000; // Default to 15 minutes if not specified
-    }
-    return 15 * 60 * 1000; // Default for unauthenticated requests
-  },
+  }
 });
 
 module.exports = customRateLimiter;
