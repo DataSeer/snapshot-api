@@ -81,6 +81,9 @@ Process a PDF with GenShare.
 | file     | File   | The PDF file to be processed (required)    |
 | options  | String | JSON string of processing options (required) |
 
+The `options` is a JSON string that must contain one mandatory field (at the moment): 
+- `document-type`: specify the type of the document sent (see example below)
+
 #### Example Request
 
 Using curl:
@@ -88,7 +91,7 @@ Using curl:
 ```bash
 curl -X POST -H "Authorization: Bearer <your_token>" \
      -F "file=@path/to/your/file.pdf" \
-     -F 'options={...}' \
+     -F 'options={"document-type": "article"}' \
      http://localhost:3000/processPDF
 ```
 
