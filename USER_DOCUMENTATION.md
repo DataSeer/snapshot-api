@@ -81,7 +81,7 @@ Process a PDF with GenShare.
 | file     | File   | The PDF file to be processed (required)    |
 | options  | String | JSON string of processing options (required) |
 
-The `options` is a JSON string that must contain one mandatory field (at the moment): 
+The `options` parameter must contain one mandatory field: 
 - `document-type`: specify the type of the document sent (see example below)
 
 #### Example Request
