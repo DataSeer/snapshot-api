@@ -3,3 +3,5 @@ conf/users.json
 conf/genshare.json
 
 node_modules/
+
+log/*.log
