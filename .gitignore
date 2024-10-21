@@ -5,3 +5,5 @@ conf/users.json
 conf/genshare.json
 
 log/*.log
+
+.idea
