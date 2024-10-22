@@ -27,13 +27,13 @@ Return information about available API routes.
 Using curl:
 
 ```bash
-curl -H "Authorization: Bearer <your_token>" http://localhost:3000/
+curl -H "Authorization: Bearer <your_token>" https://snapshot.dataseer.ai/
 ```
 
 Using JavaScript (with fetch):
 
 ```javascript
-fetch('http://localhost:3000/', {
+fetch('https://snapshot.dataseer.ai/', {
   headers: {
     'Authorization': 'Bearer <your_token>'
   }
@@ -92,7 +92,7 @@ Using curl:
 curl -X POST -H "Authorization: Bearer <your_token>" \
      -F "file=@path/to/your/file.pdf" \
      -F 'options={"document-type": "article"}' \
-     http://localhost:3000/processPDF
+     https://snapshot.dataseer.ai/processPDF
 ```
 
 Using JavaScript (with fetch):
@@ -104,7 +104,7 @@ formData.append('options', JSON.stringify({
   // options data
 }));
 
-fetch('http://localhost:3000/processPDF', {
+fetch('https://snapshot.dataseer.ai/processPDF', {
   method: 'POST',
   headers: {
     'Authorization': 'Bearer <your_token>'
