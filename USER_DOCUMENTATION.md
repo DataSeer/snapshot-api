@@ -1,6 +1,6 @@
 # Snapshot API Endpoints Documentation
 
-This document provides detailed information about the available endpoints in the Snapshot API, along with examples of how to interact with them.
+This document provides detailed information about the available endpoints in the [Snapshot API](https://snapshot.dataseer.ai) (hosted on [snapshot.dataseer.ai](https://snapshot.dataseer.ai)), along with examples of how to interact with them.
 
 ## Authentication
 
