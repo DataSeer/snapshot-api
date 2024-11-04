@@ -76,13 +76,14 @@ Process a PDF with GenShare.
 
 #### Request Parameters
 
-| Field    | Type   | Description                                |
-|----------|--------|--------------------------------------------|
-| file     | File   | The PDF file to be processed (required)    |
-| options  | String | JSON string of processing options (required) |
+| Field    | Type   | Description                                                                                         |
+|----------|--------|-----------------------------------------------------------------------------------------------------|
+| file     | File   | The PDF file to be processed (required)                                                             |
+| options  | String | JSON string of processing options (required) which is a dictionary with optional and required items |
 
 The `options` parameter must contain one mandatory field: 
-- `document-type`: specify the type of the document sent (see example below)
+- `document_type` (required): specify the type of the document sent (see example below), the accepted values are `article`, `research-article`, `research_article`, `original-article`, `original_article`. Invalid values will be rejected by the API with error code 400. 
+- `article_id` (required): specify the article ID of the document sent, the API will return 400 if the ID is empty or null
 
 #### Example Request
 
@@ -91,7 +92,7 @@ Using curl:
 ```bash
 curl -X POST -H "Authorization: Bearer <your_token>" \
      -F "file=@path/to/your/file.pdf" \
-     -F 'options={"document-type": "article"}' \
+     -F 'options={"document_type": "article"}' \
      https://snapshot.dataseer.ai/processPDF
 ```
 
