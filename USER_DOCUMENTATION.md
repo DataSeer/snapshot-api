@@ -121,7 +121,74 @@ fetch('https://snapshot.dataseer.ai/processPDF', {
 
 ```json
 {
-  ...
+    "response": [
+        {
+            "name": "article_id",
+            "description": "Article ID",
+            "value": "s41523-023-00574-7"
+        },
+        {
+            "name": "das",
+            "description": "Data availability statement",
+            "value": ""Data are available upon reasonable request. Access to datasets from the Cleveland Clinic and the University Hospitals Cleveland Medical Center (used with permission for this study) should be requested directly from these institutions via their data access request forms. Subject to the institutional review boards’ ethical approval, unidentified data would be made available as a test subset. All experiments and implementation details are described thoroughly in the Materials and methods section so they can be independently replicated with non-proprietary libraries.
+Details and codes for feature extraction, feature selection and statistical analysis are available at https://github.com/Hadi-Khorrami.""
+        },
+        {
+            "name": "data_avail_req",
+            "description": "Are any data available on request?",
+            "value": "Yes"
+        },
+        {
+            "name": "das_share_si",
+            "description": "Does the DAS say that the data are shared in the 'Supplementary material' section?",
+            "value": "No"
+        },
+        {
+            "name": "data_generalist",
+            "description": "Are any data shared on a generalist repository?",
+            "value": "No"
+        },
+        {
+            "name": "warrant_generalist",
+            "description": "URL(s) and PID(s) for any generalist repositories",
+            "value": []
+        },
+        {
+            "name": "data_specialist",
+            "description": "Are any data shared on a specialist repository?",
+            "value": "No"
+        },
+        {
+            "name": "warrant_specialist",
+            "description": "URL(s) and PID(s) for any specialist repositories",
+            "value": []
+        },
+        {
+            "name": "non-functional_urls",
+            "description": "List of Non-functional repository URLs",
+            "value": []
+        },
+        {
+            "name": "computer_gen",
+            "description": "Was any shareable computer code generated?",
+            "value": "Yes"
+        },
+        {
+            "name": "computer_si",
+            "description": "Is any computer code shared as Supplemental Material?",
+            "value": "No"
+        },
+        {
+            "name": "computer_online",
+            "description": "Is any computer code shared online?",
+            "value": "Yes"
+        },
+        {
+            "name": "warrants_code_online",
+            "description": "URL(s) and PID(s) for any online code sharing locations",
+            "value": ["https://github.com/Hadi-Khorrami"]
+        }
+    ]
 }
 ```
 
