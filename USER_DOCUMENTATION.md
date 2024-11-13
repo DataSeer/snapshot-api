@@ -130,8 +130,8 @@ fetch('https://snapshot.dataseer.ai/processPDF', {
         {
             "name": "das",
             "description": "Data availability statement",
-            "value": ""Data are available upon reasonable request. Access to datasets from the Cleveland Clinic and the University Hospitals Cleveland Medical Center (used with permission for this study) should be requested directly from these institutions via their data access request forms. Subject to the institutional review boards’ ethical approval, unidentified data would be made available as a test subset. All experiments and implementation details are described thoroughly in the Materials and methods section so they can be independently replicated with non-proprietary libraries.
-Details and codes for feature extraction, feature selection and statistical analysis are available at https://github.com/Hadi-Khorrami.""
+            "value": "Data are available upon reasonable request. Access to datasets from the Cleveland Clinic and the University Hospitals Cleveland Medical Center (used with permission for this study) should be requested directly from these institutions via their data access request forms. Subject to the institutional review boards’ ethical approval, unidentified data would be made available as a test subset. All experiments and implementation details are described thoroughly in the Materials and methods section so they can be independently replicated with non-proprietary libraries.
+Details and codes for feature extraction, feature selection and statistical analysis are available at https://github.com/Hadi-Khorrami."
         },
         {
             "name": "data_avail_req",
