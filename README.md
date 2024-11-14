@@ -3,6 +3,36 @@
 The Snapshot API allow processing of PDF documents through a verification system in respect of the OSI (Open Science Indicators). 
 This project provides a Node.js REST API that implements JWT authentication and integrates with the DataSeer AI "Genshare" API for PDF processing. It features user-specific rate limiting, script-based user management, and secure token handling.
 
+## Table of Contents
+
+1. [Features](#features)
+2. [Prerequisites](#prerequisites)
+3. [Installation](#installation)
+   - [Using Docker](#using-docker)
+   - [Direct Installation](#direct-installation)
+4. [Usage](#usage)
+   - [Starting the Server](#starting-the-server)
+   - [Managing Users](#managing-users)
+   - [API Endpoints](#api-endpoints)
+5. [Error Handling](#error-handling)
+   - ["file" Errors](#file-errors)
+   - ["options" Errors](#options-errors)
+6. [GenShare Response](#genshare-response)
+7. [Authentication](#authentication)
+   - [Token Management](#token-management)
+   - [Token Lifecycle](#token-lifecycle)
+   - [User Management Commands](#user-management-commands)
+   - [Security Features](#security-features)
+8. [Project Structure](#project-structure)
+9. [Configuration Files](#configuration-files)
+10. [Rate Limiting](#rate-limiting)
+11. [Security Considerations](#security-considerations)
+12. [Logging System](#logging-system)
+    - [Log Format](#log-format)
+    - [Log Analysis](#log-analysis)
+13. [Contributing](#contributing)
+14. [License](#license)
+
 ## Features
 
 - JWT-based authentication for all routes
