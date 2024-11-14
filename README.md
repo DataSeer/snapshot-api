@@ -223,33 +223,65 @@ Required "options" invalid. Must be a JSON object.
 
 ### GenShare Response
 
-If no error occured during the GenShare process, the response will be a JSON as below :
+[More info available here](USER_DOCUMENTATION.md#example-response-1)
 
-```
-#TO DO : Add an example of a GenShare JSON
-```
+## Authentication
 
-### Authentication
+The API uses JSON Web Tokens (JWT) for authentication, implemented through several components:
 
-All routes in this API require authentication using JWT (JSON Web Tokens). To authenticate:
+### Token Management
 
-1. Obtain a token using the user management script:
-   ```
+- `TokenManager`: Handles token storage and validation
+- `UserManager`: Manages user data and updates
+- Tokens are stored in `conf/users.json` separate from user data for security
+
+### Token Lifecycle
+
+1. **Creation**: Tokens are generated using:
+   ```bash
    npm run manage-users add <userId>
    ```
-   This will return a JWT token for the user.
+   This creates a JWT signed with the application's secret key containing the user ID.
 
-2. Include this token in the `Authorization` header of all API requests:
-   ```
-   Authorization: Bearer <your_token>
+2. **Usage**: Include token in requests:
+   ```bash
+   curl -H "Authorization: Bearer <your_token>" http://localhost:3000/endpoint
    ```
 
-3. If a token expires or becomes invalid, you can refresh it using:
-   ```
+3. **Validation**: Each request is authenticated by:
+   - Extracting token from Authorization header
+   - Verifying JWT signature
+   - Looking up associated user
+   - Checking rate limits
+
+4. **Renewal**: Refresh expired tokens using:
+   ```bash
    npm run manage-users refresh-token <userId>
    ```
 
-Requests without a valid token will receive a 401 (Unauthorized) or 403 (Forbidden) response.
+### User Management Commands
+
+```bash
+# Generate new user with token
+npm run manage-users add user123
+
+# List all users and their tokens
+npm run manage-users list
+
+# Refresh token for existing user
+npm run manage-users refresh-token user123
+
+# Remove user and invalidate token
+npm run manage-users remove user123
+```
+
+### Security Features
+
+- JWT tokens are signed with a secret key (`JWT_SECRET` environment variable)
+- Tokens are stored separately from user data
+- Rate limiting is tied to authentication
+- Invalid tokens return 401 Unauthorized
+- Missing tokens return 403 Forbidden
 
 ## Project Structure
 
