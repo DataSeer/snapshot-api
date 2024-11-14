@@ -26,10 +26,10 @@ This project provides a Node.js REST API that implements JWT authentication and 
 8. [Project Structure](#project-structure)
 9. [Configuration Files](#configuration-files)
 10. [Rate Limiting](#rate-limiting)
-11. [Security Considerations](#security-considerations)
-12. [Logging System](#logging-system)
+11. [Logging System](#logging-system)
     - [Log Format](#log-format)
     - [Log Analysis](#log-analysis)
+12. [Security Considerations](#security-considerations)
 13. [Contributing](#contributing)
 14. [License](#license)
 
@@ -350,14 +350,6 @@ This API implements user-specific rate limiting:
 
 Rate limiting is implemented in `src/utils/rateLimiter.js` and can be further customized as needed.
 
-## Security Considerations
-
-- All routes require JWT authentication
-- JWT tokens are stored separately and managed through a dedicated script
-- The main application can only read tokens, not modify them
-- Rate limiting is implemented to prevent API abuse
-- Sensitive configuration files (`users.json` and `genshare.json`) are not committed to version control
-
 ## Logging System
 
 The API implements comprehensive logging using Winston and Morgan:
@@ -418,6 +410,14 @@ IP: 192.168.1.1
   Overall Success Rate: 93.33%
   ...
 ```
+
+## Security Considerations
+
+- All routes require JWT authentication
+- JWT tokens are stored separately and managed through a dedicated script
+- The main application can only read tokens, not modify them
+- Rate limiting is implemented to prevent API abuse
+- Sensitive configuration files (`users.json` and `genshare.json`) are not committed to version control
 
 ## Contributing
 
