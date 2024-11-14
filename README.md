@@ -296,6 +296,63 @@ Rate limiting is implemented in `src/utils/rateLimiter.js` and can be further cu
 - Rate limiting is implemented to prevent API abuse
 - Sensitive configuration files (`users.json` and `genshare.json`) are not committed to version control
 
+## Logging System
+
+The API implements comprehensive logging using Winston and Morgan:
+
+### Log Format
+- Each log entry contains:
+  - IP address
+  - User ID (or 'unauthenticated')
+  - Timestamp
+  - HTTP method and URL
+  - Status code
+  - Response size
+  - Referrer
+  - User agent
+  - Request success status
+
+### Log Analysis
+
+The project includes a log analysis script that provides detailed statistics about API usage:
+
+```bash
+node scripts/analyze_logs.js [path/to/logfile]
+```
+
+The analyzer provides:
+- Per-user statistics:
+  - Total requests
+  - Successful requests
+  - Success rate
+  - URL-specific breakdown
+- Per-IP statistics:
+  - Similar metrics as per-user
+  - Useful for tracking unauthenticated requests
+
+Example output:
+```
+Request Statistics:
+
+USERS Statistics:
+User: user123
+  Total Requests: 150
+  Successful Requests: 145
+  Overall Success Rate: 96.67%
+  URL Breakdown:
+    URL: /processPDF
+      Total Requests: 120
+      Successful Requests: 118
+      Success Rate: 98.33%
+
+IPS Statistics:
+IP: 192.168.1.1
+  Total Requests: 75
+  Successful Requests: 70
+  Overall Success Rate: 93.33%
+  ...
+```
+
 ## Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
