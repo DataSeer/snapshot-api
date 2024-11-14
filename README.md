@@ -317,6 +317,10 @@ The API implements comprehensive logging using Winston and Morgan:
 The project includes a log analysis script that provides detailed statistics about API usage:
 
 ```bash
+# analyze log/combined.log file
+npm run analyze-logs
+
+# analyze a given log file
 node scripts/analyze_logs.js [path/to/logfile]
 ```
 
