@@ -1,6 +1,7 @@
 // File: src/middleware/auth.js
 const jwt = require('jsonwebtoken');
 const config = require('../config');
+const { getUserById } = require('../utils/userManager');
 
 exports.authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -10,6 +11,8 @@ exports.authenticateToken = (req, res, next) => {
 
   jwt.verify(token, config.jwtSecret, (err, user) => {
     if (err) return res.sendStatus(403);
+    const _user = getUserById(user.id);
+    if (_user.token !== token) return res.sendStatus(403);
     req.user = user;
     next();
   });
