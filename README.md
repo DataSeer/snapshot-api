@@ -326,6 +326,7 @@ npm run manage-users remove user123
 - `conf/`: Configuration files
   - `genshare.json`: Genshare API configuration
   - `users.json`: User data storage (managed by scripts)
+- `tmp/`: folder containing temporary files
 
 ## Configuration Files
 

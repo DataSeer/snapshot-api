@@ -3,6 +3,7 @@ uploads/
 .env
 conf/users.json
 conf/genshare.json
+tmp/
 
 log/*.log
 
