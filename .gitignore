@@ -3,6 +3,8 @@ uploads/
 .env
 conf/users.json
 conf/genshare.json
+conf/datastet.json
+conf/grobid.json
 tmp/
 
 log/*.log

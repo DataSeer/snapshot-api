@@ -14,24 +14,29 @@ This project provides a Node.js REST API that implements JWT authentication and 
    - [Starting the Server](#starting-the-server)
    - [Managing Users](#managing-users)
    - [API Endpoints](#api-endpoints)
-5. [Error Handling](#error-handling)
+5. [Health Monitoring](#health-monitoring)
+   - [Health Endpoints](#health-endpoints)
+   - [Health Response Format](#health-response-format)
+   - [Health Status Codes](#health-status-codes)
+   - [Health Configuration](#health-configuration)
+6. [Error Handling](#error-handling)
    - ["file" Errors](#file-errors)
    - ["options" Errors](#options-errors)
-6. [GenShare Response](#genshare-response)
-7. [Authentication](#authentication)
+7. [GenShare Response](#genshare-response)
+8. [Authentication](#authentication)
    - [Token Management](#token-management)
    - [Token Lifecycle](#token-lifecycle)
    - [User Management Commands](#user-management-commands)
    - [Security Features](#security-features)
-8. [Project Structure](#project-structure)
-9. [Configuration Files](#configuration-files)
-10. [Rate Limiting](#rate-limiting)
-11. [Logging System](#logging-system)
+9. [Project Structure](#project-structure)
+10. [Configuration Files](#configuration-files)
+11. [Rate Limiting](#rate-limiting)
+12. [Logging System](#logging-system)
     - [Log Format](#log-format)
     - [Log Analysis](#log-analysis)
-12. [Security Considerations](#security-considerations)
-13. [Contributing](#contributing)
-14. [License](#license)
+13. [Security Considerations](#security-considerations)
+14. [Contributing](#contributing)
+15. [License](#license)
 
 ## Features
 
@@ -40,6 +45,7 @@ This project provides a Node.js REST API that implements JWT authentication and 
 - User-specific rate limiting
 - Script-based user management (add, remove, refresh tokens, update rate limits)
 - Secure token handling
+- Health monitoring for all dependent services
 
 ## Prerequisites
 
@@ -90,15 +96,36 @@ This project provides a Node.js REST API that implements JWT authentication and 
    ```
 
 3. Set up configuration:
-   - Create `conf/genshare.json` with your Genshare API details:
+   - Create service configuration files in the `conf` directory:
      ```json
-      {
-        "processPDF": {
-          "url": "http://localhost:5000/process/pdf",
-          "method": "POST",
-          "apiKey": "your_genshare_api_key_for_process_pdf"
-        }
-      }
+     // conf/genshare.json
+     {
+       "processPDF": {
+         "url": "http://localhost:5000/process/pdf",
+         "method": "POST",
+         "apiKey": "your_genshare_api_key"
+       },
+       "health": {
+         "url": "http://localhost:5000/health",
+         "method": "GET"
+       }
+     }
+
+     // conf/grobid.json
+     {
+       "health": {
+         "url": "http://localhost:8070/health",
+         "method": "GET"
+       }
+     }
+
+     // conf/datastet.json
+     {
+       "health": {
+         "url": "http://localhost:8080/health",
+         "method": "GET"
+       }
+     }
      ```
    - The `conf/users.json` file will be created automatically when you add users.
 
@@ -110,7 +137,7 @@ This project provides a Node.js REST API that implements JWT authentication and 
 
 ### Starting the Server
 
-To start the server in production mode :
+To start the server in production mode:
 
 ```
 npm start
@@ -149,234 +176,111 @@ npm run manage-users list
 npm run manage-users remove user123
 ```
 
-Rate limits are specified as a JSON object with `max` (maximum number of requests) and `windowMs` (time window in milliseconds) properties. If not specified when adding a user, it defaults to 100 requests per 15-minute window.
-
 ### API Endpoints
 
 All API endpoints require authentication using a JWT token.
 
 - `GET /`: Get information about available API routes
-  - Requires authentication
-
 - `POST /processPDF`: Process a PDF file
-  - Requires authentication
   - Form data:
     - `file`: PDF file
     - `options`: JSON string of processing options
-  - The `options` parameter must be a valid JSON object. If it's not well-formed or is not a valid JSON object, the API will return a 400 Bad Request error.
 
 For all requests, include the JWT token in the Authorization header:
-
 ```
 Authorization: Bearer <your_token>
 ```
 
-Example curl commands:
+## Health Monitoring
 
-1. Get API information:
-```
-curl -H "Authorization: Bearer <your_token>" http://localhost:3000/
-```
+The API provides comprehensive health monitoring for all dependent services (GenShare, GROBID, and DataStet).
 
-2. Process a PDF with options:
-```
-curl -X POST -H "Authorization: Bearer <your_token>" \
-     -F "file=@path/to/your/file.pdf" \
-     -F 'options={"key":"value","anotherKey":123}' \
-     http://localhost:3000/processPDF
-```
+### Health Endpoints
 
-Note: Ensure that the `options` parameter is a valid JSON object. Invalid JSON will result in an error response.
+- `GET /ping`: Check health status of all services
+  - Returns aggregated health status of all services
+  - Response includes timestamp and detailed service status
 
-### Error Handling
+- `GET /genshare/health`: Direct health check proxy to GenShare service
+  - Returns the raw response from GenShare's health endpoint
+  - Returns 500 with message "GenShare health check failed" if the request fails
 
-- If the `file` parameter is not provided, a 400 Bad Request error is returned.
-  - HTTP 400: 'Required "file" missing' (parameter not set)
-  - HTTP 400: 'Required "file" invalid. Must have mimetype "application/pdf".' (file with incorrect mimetype)
-- If the `options` parameter is not provided or not a valid JSON object, a 400 Bad Request error is returned with a descriptive message.
-  - HTTP 400: 'Required "options" missing.' (parameter not set)
-  - HTTP 400: 'Required "options" invalid. Must be a valid JSON object.' (data are not JSON)
-  - HTTP 400: 'Required "options" invalid. Must be a JSON object.' (data are JSON but not an object)
-- If an error occurs during the GenShare process, the GenShare HTTP status code is returned.
+- `GET /grobid/health`: Direct health check proxy to GROBID service
+  - Returns the raw response from GROBID's health endpoint
+  - Returns 500 with message "Grobid health check failed" if the request fails
 
-#### "file" errors
+- `GET /datastet/health`: Direct health check proxy to DataStet service
+  - Returns the raw response from DataStet's health endpoint
+  - Returns 500 with message "Datastet health check failed" if the request fails
 
-HTTP 400: 'Required "file" missing' (parameter not set)
-```
-curl -X POST -H "Authorization: Bearer <your_token>" \
-     -F 'options={"key":"value","anotherKey":123}' \
-     http://localhost:3000/processPDF
-# HTTP 400 Bad Request 
-Required "file" missing
-```
+These individual health endpoints act as direct proxies to their respective services, forwarding the raw response data when successful. In case of failure, they return a 500 status code with a service-specific error message.
 
-HTTP 400: 'Required "file" invalid. Must have mimetype "application/pdf".' (file with incorrect mimetype)
-```
-curl -X POST -H "Authorization: Bearer <your_token>" \
-     -F "file=@path/to/your/file.xml" \
-     -F 'options={"key":"value","anotherKey":123}' \
-     http://localhost:3000/processPDF
-# HTTP 400 Bad Request 
-Required "file" invalid. Must have mimetype "application/pdf".
-```
+### Health Response Format
 
-#### "options" errors
+The `/ping` endpoint returns:
 
-HTTP 400: 'Required "options" missing.' (parameter not set)
-```
-curl -X POST -H "Authorization: Bearer <your_token>" \
-     -F "file=@path/to/your/file.pdf" \
-     http://localhost:3000/processPDF
-# HTTP 400 Bad Request 
-Required "options" missing.
-```
-
-HTTP 400: 'Required "options" invalid. Must be a valid JSON object.' (data are not JSON)
-```
-curl -X POST -H "Authorization: Bearer <your_token>" \
-     -F "file=@path/to/your/file.pdf" \
-     -F 'options="key value anotherKey 123"' \
-     http://localhost:3000/processPDF
-# HTTP 400 Bad Request 
-Required "options" invalid. Must be a valid JSON object.
+```json
+{
+  "status": "healthy" | "unhealthy" | "error",
+  "timestamp": "2024-12-02T12:00:00.000Z",
+  "services": {
+    "genshare": {
+      "err": null,
+      "request": "GET http://genshare-service/health",
+      "response": {
+        "status": 200,
+        "data": { /* service-specific health data */ }
+      }
+    },
+    "grobid": {
+      "err": null,
+      "request": "GET http://grobid-service/health",
+      "response": {
+        "status": 200,
+        "data": { /* service-specific health data */ }
+      }
+    },
+    "datastet": {
+      "err": null,
+      "request": "GET http://datastet-service/health",
+      "response": {
+        "status": 200,
+        "data": { /* service-specific health data */ }
+      }
+    }
+  }
+}
 ```
 
-HTTP 400: 'Required "options" invalid. Must be a JSON object.' (data are JSON but not an object)
-```
-curl -X POST -H "Authorization: Bearer <your_token>" \
-     -F "file=@path/to/your/file.pdf" \
-     -F 'options=["key","value","anotherKey",123]' \
-     http://localhost:3000/processPDF
-# HTTP 400 Bad Request 
-Required "options" invalid. Must be a JSON object.
-```
-
-### GenShare Response
-
-[More info available here](USER_DOCUMENTATION.md#example-response-1)
-
-## Authentication
-
-The API uses JSON Web Tokens (JWT) for authentication, implemented through several components:
-
-### Token Management
-
-- `TokenManager`: Handles token storage and validation
-- `UserManager`: Manages user data and updates
-- Tokens are stored in `conf/users.json` separate from user data for security
-
-### Token Lifecycle
-
-1. **Creation**: Tokens are generated using:
-   ```bash
-   npm run manage-users add <userId>
-   ```
-   This creates a JWT signed with the application's secret key containing the user ID.
-
-2. **Usage**: Include token in requests:
-   ```bash
-   curl -H "Authorization: Bearer <your_token>" http://localhost:3000/endpoint
-   ```
-
-3. **Validation**: Each request is authenticated by:
-   - Extracting token from Authorization header
-   - Verifying JWT signature
-   - Looking up associated user
-   - Checking rate limits
-
-4. **Renewal**: Refresh expired tokens using:
-   ```bash
-   npm run manage-users refresh-token <userId>
-   ```
-
-### User Management Commands
-
-```bash
-# Generate new user with token
-npm run manage-users add user123
-
-# List all users and their tokens
-npm run manage-users list
-
-# Refresh token for existing user
-npm run manage-users refresh-token user123
-
-# Remove user and invalidate token
-npm run manage-users remove user123
+Individual service endpoints return:
+```json
+{
+  "err": null,
+  "request": "GET http://service-name/health",
+  "response": {
+    "status": 200,
+    "data": { /* service-specific health data */ }
+  }
+}
 ```
 
-### Security Features
+### Health Status Codes
 
-- JWT tokens are signed with a secret key (`JWT_SECRET` environment variable)
-- Tokens are stored separately from user data
-- Rate limiting is tied to authentication
-- Invalid tokens return 401 Unauthorized
-- Missing tokens return 403 Forbidden
+- 200: All services are healthy
+- 503: One or more services are unhealthy
+- 500: Error occurred while checking service health
 
-## Project Structure
+### Health Configuration
 
-- `src/`: Contains the main application code
-  - `server.js`: Entry point
-  - `config.js`: Configuration management
-  - `middleware/`: Custom middleware (e.g., authentication)
-  - `routes/`: API route definitions
-  - `controllers/`: Request handling logic
-  - `utils/`: Utility functions and classes
-- `scripts/`: Contains the user management script
-- `conf/`: Configuration files
-  - `genshare.json`: Genshare API configuration
-  - `users.json`: User data storage (managed by scripts)
-- `tmp/`: folder containing temporary files
+Each service requires health check configuration in its respective config file:
 
-## Configuration Files
-
-The application uses two main configuration files:
-
-- `conf/genshare.json`: Contains configuration for the Genshare API integration.
-- `conf/users.json`: Stores user data, including tokens and rate limits.
-
-Make sure to keep these files secure and do not commit them to version control.
-
-## Rate Limiting
-
-This API implements user-specific rate limiting:
-
-- Rate limits are customized for each user and stored in their user data.
-- Unauthenticated requests are limited to 100 requests per 15-minute window.
-- Authenticated requests use the limits specified in the user's data:
-  - `max`: Maximum number of requests allowed in the time window
-  - `windowMs`: Time window in milliseconds
-  - If not specified, defaults to 100 requests per 15-minute window
-- To give a user unlimited requests, set `windowMs` to 0 when adding or updating the user
-
-Rate limiting is implemented in `src/utils/rateLimiter.js` and can be further customized as needed.
-
-## Logging System
-
-The API implements comprehensive logging using Winston and Morgan:
-
-### Log Format
-- Each log entry contains:
-  - IP address
-  - User ID (or 'unauthenticated')
-  - Timestamp
-  - HTTP method and URL
-  - Status code
-  - Response size
-  - Referrer
-  - User agent
-  - Request success status
-
-### Log Analysis
-
-The project includes a log analysis script that provides detailed statistics about API usage:
-
-```bash
-# analyze log/combined.log file
-npm run analyze-logs
-
-# analyze a given log file
-node scripts/analyze_logs.js [path/to/logfile]
+```json
+{
+  "health": {
+    "url": "http://service-url/health",
+    "method": "GET"
+  }
+}
 ```
 
 The analyzer provides:

@@ -1,0 +1,6 @@
+{
+  "health": {
+    "url": "http://localhost:8070/service/isalive",
+    "method": "GET"
+  }
+}
