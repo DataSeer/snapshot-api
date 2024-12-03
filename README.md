@@ -178,6 +178,8 @@ npm run manage-users list
 npm run manage-users remove user123
 ```
 
+Rate limits are specified as a JSON object with `max` (maximum number of requests) and `windowMs` (time window in milliseconds) properties. If not specified when adding a user, it defaults to 100 requests per 15-minute window.
+
 ### Permissions Management
 
 The API includes a route-specific permissions system managed through a dedicated script:
@@ -225,7 +227,7 @@ All API endpoints require authentication using a JWT token.
 - `POST /processPDF`: Process a PDF file
   - Form data:
     - `file`: PDF file
-    - `options`: JSON string of processing options
+    - `options`: JSON string of processing options (must be a valid JSON object. If it's not well-formed or is not a valid JSON object, the API will return a 400 Bad Request error)
 
 For all requests, include the JWT token in the Authorization header:
 ```
