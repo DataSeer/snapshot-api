@@ -1,6 +1,6 @@
 {
   "health": {
-    "url": "http://localhost:8070/service/isalive",
+    "url": "http://localhost:8060/service/isalive",
     "method": "GET"
   }
 }
