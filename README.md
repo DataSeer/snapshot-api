@@ -13,6 +13,7 @@ This project provides a Node.js REST API that implements JWT authentication and 
 4. [Usage](#usage)
    - [Starting the Server](#starting-the-server)
    - [Managing Users](#managing-users)
+   - [Permissions Management](#permissions-management)
    - [API Endpoints](#api-endpoints)
 5. [Health Monitoring](#health-monitoring)
    - [Health Endpoints](#health-endpoints)
@@ -43,9 +44,10 @@ This project provides a Node.js REST API that implements JWT authentication and 
 - JWT-based authentication for all routes
 - PDF processing via Genshare API integration
 - User-specific rate limiting
-- Script-based user management (add, remove, refresh tokens, update rate limits)
+- Script-based user and permissions management
 - Secure token handling
 - Health monitoring for all dependent services
+- Route-specific access control with allow/block lists
 
 ## Prerequisites
 
@@ -57,18 +59,18 @@ This project provides a Node.js REST API that implements JWT authentication and 
 ### Using Docker
 
 1. Clone the repository:
-   ```
+   ```bash
    git clone https://github.com/DataSeer/snapshot-api.git
    cd snapshot-api
    ```
 
 2. Build image:
-   ```
+   ```bash
    docker build -t snapshot-api .
    ```
 
 3. Run container:
-   ```
+   ```bash
    # using default conf & env files
    docker run -d -it -p 3000:3000 --network host --name snapshot-api-instance snapshot-api
 
@@ -77,7 +79,7 @@ This project provides a Node.js REST API that implements JWT authentication and 
    ```
 
 4. Interact with the container:
-   ```
+   ```bash
    # using default conf & env files
    docker exec -it snapshot-api-instance /bin/bash
    ```
@@ -85,13 +87,13 @@ This project provides a Node.js REST API that implements JWT authentication and 
 ### Direct Installation
 
 1. Clone the repository:
-   ```
+   ```bash
    git clone https://github.com/DataSeer/snapshot-api.git
    cd snapshot-api
    ```
 
 2. Install dependencies:
-   ```
+   ```bash
    npm install
    ```
 
@@ -139,7 +141,7 @@ This project provides a Node.js REST API that implements JWT authentication and 
 
 To start the server in production mode:
 
-```
+```bash
 npm start
 ```
 
@@ -147,7 +149,7 @@ npm start
 
 Use the following command to manage users:
 
-```
+```bash
 npm run manage-users <command> [userId] [options]
 ```
 
@@ -175,6 +177,45 @@ npm run manage-users list
 # Remove a user
 npm run manage-users remove user123
 ```
+
+### Permissions Management
+
+The API includes a route-specific permissions system managed through a dedicated script:
+
+```bash
+npm run manage-permissions <command> [options]
+```
+
+Commands:
+- `add <path> <method> [allowed] [blocked]`: Add route permissions
+- `remove <path> <method>`: Remove route permissions
+- `allow <path> <method> <userId>`: Grant user access
+- `block <path> <method> <userId>`: Revoke user access
+- `list`: List all route permissions
+
+Examples:
+```bash
+# Add new route permissions
+npm run manage-permissions add /processPDF POST '["user1","user2"]' '["user3"]'
+
+# Allow user access
+npm run manage-permissions allow /processPDF POST user4
+
+# Block user access
+npm run manage-permissions block /processPDF POST user3
+
+# List all permissions
+npm run manage-permissions list
+
+# Remove route permissions
+npm run manage-permissions remove /processPDF POST
+```
+
+Access Control Rules:
+- Empty allowed list + empty blocked list: all authenticated users have access
+- Populated allowed list: only listed users have access
+- Blocked list: listed users are denied access (overrides allowed list)
+- Users not in either list: allowed if allowed list is empty, blocked if it's not
 
 ### API Endpoints
 
@@ -252,22 +293,12 @@ The `/ping` endpoint returns:
 }
 ```
 
-Individual service endpoints return:
-```json
-{
-  "err": null,
-  "request": "GET http://service-name/health",
-  "response": {
-    "status": 200,
-    "data": { /* service-specific health data */ }
-  }
-}
-```
+Individual service endpoints return raw response from their respective health endpoints.
 
 ### Health Status Codes
 
-- 200: All services are healthy
-- 503: One or more services are unhealthy
+- 200: Service(s) healthy
+- 503: One or more services unhealthy
 - 500: Error occurred while checking service health
 
 ### Health Configuration
@@ -281,6 +312,190 @@ Each service requires health check configuration in its respective config file:
     "method": "GET"
   }
 }
+```
+
+## Error Handling
+
+### "file" Errors
+
+HTTP 400: 'Required "file" missing' (parameter not set)
+```bash
+curl -X POST -H "Authorization: Bearer <your_token>" \
+     -F 'options={"key":"value","anotherKey":123}' \
+     http://localhost:3000/processPDF
+# HTTP 400 Bad Request 
+Required "file" missing
+```
+
+HTTP 400: 'Required "file" invalid. Must have mimetype "application/pdf".' (file with incorrect mimetype)
+```bash
+curl -X POST -H "Authorization: Bearer <your_token>" \
+     -F "file=@path/to/your/file.xml" \
+     -F 'options={"key":"value","anotherKey":123}' \
+     http://localhost:3000/processPDF
+# HTTP 400 Bad Request 
+Required "file" invalid. Must have mimetype "application/pdf".
+```
+
+### "options" Errors
+
+HTTP 400: 'Required "options" missing.' (parameter not set)
+```bash
+curl -X POST -H "Authorization: Bearer <your_token>" \
+     -F "file=@path/to/your/file.pdf" \
+     http://localhost:3000/processPDF
+# HTTP 400 Bad Request 
+Required "options" missing.
+```
+
+HTTP 400: 'Required "options" invalid. Must be a valid JSON object.' (data are not JSON)
+```bash
+curl -X POST -H "Authorization: Bearer <your_token>" \
+     -F "file=@path/to/your/file.pdf" \
+     -F 'options="key value anotherKey 123"' \
+     http://localhost:3000/processPDF
+# HTTP 400 Bad Request 
+Required "options" invalid. Must be a valid JSON object.
+```
+
+HTTP 400: 'Required "options" invalid. Must be a JSON object.' (data are JSON but not an object)
+```bash
+curl -X POST -H "Authorization: Bearer <your_token>" \
+     -F "file=@path/to/your/file.pdf" \
+     -F 'options=["key","value","anotherKey",123]' \
+     http://localhost:3000/processPDF
+# HTTP 400 Bad Request 
+Required "options" invalid. Must be a JSON object.
+```
+
+## GenShare Response
+
+[More info available here](USER_DOCUMENTATION.md#example-response-1)
+
+## Authentication
+
+The API uses JSON Web Tokens (JWT) for authentication.
+
+### Token Management
+
+- `TokenManager`: Handles token storage and validation
+- `UserManager`: Manages user data and updates
+- Tokens are stored in `conf/users.json` separate from user data for security
+
+### Token Lifecycle
+
+1. **Creation**: Tokens are generated using:
+   ```bash
+   npm run manage-users add <userId>
+   ```
+
+2. **Usage**: Include token in requests:
+   ```bash
+   curl -H "Authorization: Bearer <your_token>" http://localhost:3000/endpoint
+   ```
+
+3. **Validation**: Each request is authenticated by:
+   - Extracting token from Authorization header
+   - Verifying JWT signature
+   - Looking up associated user
+   - Checking rate limits
+
+4. **Renewal**: Refresh expired tokens using:
+   ```bash
+   npm run manage-users refresh-token <userId>
+   ```
+
+### User Management Commands
+
+```bash
+# Generate new user with token
+npm run manage-users add user123
+
+# List all users and their tokens
+npm run manage-users list
+
+# Refresh token for existing user
+npm run manage-users refresh-token user123
+
+# Remove user and invalidate token
+npm run manage-users remove user123
+```
+
+### Security Features
+
+- JWT tokens are signed with a secret key (`JWT_SECRET` environment variable)
+- Tokens are stored separately from user data
+- Rate limiting is tied to authentication
+- Invalid tokens return 401 Unauthorized
+- Missing tokens return 403 Forbidden
+
+## Project Structure
+
+- `src/`: Contains the main application code
+  - `server.js`: Entry point
+  - `config.js`: Configuration management
+  - `middleware/`: Custom middleware (e.g., authentication)
+  - `routes/`: API route definitions
+  - `controllers/`: Request handling logic
+  - `utils/`: Utility functions and classes
+- `scripts/`: Contains the user management script
+- `conf/`: Configuration files
+  - `genshare.json`: Genshare API configuration
+  - `users.json`: User data storage (managed by scripts)
+- `tmp/`: folder containing temporary files
+
+## Configuration Files
+
+The application uses several configuration files:
+
+- `conf/genshare.json`: Contains configuration for the Genshare API integration
+- `conf/grobid.json`: Contains configuration for the GROBID service
+- `conf/datastet.json`: Contains configuration for the DataStet service
+- `conf/users.json`: Stores user data, including tokens and rate limits
+- `conf/permissions.json`: Stores route-specific access permissions
+
+Make sure to keep these files secure and do not commit them to version control.
+
+## Rate Limiting
+
+This API implements user-specific rate limiting:
+
+- Rate limits are customized for each user and stored in their user data
+- Unauthenticated requests are limited to 100 requests per 15-minute window
+- Authenticated requests use the limits specified in the user's data:
+  - `max`: Maximum number of requests allowed in the time window
+  - `windowMs`: Time window in milliseconds
+  - If not specified, defaults to 100 requests per 15-minute window
+- To give a user unlimited requests, set `windowMs` to 0 when adding or updating the user
+
+Rate limiting is implemented in `src/utils/rateLimiter.js` and can be further customized as needed.
+
+## Logging System
+
+The API implements comprehensive logging using Winston and Morgan.
+
+### Log Format
+- Each log entry contains:
+  - IP address
+  - User ID (or 'unauthenticated')
+  - Timestamp
+  - HTTP method and URL
+  - Status code
+  - Response size
+  - Referrer
+  - User agent
+  - Request success status
+
+### Log Analysis
+
+The project includes a log analysis script that provides detailed statistics about API usage:
+
+```bash
+# analyze log/combined.log file
+npm run analyze-logs
+
+# analyze a given log file
+node scripts/analyze_logs.js [path/to/logfile]
 ```
 
 The analyzer provides:
@@ -319,10 +534,11 @@ IP: 192.168.1.1
 ## Security Considerations
 
 - All routes require JWT authentication
+- Route-specific access control through permissions system
 - JWT tokens are stored separately and managed through a dedicated script
 - The main application can only read tokens, not modify them
 - Rate limiting is implemented to prevent API abuse
-- Sensitive configuration files (`users.json` and `genshare.json`) are not committed to version control
+- Sensitive configuration files (`users.json`, `permissions.json`, `genshare.json`, `grobid.json`, `datastet.json`) are not committed to version control
 
 ## Contributing
 

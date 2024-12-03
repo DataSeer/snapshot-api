@@ -1,0 +1,40 @@
+{
+  "routes": {
+    "/": {
+      "GET": {
+        "whitelist": [],
+        "blacklist": []
+      }
+    },
+    "/processPDF": {
+      "POST": {
+        "whitelist": [],
+        "blacklist": []
+      }
+    },
+    "/ping": {
+      "GET": {
+        "whitelist": ["admin"],
+        "blacklist": []
+      }
+    },
+    "/genshare/health": {
+      "GET": {
+        "whitelist": ["admin"],
+        "blacklist": []
+      }
+    },
+    "/grobid/health": {
+      "GET": {
+        "whitelist": ["admin"],
+        "blacklist": []
+      }
+    },
+    "/datastet/health": {
+      "GET": {
+        "whitelist": ["admin"],
+        "blacklist": []
+      }
+    }
+  }
+}
