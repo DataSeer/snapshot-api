@@ -3,43 +3,43 @@
     "/": {
       "GET": {
         "description": "Get all available API routes",
-        "whitelist": [],
-        "blacklist": []
+        "allowed": [],
+        "blocked": []
       }
     },
     "/processPDF": {
       "POST": {
         "description": "Process a PDF file",
-        "whitelist": [],
-        "blacklist": []
+        "allowed": [],
+        "blocked": []
       }
     },
     "/ping": {
       "GET": {
         "description": "Get status of all Snapshot services",
-        "whitelist": ["admin"],
-        "blacklist": []
+        "allowed": ["admin"],
+        "blocked": []
       }
     },
     "/genshare/health": {
       "GET": {
         "description": "Get status of GenShare services",
-        "whitelist": ["admin"],
-        "blacklist": []
+        "allowed": ["admin"],
+        "blocked": []
       }
     },
     "/grobid/health": {
       "GET": {
         "description": "Get status of GROBID services",
-        "whitelist": ["admin"],
-        "blacklist": []
+        "allowed": ["admin"],
+        "blocked": []
       }
     },
     "/datastet/health": {
       "GET": {
         "description": "Get status of DataStet services",
-        "whitelist": ["admin"],
-        "blacklist": []
+        "allowed": ["admin"],
+        "blocked": []
       }
     }
   }
