@@ -3,6 +3,7 @@ conf/users.json
 conf/genshare.json
 conf/datastet.json
 conf/grobid.json
+conf/permissions.json
 
 node_modules/
 
