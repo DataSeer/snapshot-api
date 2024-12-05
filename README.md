@@ -75,7 +75,7 @@ This project provides a Node.js REST API that implements JWT authentication and 
    docker run -d -it -p 3000:3000 --network host --name snapshot-api-instance snapshot-api
 
    # using custom conf & env files
-   docker run -d -it -p 3000:3000 --network host --name snapshot-api-instance -v $(pwd)/.env:/usr/src/app/.env -v $(pwd)/conf:/usr/src/app/conf snapshot-api
+   docker run -d -it -p 3000:3000 --network host --name snapshot-api-instance -v $(pwd)/.env:/usr/src/app/.env -v $(pwd)/conf:/usr/src/app/conf -v $(pwd)/log:/usr/src/app/log snapshot-api
    ```
 
 4. Interact with the container:
