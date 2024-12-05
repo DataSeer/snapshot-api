@@ -5,6 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
+    "manage-permissions": "node scripts/manage_permissions.js",
     "manage-users": "node scripts/manage_users.js",
     "analyze-logs": "node scripts/analyze_logs.js"
   },

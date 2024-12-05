@@ -6,6 +6,34 @@ const config = require('../config');
 
 const genshareConfig = require(config.genshareConfigPath);
 const processPDFConfig = genshareConfig.processPDF;
+const healthConfig = genshareConfig.health;
+
+exports.getGenShareHealth = async (req, res) => {
+  try {
+    const response = await axios({
+      method: healthConfig.method,
+      url: healthConfig.url,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    // Forward the status code
+    res.status(response.status);
+
+    // Forward the headers
+    Object.entries(response.headers).forEach(([key, value]) => {
+      res.set(key, value);
+    });
+
+    // Send the response data
+    res.send(response.data);
+  } catch (error) {
+    // Forward error response if available
+    if (error.response) return res.status(error.response.status).send(error.message);
+    return res.status(500).send('GenShare health check failed');
+  }
+};
 
 exports.processPDF = async (req, res) => {
   if (!req.file)
