@@ -1,11 +1,7 @@
 node_modules/
 uploads/
 .env
-conf/users.json
-conf/permissions.json
-conf/genshare.json
-conf/datastet.json
-conf/grobid.json
+conf/*.json
 tmp/
 
 log/*.log

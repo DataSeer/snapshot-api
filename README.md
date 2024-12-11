@@ -1,7 +1,7 @@
 # Snapshot API 
 
 The Snapshot API allow processing of PDF documents through a verification system in respect of the OSI (Open Science Indicators). 
-This project provides a Node.js REST API that implements JWT authentication and integrates with the DataSeer AI "Genshare" API for PDF processing. It features user-specific rate limiting, script-based user management, and secure token handling.
+This project provides a Node.js REST API that implements JWT authentication and integrates with the DataSeer AI "Genshare" API for PDF processing. It features user-specific rate limiting, script-based user management, secure token handling, S3 storage for request data, and Google Sheets integration for summary logging.
 
 ## Table of Contents
 
@@ -29,15 +29,24 @@ This project provides a Node.js REST API that implements JWT authentication and 
    - [Token Lifecycle](#token-lifecycle)
    - [User Management Commands](#user-management-commands)
    - [Security Features](#security-features)
-9. [Project Structure](#project-structure)
-10. [Configuration Files](#configuration-files)
-11. [Rate Limiting](#rate-limiting)
-12. [Logging System](#logging-system)
+9. [S3 Storage](#s3-storage)
+   - [Storage Structure](#storage-structure)
+   - [Stored Data](#stored-data)
+   - [Configuration](#s3-configuration)
+   - [Process Session](#process-session)
+10. [Google Sheets Integration](#google-sheets-integration)
+    - [Summary Sheet Structure](#summary-sheet-structure)
+    - [Configuration](#sheets-configuration)
+    - [Data Logging](#data-logging)
+11. [Project Structure](#project-structure)
+12. [Configuration Files](#configuration-files)
+13. [Rate Limiting](#rate-limiting)
+14. [Logging System](#logging-system)
     - [Log Format](#log-format)
     - [Log Analysis](#log-analysis)
-13. [Security Considerations](#security-considerations)
-14. [Contributing](#contributing)
-15. [License](#license)
+15. [Security Considerations](#security-considerations)
+16. [Contributing](#contributing)
+17. [License](#license)
 
 ## Features
 
@@ -48,6 +57,8 @@ This project provides a Node.js REST API that implements JWT authentication and 
 - Secure token handling
 - Health monitoring for all dependent services
 - Route-specific access control with allow/block lists
+- S3 storage for request and response data
+- Google Sheets integration for summary logging
 
 ## Prerequisites
 
@@ -431,6 +442,123 @@ npm run manage-users remove user123
 - Invalid tokens return 401 Unauthorized
 - Missing tokens return 403 Forbidden
 
+## S3 Storage
+
+The API implements comprehensive storage of all request and response data in Amazon S3, providing complete traceability and audit capabilities for all PDF processing operations.
+
+### Storage Structure
+
+Files are stored in S3 using the following path structure:
+```
+{s3Folder}/{userId}/{requestId}/
+├── file.pdf              # Original uploaded PDF
+├── file.metadata.json    # File metadata (name, size, MD5, etc.)
+├── options.json         # Processing options
+├── process.json         # Process metadata
+├── process.log          # Detailed process log
+└── response.json        # GenShare API response
+```
+
+### Stored Data
+
+1. **File Data**
+   - Original PDF file
+   - File metadata including:
+     - Original filename
+     - File size
+     - MD5 hash
+     - MIME type
+
+2. **Process Information**
+   - Process metadata:
+     - Start date/time
+     - End date/time
+     - Process duration
+     - File presence indicator
+   - Detailed process log with timestamped entries
+   - Processing options used
+
+3. **Response Data**
+   - Complete GenShare API response
+   - Response status and headers
+   - Response data including decision tree path
+
+### S3 Configuration
+
+Configure S3 storage in `conf/aws.s3.json`:
+```json
+{
+  "accessKeyId": "your_access_key",
+  "secretAccessKey": "your_secret_key",
+  "region": "your_region",
+  "bucketName": "your_bucket",
+  "s3Folder": "your_folder"
+}
+```
+
+### Process Session
+
+Each PDF processing request creates a ProcessingSession that manages:
+- Unique request ID generation
+- Log accumulation
+- File handling
+- S3 upload operations
+- Process metadata tracking
+
+## Google Sheets Integration
+
+The API logs summary information for each PDF processing request to a Google Sheets spreadsheet, providing easy access to processing history and analytics.
+
+### Summary Sheet Structure
+
+The summary sheet includes the following columns:
+1. Request ID (with S3 link)
+2. Error status
+3. Processing date
+4. User ID
+5. PDF filename
+6. Response data columns:
+   - Article ID
+   - DAS presence
+   - Data availability requirements
+   - DAS sharing statement
+   - Data generalist info
+   - Warrant generalist info
+   - Data specialist info
+   - Warrant specialist info
+   - Non-standard info
+   - Computer-generated content
+   - Computer-generated SI
+   - Computer-generated online
+   - Warrants code online
+7. Path information (decision tree path)
+
+### Configuration
+
+1. Set up Google Sheets credentials:
+   - Place service account credentials in `conf/googleSheets.credentials.json`
+   - Configure sheet details in `conf/googleSheets.json`:
+     ```json
+     {
+       "spreadsheetId": "your_spreadsheet_id",
+       "sheetName": "your_sheet_name"
+     }
+     ```
+
+2. Required permissions:
+   - Google Sheets API enabled
+   - Service account with appropriate permissions
+   - Spreadsheet shared with service account email
+
+### Data Logging
+
+The API automatically logs:
+- Every PDF processing request
+- Processing outcomes
+- Error statuses
+- GenShare response data
+- Decision tree paths
+
 ## Project Structure
 
 - `src/`: Contains the main application code
@@ -455,6 +583,9 @@ The application uses several configuration files:
 - `conf/datastet.json`: Contains configuration for the DataStet service
 - `conf/users.json`: Stores user data, including tokens and rate limits
 - `conf/permissions.json`: Stores route-specific access permissions
+- `conf/aws.s3.json`: Contains S3 storage configuration
+- `conf/googleSheets.json`: Contains Google Sheets configuration
+- `conf/googleSheets.credentials.json`: Service account credentials for Google Sheets
 
 Make sure to keep these files secure and do not commit them to version control.
 
