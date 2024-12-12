@@ -1,9 +1,6 @@
 .env
-conf/users.json
-conf/genshare.json
-conf/datastet.json
-conf/grobid.json
-conf/permissions.json
+
+conf/*.json
 
 node_modules/
 

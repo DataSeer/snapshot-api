@@ -10,10 +10,12 @@
     "analyze-logs": "node scripts/analyze_logs.js"
   },
   "dependencies": {
+    "aws-sdk": "^2.1692.0",
     "axios": "^1.7.7",
     "express": "^4.17.1",
     "express-rate-limit": "^5.2.6",
     "form-data": "^4.0.0",
+    "googleapis": "^144.0.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^1.4.4-lts.1",
