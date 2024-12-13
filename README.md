@@ -1,7 +1,7 @@
 # Snapshot API 
 
 The Snapshot API allow processing of PDF documents through a verification system in respect of the OSI (Open Science Indicators). 
-This project provides a Node.js REST API that implements JWT authentication and integrates with the DataSeer AI "Genshare" API for PDF processing. It features user-specific rate limiting, script-based user management, and secure token handling.
+This project provides a Node.js REST API that implements JWT authentication and integrates with the DataSeer AI "Genshare" API for PDF processing. It features user-specific rate limiting, script-based user management, secure token handling, S3 storage for request data, and Google Sheets integration for summary logging.
 
 ## Table of Contents
 
@@ -13,33 +13,52 @@ This project provides a Node.js REST API that implements JWT authentication and 
 4. [Usage](#usage)
    - [Starting the Server](#starting-the-server)
    - [Managing Users](#managing-users)
+   - [Permissions Management](#permissions-management)
    - [API Endpoints](#api-endpoints)
-5. [Error Handling](#error-handling)
+5. [Health Monitoring](#health-monitoring)
+   - [Health Endpoints](#health-endpoints)
+   - [Health Response Format](#health-response-format)
+   - [Health Status Codes](#health-status-codes)
+   - [Health Configuration](#health-configuration)
+6. [Error Handling](#error-handling)
    - ["file" Errors](#file-errors)
    - ["options" Errors](#options-errors)
-6. [GenShare Response](#genshare-response)
-7. [Authentication](#authentication)
+7. [GenShare Response](#genshare-response)
+8. [Authentication](#authentication)
    - [Token Management](#token-management)
    - [Token Lifecycle](#token-lifecycle)
    - [User Management Commands](#user-management-commands)
    - [Security Features](#security-features)
-8. [Project Structure](#project-structure)
-9. [Configuration Files](#configuration-files)
-10. [Rate Limiting](#rate-limiting)
-11. [Logging System](#logging-system)
+9. [S3 Storage](#s3-storage)
+   - [Storage Structure](#storage-structure)
+   - [Stored Data](#stored-data)
+   - [Configuration](#s3-configuration)
+   - [Process Session](#process-session)
+10. [Google Sheets Integration](#google-sheets-integration)
+    - [Summary Sheet Structure](#summary-sheet-structure)
+    - [Configuration](#sheets-configuration)
+    - [Data Logging](#data-logging)
+11. [Project Structure](#project-structure)
+12. [Configuration Files](#configuration-files)
+13. [Rate Limiting](#rate-limiting)
+14. [Logging System](#logging-system)
     - [Log Format](#log-format)
     - [Log Analysis](#log-analysis)
-12. [Security Considerations](#security-considerations)
-13. [Contributing](#contributing)
-14. [License](#license)
+15. [Security Considerations](#security-considerations)
+16. [Contributing](#contributing)
+17. [License](#license)
 
 ## Features
 
 - JWT-based authentication for all routes
 - PDF processing via Genshare API integration
 - User-specific rate limiting
-- Script-based user management (add, remove, refresh tokens, update rate limits)
+- Script-based user and permissions management
 - Secure token handling
+- Health monitoring for all dependent services
+- Route-specific access control with allow/block lists
+- S3 storage for request and response data
+- Google Sheets integration for summary logging
 
 ## Prerequisites
 
@@ -51,27 +70,27 @@ This project provides a Node.js REST API that implements JWT authentication and 
 ### Using Docker
 
 1. Clone the repository:
-   ```
+   ```bash
    git clone https://github.com/DataSeer/snapshot-api.git
    cd snapshot-api
    ```
 
 2. Build image:
-   ```
+   ```bash
    docker build -t snapshot-api .
    ```
 
 3. Run container:
-   ```
+   ```bash
    # using default conf & env files
    docker run -d -it -p 3000:3000 --network host --name snapshot-api-instance snapshot-api
 
    # using custom conf & env files
-   docker run -d -it -p 3000:3000 --network host --name snapshot-api-instance -v $(pwd)/.env:/usr/src/app/.env -v $(pwd)/conf:/usr/src/app/conf snapshot-api
+   docker run -d -it -p 3000:3000 --network host --name snapshot-api-instance -v $(pwd)/.env:/usr/src/app/.env -v $(pwd)/conf:/usr/src/app/conf -v $(pwd)/log:/usr/src/app/log snapshot-api
    ```
 
 4. Interact with the container:
-   ```
+   ```bash
    # using default conf & env files
    docker exec -it snapshot-api-instance /bin/bash
    ```
@@ -79,26 +98,47 @@ This project provides a Node.js REST API that implements JWT authentication and 
 ### Direct Installation
 
 1. Clone the repository:
-   ```
+   ```bash
    git clone https://github.com/DataSeer/snapshot-api.git
    cd snapshot-api
    ```
 
 2. Install dependencies:
-   ```
+   ```bash
    npm install
    ```
 
 3. Set up configuration:
-   - Create `conf/genshare.json` with your Genshare API details:
+   - Create service configuration files in the `conf` directory:
      ```json
-      {
-        "processPDF": {
-          "url": "http://localhost:5000/process/pdf",
-          "method": "POST",
-          "apiKey": "your_genshare_api_key_for_process_pdf"
-        }
-      }
+     // conf/genshare.json
+     {
+       "processPDF": {
+         "url": "http://localhost:5000/process/pdf",
+         "method": "POST",
+         "apiKey": "your_genshare_api_key"
+       },
+       "health": {
+         "url": "http://localhost:5000/health",
+         "method": "GET"
+       }
+     }
+
+     // conf/grobid.json
+     {
+       "health": {
+         "url": "http://localhost:8070/health",
+         "method": "GET"
+       }
+     }
+
+     // conf/datastet.json
+     {
+       "health": {
+         "url": "http://localhost:8080/health",
+         "method": "GET"
+       }
+     }
      ```
    - The `conf/users.json` file will be created automatically when you add users.
 
@@ -110,9 +150,9 @@ This project provides a Node.js REST API that implements JWT authentication and 
 
 ### Starting the Server
 
-To start the server in production mode :
+To start the server in production mode:
 
-```
+```bash
 npm start
 ```
 
@@ -120,7 +160,7 @@ npm start
 
 Use the following command to manage users:
 
-```
+```bash
 npm run manage-users <command> [userId] [options]
 ```
 
@@ -151,58 +191,148 @@ npm run manage-users remove user123
 
 Rate limits are specified as a JSON object with `max` (maximum number of requests) and `windowMs` (time window in milliseconds) properties. If not specified when adding a user, it defaults to 100 requests per 15-minute window.
 
+### Permissions Management
+
+The API includes a route-specific permissions system managed through a dedicated script:
+
+```bash
+npm run manage-permissions <command> [options]
+```
+
+Commands:
+- `add <path> <method> [allowed] [blocked]`: Add route permissions
+- `remove <path> <method>`: Remove route permissions
+- `allow <path> <method> <userId>`: Grant user access
+- `block <path> <method> <userId>`: Revoke user access
+- `list`: List all route permissions
+
+Examples:
+```bash
+# Add new route permissions
+npm run manage-permissions add /processPDF POST '["user1","user2"]' '["user3"]'
+
+# Allow user access
+npm run manage-permissions allow /processPDF POST user4
+
+# Block user access
+npm run manage-permissions block /processPDF POST user3
+
+# List all permissions
+npm run manage-permissions list
+
+# Remove route permissions
+npm run manage-permissions remove /processPDF POST
+```
+
+Access Control Rules:
+- Empty allowed list + empty blocked list: all authenticated users have access
+- Populated allowed list: only listed users have access
+- Blocked list: listed users are denied access (overrides allowed list)
+- Users not in either list: allowed if allowed list is empty, blocked if it's not
+
 ### API Endpoints
 
 All API endpoints require authentication using a JWT token.
 
 - `GET /`: Get information about available API routes
-  - Requires authentication
-
 - `POST /processPDF`: Process a PDF file
-  - Requires authentication
   - Form data:
     - `file`: PDF file
-    - `options`: JSON string of processing options
-  - The `options` parameter must be a valid JSON object. If it's not well-formed or is not a valid JSON object, the API will return a 400 Bad Request error.
+    - `options`: JSON string of processing options (must be a valid JSON object. If it's not well-formed or is not a valid JSON object, the API will return a 400 Bad Request error)
 
 For all requests, include the JWT token in the Authorization header:
-
 ```
 Authorization: Bearer <your_token>
 ```
 
-Example curl commands:
+## Health Monitoring
 
-1. Get API information:
+The API provides comprehensive health monitoring for all dependent services (GenShare, GROBID, and DataStet).
+
+### Health Endpoints
+
+- `GET /ping`: Check health status of all services
+  - Returns aggregated health status of all services
+  - Response includes timestamp and detailed service status
+
+- `GET /genshare/health`: Direct health check proxy to GenShare service
+  - Returns the raw response from GenShare's health endpoint
+  - Returns 500 with message "GenShare health check failed" if the request fails
+
+- `GET /grobid/health`: Direct health check proxy to GROBID service
+  - Returns the raw response from GROBID's health endpoint
+  - Returns 500 with message "Grobid health check failed" if the request fails
+
+- `GET /datastet/health`: Direct health check proxy to DataStet service
+  - Returns the raw response from DataStet's health endpoint
+  - Returns 500 with message "Datastet health check failed" if the request fails
+
+These individual health endpoints act as direct proxies to their respective services, forwarding the raw response data when successful. In case of failure, they return a 500 status code with a service-specific error message.
+
+### Health Response Format
+
+The `/ping` endpoint returns:
+
+```json
+{
+  "status": "healthy" | "unhealthy" | "error",
+  "timestamp": "2024-12-02T12:00:00.000Z",
+  "services": {
+    "genshare": {
+      "err": null,
+      "request": "GET http://genshare-service/health",
+      "response": {
+        "status": 200,
+        "data": { /* service-specific health data */ }
+      }
+    },
+    "grobid": {
+      "err": null,
+      "request": "GET http://grobid-service/health",
+      "response": {
+        "status": 200,
+        "data": { /* service-specific health data */ }
+      }
+    },
+    "datastet": {
+      "err": null,
+      "request": "GET http://datastet-service/health",
+      "response": {
+        "status": 200,
+        "data": { /* service-specific health data */ }
+      }
+    }
+  }
+}
 ```
-curl -H "Authorization: Bearer <your_token>" http://localhost:3000/
+
+Individual service endpoints return raw response from their respective health endpoints.
+
+### Health Status Codes
+
+- 200: Service(s) healthy
+- 503: One or more services unhealthy
+- 500: Error occurred while checking service health
+
+### Health Configuration
+
+Each service requires health check configuration in its respective config file:
+
+```json
+{
+  "health": {
+    "url": "http://service-url/health",
+    "method": "GET"
+  }
+}
 ```
 
-2. Process a PDF with options:
-```
-curl -X POST -H "Authorization: Bearer <your_token>" \
-     -F "file=@path/to/your/file.pdf" \
-     -F 'options={"key":"value","anotherKey":123}' \
-     http://localhost:3000/processPDF
-```
+## Error Handling
 
-Note: Ensure that the `options` parameter is a valid JSON object. Invalid JSON will result in an error response.
-
-### Error Handling
-
-- If the `file` parameter is not provided, a 400 Bad Request error is returned.
-  - HTTP 400: 'Required "file" missing' (parameter not set)
-  - HTTP 400: 'Required "file" invalid. Must have mimetype "application/pdf".' (file with incorrect mimetype)
-- If the `options` parameter is not provided or not a valid JSON object, a 400 Bad Request error is returned with a descriptive message.
-  - HTTP 400: 'Required "options" missing.' (parameter not set)
-  - HTTP 400: 'Required "options" invalid. Must be a valid JSON object.' (data are not JSON)
-  - HTTP 400: 'Required "options" invalid. Must be a JSON object.' (data are JSON but not an object)
-- If an error occurs during the GenShare process, the GenShare HTTP status code is returned.
-
-#### "file" errors
+### "file" Errors
 
 HTTP 400: 'Required "file" missing' (parameter not set)
-```
+```bash
 curl -X POST -H "Authorization: Bearer <your_token>" \
      -F 'options={"key":"value","anotherKey":123}' \
      http://localhost:3000/processPDF
@@ -211,7 +341,7 @@ Required "file" missing
 ```
 
 HTTP 400: 'Required "file" invalid. Must have mimetype "application/pdf".' (file with incorrect mimetype)
-```
+```bash
 curl -X POST -H "Authorization: Bearer <your_token>" \
      -F "file=@path/to/your/file.xml" \
      -F 'options={"key":"value","anotherKey":123}' \
@@ -220,10 +350,10 @@ curl -X POST -H "Authorization: Bearer <your_token>" \
 Required "file" invalid. Must have mimetype "application/pdf".
 ```
 
-#### "options" errors
+### "options" Errors
 
 HTTP 400: 'Required "options" missing.' (parameter not set)
-```
+```bash
 curl -X POST -H "Authorization: Bearer <your_token>" \
      -F "file=@path/to/your/file.pdf" \
      http://localhost:3000/processPDF
@@ -232,7 +362,7 @@ Required "options" missing.
 ```
 
 HTTP 400: 'Required "options" invalid. Must be a valid JSON object.' (data are not JSON)
-```
+```bash
 curl -X POST -H "Authorization: Bearer <your_token>" \
      -F "file=@path/to/your/file.pdf" \
      -F 'options="key value anotherKey 123"' \
@@ -242,7 +372,7 @@ Required "options" invalid. Must be a valid JSON object.
 ```
 
 HTTP 400: 'Required "options" invalid. Must be a JSON object.' (data are JSON but not an object)
-```
+```bash
 curl -X POST -H "Authorization: Bearer <your_token>" \
      -F "file=@path/to/your/file.pdf" \
      -F 'options=["key","value","anotherKey",123]' \
@@ -251,13 +381,13 @@ curl -X POST -H "Authorization: Bearer <your_token>" \
 Required "options" invalid. Must be a JSON object.
 ```
 
-### GenShare Response
+## GenShare Response
 
 [More info available here](USER_DOCUMENTATION.md#example-response-1)
 
 ## Authentication
 
-The API uses JSON Web Tokens (JWT) for authentication, implemented through several components:
+The API uses JSON Web Tokens (JWT) for authentication.
 
 ### Token Management
 
@@ -271,7 +401,6 @@ The API uses JSON Web Tokens (JWT) for authentication, implemented through sever
    ```bash
    npm run manage-users add <userId>
    ```
-   This creates a JWT signed with the application's secret key containing the user ID.
 
 2. **Usage**: Include token in requests:
    ```bash
@@ -313,6 +442,123 @@ npm run manage-users remove user123
 - Invalid tokens return 401 Unauthorized
 - Missing tokens return 403 Forbidden
 
+## S3 Storage
+
+The API implements comprehensive storage of all request and response data in Amazon S3, providing complete traceability and audit capabilities for all PDF processing operations.
+
+### Storage Structure
+
+Files are stored in S3 using the following path structure:
+```
+{s3Folder}/{userId}/{requestId}/
+├── file.pdf              # Original uploaded PDF
+├── file.metadata.json    # File metadata (name, size, MD5, etc.)
+├── options.json         # Processing options
+├── process.json         # Process metadata
+├── process.log          # Detailed process log
+└── response.json        # GenShare API response
+```
+
+### Stored Data
+
+1. **File Data**
+   - Original PDF file
+   - File metadata including:
+     - Original filename
+     - File size
+     - MD5 hash
+     - MIME type
+
+2. **Process Information**
+   - Process metadata:
+     - Start date/time
+     - End date/time
+     - Process duration
+     - File presence indicator
+   - Detailed process log with timestamped entries
+   - Processing options used
+
+3. **Response Data**
+   - Complete GenShare API response
+   - Response status and headers
+   - Response data including decision tree path
+
+### S3 Configuration
+
+Configure S3 storage in `conf/aws.s3.json`:
+```json
+{
+  "accessKeyId": "your_access_key",
+  "secretAccessKey": "your_secret_key",
+  "region": "your_region",
+  "bucketName": "your_bucket",
+  "s3Folder": "your_folder"
+}
+```
+
+### Process Session
+
+Each PDF processing request creates a ProcessingSession that manages:
+- Unique request ID generation
+- Log accumulation
+- File handling
+- S3 upload operations
+- Process metadata tracking
+
+## Google Sheets Integration
+
+The API logs summary information for each PDF processing request to a Google Sheets spreadsheet, providing easy access to processing history and analytics.
+
+### Summary Sheet Structure
+
+The summary sheet includes the following columns:
+1. Request ID (with S3 link)
+2. Error status
+3. Processing date
+4. User ID
+5. PDF filename
+6. Response data columns:
+   - Article ID
+   - DAS presence
+   - Data availability requirements
+   - DAS sharing statement
+   - Data generalist info
+   - Warrant generalist info
+   - Data specialist info
+   - Warrant specialist info
+   - Non-standard info
+   - Computer-generated content
+   - Computer-generated SI
+   - Computer-generated online
+   - Warrants code online
+7. Path information (decision tree path)
+
+### Configuration
+
+1. Set up Google Sheets credentials:
+   - Place service account credentials in `conf/googleSheets.credentials.json`
+   - Configure sheet details in `conf/googleSheets.json`:
+     ```json
+     {
+       "spreadsheetId": "your_spreadsheet_id",
+       "sheetName": "your_sheet_name"
+     }
+     ```
+
+2. Required permissions:
+   - Google Sheets API enabled
+   - Service account with appropriate permissions
+   - Spreadsheet shared with service account email
+
+### Data Logging
+
+The API automatically logs:
+- Every PDF processing request
+- Processing outcomes
+- Error statuses
+- GenShare response data
+- Decision tree paths
+
 ## Project Structure
 
 - `src/`: Contains the main application code
@@ -330,10 +576,16 @@ npm run manage-users remove user123
 
 ## Configuration Files
 
-The application uses two main configuration files:
+The application uses several configuration files:
 
-- `conf/genshare.json`: Contains configuration for the Genshare API integration.
-- `conf/users.json`: Stores user data, including tokens and rate limits.
+- `conf/genshare.json`: Contains configuration for the Genshare API integration
+- `conf/grobid.json`: Contains configuration for the GROBID service
+- `conf/datastet.json`: Contains configuration for the DataStet service
+- `conf/users.json`: Stores user data, including tokens and rate limits
+- `conf/permissions.json`: Stores route-specific access permissions
+- `conf/aws.s3.json`: Contains S3 storage configuration
+- `conf/googleSheets.json`: Contains Google Sheets configuration
+- `conf/googleSheets.credentials.json`: Service account credentials for Google Sheets
 
 Make sure to keep these files secure and do not commit them to version control.
 
@@ -341,8 +593,8 @@ Make sure to keep these files secure and do not commit them to version control.
 
 This API implements user-specific rate limiting:
 
-- Rate limits are customized for each user and stored in their user data.
-- Unauthenticated requests are limited to 100 requests per 15-minute window.
+- Rate limits are customized for each user and stored in their user data
+- Unauthenticated requests are limited to 100 requests per 15-minute window
 - Authenticated requests use the limits specified in the user's data:
   - `max`: Maximum number of requests allowed in the time window
   - `windowMs`: Time window in milliseconds
@@ -353,7 +605,7 @@ Rate limiting is implemented in `src/utils/rateLimiter.js` and can be further cu
 
 ## Logging System
 
-The API implements comprehensive logging using Winston and Morgan:
+The API implements comprehensive logging using Winston and Morgan.
 
 ### Log Format
 - Each log entry contains:
@@ -415,10 +667,11 @@ IP: 192.168.1.1
 ## Security Considerations
 
 - All routes require JWT authentication
+- Route-specific access control through permissions system
 - JWT tokens are stored separately and managed through a dedicated script
 - The main application can only read tokens, not modify them
 - Rate limiting is implemented to prevent API abuse
-- Sensitive configuration files (`users.json` and `genshare.json`) are not committed to version control
+- Sensitive configuration files (`users.json`, `permissions.json`, `genshare.json`, `grobid.json`, `datastet.json`) are not committed to version control
 
 ## Contributing
 

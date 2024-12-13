@@ -3,6 +3,7 @@ const express = require('express');
 const morgan = require('morgan');
 const routes = require('./routes');
 const { authenticateToken } = require('./middleware/auth');
+const { checkPermissions } = require('./middleware/permissions');
 const { httpLogger } = require('./utils/logger');
 const config = require('./config');
 
@@ -14,10 +15,11 @@ app.use(morgan('combined'));
 // Use the HTTP logger middleware
 app.use(httpLogger);
 
-// Apply authentication to all routes except the root
-app.use('/', (req, res, next) => {
-  authenticateToken(req, res, next);
-});
+// Apply authentication to all routes
+app.use(authenticateToken);
+
+// Apply permissions to all routes
+app.use(checkPermissions);
 
 app.use('/', routes);
 

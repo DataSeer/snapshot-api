@@ -3,5 +3,10 @@
     "url": "http://localhost:5000/process/pdf",
     "method": "POST",
     "apiKey": "your_genshare_api_key_for_process_pdf"
+  },
+  "health": {
+    "url": "http://localhost:5000/health",
+    "method": "GET",
+    "apiKey": "your_genshare_api_key_for_process_pdf"
   }
 }

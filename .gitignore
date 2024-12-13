@@ -1,8 +1,7 @@
 node_modules/
 uploads/
 .env
-conf/users.json
-conf/genshare.json
+conf/*.json
 tmp/
 
 log/*.log

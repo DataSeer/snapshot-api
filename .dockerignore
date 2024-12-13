@@ -1,6 +1,6 @@
 .env
-conf/users.json
-conf/genshare.json
+
+conf/*.json
 
 node_modules/
 

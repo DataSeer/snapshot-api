@@ -1,0 +1,46 @@
+{
+  "routes": {
+    "/": {
+      "GET": {
+        "description": "Get all available API routes",
+        "allowed": [],
+        "blocked": []
+      }
+    },
+    "/processPDF": {
+      "POST": {
+        "description": "Process a PDF file",
+        "allowed": [],
+        "blocked": []
+      }
+    },
+    "/ping": {
+      "GET": {
+        "description": "Get status of all Snapshot services",
+        "allowed": ["admin"],
+        "blocked": []
+      }
+    },
+    "/genshare/health": {
+      "GET": {
+        "description": "Get status of GenShare services",
+        "allowed": ["admin"],
+        "blocked": []
+      }
+    },
+    "/grobid/health": {
+      "GET": {
+        "description": "Get status of GROBID services",
+        "allowed": ["admin"],
+        "blocked": []
+      }
+    },
+    "/datastet/health": {
+      "GET": {
+        "description": "Get status of DataStet services",
+        "allowed": ["admin"],
+        "blocked": []
+      }
+    }
+  }
+}
