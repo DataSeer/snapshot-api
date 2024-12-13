@@ -166,7 +166,8 @@ exports.processPDF = async (req, res) => {
     // Add options with decision_tree_path for the request only
     const requestOptions = {
       ...options,
-      decision_tree_path: true
+      decision_tree_path: true,
+      debug: true
     };
     formData.append('options', JSON.stringify(requestOptions));
 
