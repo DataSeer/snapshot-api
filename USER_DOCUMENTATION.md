@@ -203,6 +203,11 @@ fetch('https://snapshot.dataseer.ai/processPDF', {
       "value": [
         "https://github.com/Hadi-Khorrami"
       ]
+    },
+    {
+        "name": "cumulated_score",
+        "description": "Cumulated score from snapshot",
+        "value": 0
     }
   ]
 }
