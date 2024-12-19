@@ -11,15 +11,25 @@ const processPDFConfig = genshareConfig.processPDF;
 const healthConfig = genshareConfig.health;
 
 const getPath = (path = []) => {
-  let defaultResult = ["","","","","","","","","","","","","","","","","","","","","","",""];
+  let headers = [
+      "A", "B", "C", "C Score", "D", "E", "E Score", "F", "F Score",
+      "G", "G Score", "H", "I", "J", "K", "L", "M", "N", "O", "P",
+      "P Score", "Q", "Q Score", "R", "R Score", "S", "S Score",
+      "T", "T Score", "U", "U Score", "V", "SnapShot Score"
+  ];
+  let defaultResult = Array(headers.length).fill('');
   if (!Array.isArray(path) || path.length !== 2) return defaultResult;
   let data = path[1];
   let result = data.split(',');
-  // Score is stored at the end of the result
-  result[result.length - 1] = parseInt(result[result.length - 1]);
-  if (isNaN(result[result.length - 1])) return defaultResult;
-  // Do no keep the n-1 & n-2 element
-  result.splice(-3, 2);
+  // Convert "Score" to integer if possible
+  if (result.length === headers.length) {
+    for (let i = 0; i < headers.length; i++) {
+      if (headers[i].indexOf("Score") > -1) {
+        let parsedScore = parseInt(result[i]);
+        if (!isNaN(parsedScore)) result[i] = parsedScore;
+      }
+    }
+  }
   return result;
 };
 
