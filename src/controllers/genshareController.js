@@ -44,7 +44,7 @@ const getResponse = (response = []) => {
     "warrant_generalist": 5,
     "data_specialist": 6,
     "warrant_specialist": 7,
-    "non": 8,
+    "non-functional_urls": 8,
     "computer_gen": 9,
     "computer_si": 10,
     "computer_online": 11,
