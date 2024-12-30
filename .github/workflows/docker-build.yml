@@ -40,5 +40,5 @@ jobs:
           context: .
           push: true
           tags: |
-            your-dockerhub-username/repo-name:${{ steps.branch_to_tag.outputs.tag_prefix }}-${{ github.sha }}
-            your-dockerhub-username/repo-name:${{ steps.branch_to_tag.outputs.tag_prefix }}-latest
+            ${{ vars.DOCKER_HUB_REGISTRY }}/${{ github.repository }}:${{ steps.branch_to_tag.outputs.tag_prefix }}-${{ github.sha }}
+            ${{ vars.DOCKER_HUB_REGISTRY }}/${{ github.repository }}:${{ steps.branch_to_tag.outputs.tag_prefix }}-latest
