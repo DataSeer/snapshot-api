@@ -30,7 +30,7 @@ async function appendToSheet(data) {
   }
 }
 
-function convertToGoogleSheetsDate(jsDate) {
+function convertToGoogleSheetsDateTime(jsDate) {
     if (!(jsDate instanceof Date)) {
         throw new Error('Input must be a valid JavaScript Date object');
     }
@@ -39,9 +39,12 @@ function convertToGoogleSheetsDate(jsDate) {
     // getMonth() returns 0-11, but DATE() formula needs 1-12
     const month = jsDate.getMonth() + 1;
     const day = jsDate.getDate();
-    
-    // Return the Google Sheets DATE formula string
-    return `=DATE(${year},${month},${day})`;
+    const hours = jsDate.getHours();
+    const minutes = jsDate.getMinutes();
+    const seconds = jsDate.getSeconds();
+
+    // Return the Google Sheets DATE and TIME formula string
+    return `=DATE(${year},${month},${day}) + TIME(${hours},${minutes},${seconds})`;
 }
 
-module.exports = { appendToSheet, convertToGoogleSheetsDate };
+module.exports = { appendToSheet, convertToGoogleSheetsDateTime };

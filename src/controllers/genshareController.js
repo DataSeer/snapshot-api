@@ -4,7 +4,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 const config = require('../config');
 const { ProcessingSession } = require('../utils/s3Storage');
-const { appendToSheet, convertToGoogleSheetsDate } = require('../utils/googleSheets');
+const { appendToSheet, convertToGoogleSheetsDateTime } = require('../utils/googleSheets');
 
 const genshareConfig = require(config.genshareConfigPath);
 const processPDFConfig = genshareConfig.processPDF;
@@ -78,7 +78,7 @@ const appendToSummary = async ({ session, errorStatus, req }) => {
       await appendToSheet([
         `=HYPERLINK("${session.url}","${session.requestId}")`, // Query ID with S3 link
         errorStatus,                                           // Error status
-        convertToGoogleSheetsDate(new Date()),                 // Date
+        convertToGoogleSheetsDateTime(new Date()),                 // Date
         req.user.id,                                           // User ID
         filename                                               // PDF filename or "No file"
       ].concat(response).concat(path));
