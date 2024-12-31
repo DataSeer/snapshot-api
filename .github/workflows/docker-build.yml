@@ -39,11 +39,19 @@ jobs:
             echo "tag_prefix=unknown" >> $GITHUB_OUTPUT
           fi
 
+      - name: Extract repository name and short commit ID
+        id: extract_repo
+        run: |
+          REPO_NAME=$(echo "${{ github.repository }}" | awk -F '/' '{print $2}' | tr '[:upper:]' '[:lower:]')
+          SHORT_COMMIT_ID=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "repo_name=${REPO_NAME}" >> $GITHUB_OUTPUT
+          echo "short_commit_id=${SHORT_COMMIT_ID}" >> $GITHUB_OUTPUT
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ github.repository }}:${{ steps.branch_to_tag.outputs.tag_prefix }}-${{ github.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ github.repository }}:${{ steps.branch_to_tag.outputs.tag_prefix }}-latest
+            ${{ steps.login-ecr.outputs.registry }}/${{ steps.extract_repo.outputs.repo_name }}:${{ steps.branch_to_tag.outputs.tag_prefix }}-${{ steps.extract_repo.outputs.short_commit_id }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ steps.extract_repo.outputs.repo_name }}:${{ steps.branch_to_tag.outputs.tag_prefix }}-latest
