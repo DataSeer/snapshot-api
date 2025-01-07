@@ -30,7 +30,7 @@ async function appendToSheet(data) {
   }
 }
 
-function convertToGoogleSheetsDateTime(jsDate) {
+function convertToGoogleSheetsDate(jsDate) {
     if (!(jsDate instanceof Date)) {
         throw new Error('Input must be a valid JavaScript Date object');
     }
@@ -39,12 +39,38 @@ function convertToGoogleSheetsDateTime(jsDate) {
     // getMonth() returns 0-11, but DATE() formula needs 1-12
     const month = jsDate.getMonth() + 1;
     const day = jsDate.getDate();
+
+    // Return the Google Sheets DATE and TIME formula string
+    return `=DATE(${year},${month},${day})`;
+}
+
+function convertToGoogleSheetsTime(jsDate) {
+    if (!(jsDate instanceof Date)) {
+        throw new Error('Input must be a valid JavaScript Date object');
+    }
+
     const hours = jsDate.getHours();
     const minutes = jsDate.getMinutes();
     const seconds = jsDate.getSeconds();
 
     // Return the Google Sheets DATE and TIME formula string
-    return `=DATE(${year},${month},${day}) + TIME(${hours},${minutes},${seconds})`;
+    return `=TIME(${hours},${minutes},${seconds})`;
 }
 
-module.exports = { appendToSheet, convertToGoogleSheetsDateTime };
+function convertToGoogleSheetsDuration(milliseconds) {
+    if (typeof milliseconds !== 'number' || milliseconds < 0) {
+        throw new Error('Input must be a non-negative number representing milliseconds');
+    }
+
+    // Convert milliseconds to hours, minutes, and seconds
+    const hours = Math.floor(milliseconds / 3600000); // 1 hour = 3600000 milliseconds
+    milliseconds %= 3600000;
+    const minutes = Math.floor(milliseconds / 60000); // 1 minute = 60000 milliseconds
+    milliseconds %= 60000;
+    const seconds = Math.floor(milliseconds / 1000); // 1 second = 1000 milliseconds
+
+    // Return the Google Sheets TIME formula string
+    return `=TIME(${hours},${minutes},${seconds})`;
+}
+
+module.exports = { appendToSheet, convertToGoogleSheetsDate, convertToGoogleSheetsTime, convertToGoogleSheetsDuration };
