@@ -1,9 +1,8 @@
-name: Docker Build
+name: Docker Build (Push Branches)
 
 on:
   push:
     branches:
-      - main
       - dev
 
 jobs:
@@ -28,17 +27,6 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Map branch to tag prefix
-        id: branch_to_tag
-        run: |
-          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
-            echo "tag_prefix=prod" >> $GITHUB_OUTPUT
-          elif [[ "$GITHUB_REF" == "refs/heads/dev" ]]; then
-            echo "tag_prefix=dev" >> $GITHUB_OUTPUT
-          else
-            echo "tag_prefix=unknown" >> $GITHUB_OUTPUT
-          fi
-
       - name: Extract repository name and short commit ID
         id: extract_repo
         run: |
@@ -53,5 +41,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ steps.extract_repo.outputs.repo_name }}:${{ steps.branch_to_tag.outputs.tag_prefix }}-${{ steps.extract_repo.outputs.short_commit_id }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ steps.extract_repo.outputs.repo_name }}:${{ steps.branch_to_tag.outputs.tag_prefix }}-latest
+            ${{ steps.login-ecr.outputs.registry }}/${{ steps.extract_repo.outputs.repo_name }}:dev-${{ steps.extract_repo.outputs.short_commit_id }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ steps.extract_repo.outputs.repo_name }}:dev-latest
