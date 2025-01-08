@@ -1,9 +1,9 @@
-name: Docker Build (Push Branches)
+name: Docker Build (Tag)
 
 on:
   push:
-    branches:
-      - dev
+    tags:
+      - 'v*'  # Only trigger on tags that start with "v"
 
 jobs:
   build:
@@ -27,13 +27,13 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Extract repository name and short commit ID
+      - name: Extract repository name and tag
         id: extract_repo
         run: |
           REPO_NAME=$(echo "${{ github.repository }}" | awk -F '/' '{print $2}' | tr '[:upper:]' '[:lower:]')
-          SHORT_COMMIT_ID=$(echo "${{ github.sha }}" | cut -c1-7)
+          TAG=${GITHUB_REF#refs/tags/}
           echo "repo_name=${REPO_NAME}" >> $GITHUB_OUTPUT
-          echo "short_commit_id=${SHORT_COMMIT_ID}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -41,5 +41,4 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ steps.extract_repo.outputs.repo_name }}:dev-${{ steps.extract_repo.outputs.short_commit_id }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ steps.extract_repo.outputs.repo_name }}:dev-latest
+            ${{ steps.login-ecr.outputs.registry }}/${{ steps.extract_repo.outputs.repo_name }}:${{ steps.extract_repo.outputs.tag }}
