@@ -11,7 +11,7 @@
 
 This document provides detailed information about the available endpoints in
 the [Snapshot API](https://snapshot.dataseer.ai) (hosted on [snapshot.dataseer.ai](https://snapshot.dataseer.ai)).
-The API expects to receive one PDF document for each request, along with, requred parameters and an authentication
+The API expects to receive one PDF document for each request, along with, required parameters and an authentication
 token, and it returns a JSON response with the computed OSI scores and other relevant information.
 
 ## Authentication
@@ -23,8 +23,8 @@ The API tokens must be included in each requests `Authorization header`:
 Authorization: Bearer <your_token>
 ```
 
-Should you need an API token or have issues with authentication, please contact the DataSeer support (support@dataseer.ai). Each API token is
-bounded to a specific user and API throughput limits of 100 request each 15 minutes.
+Should you need an API token or have issues with authentication, please contact DataSeer support (support@dataseer.ai). Each API token is
+bounded to a specific user.
 
 ## API Endpoints
 
@@ -228,5 +228,5 @@ The API uses standard HTTP status codes to indicate the success or failure of re
 | `document_type` is not supplied                                                                                                                        | 400        | Missing document type. It is a required information to be supplied as field 'document_type' of the parameter 'options'. Check the documentation for more information.                                                                                                  |
 | `document_type` is supplied but invalid: empty, null or of a non-acceptable type                                                                       | 400        | The supplied document type is empty or null. It is a required information to be supplied as field 'document_type' of the parameter 'options'. Check the documentation for more information.                                                                            |
 | `document_type` is supplied but indicate a document that type that is not supported                                                                    | 400        | The SnapShot tool does not support this type of document. Check the documentation for more information.                                                                                                                                                                |
-| `supplementary_files` are not JSON well formed                                                                                                         | 400        | The supplementary file list cannot be parsed as a JSON object.                                                                                                                                                                                                         |
+| `supplementary_files` are not well formed JSON                                                                                                         | 400        | The supplementary file list cannot be parsed as a JSON object.                                                                                                                                                                                                         |
 
