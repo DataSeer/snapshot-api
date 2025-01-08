@@ -23,7 +23,7 @@ The API tokens must be included in each requests `Authorization header`:
 Authorization: Bearer <your_token>
 ```
 
-Should you need an API token or have issues with authentication, please contact the DataSeer support. Each API token is
+Should you need an API token or have issues with authentication, please contact the DataSeer support (support@dataseer.ai). Each API token is
 bounded to a specific user and API throughput limits of 100 request each 15 minutes.
 
 ## API Endpoints
