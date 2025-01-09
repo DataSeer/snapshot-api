@@ -5,11 +5,6 @@ on:
     workflows: ["ESLint"]
     types:
       - completed
-    branches:
-      - dev
-  push:
-    branches:
-      - dev
   pull_request:
     types:
       - closed
@@ -19,9 +14,10 @@ on:
 jobs:
   build:
     if: |
-      github.event.workflow_run.conclusion == 'success'
-      github.event_name == 'push' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
+      (github.event_name == 'workflow_run' && 
+       github.event.workflow_run.conclusion == 'success' && 
+       github.event.workflow_run.head_branch == 'dev')
     runs-on: ubuntu-latest
 
     steps:
