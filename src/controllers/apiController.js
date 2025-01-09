@@ -2,7 +2,7 @@
 const packageJson = require('../../package.json');
 const { getPermissions } = require('../utils/permissionsManager');
 
-exports.getApiRoutes = (req, res) => {
+module.exports.getApiRoutes = (req, res) => {
   const permissionsConfig = getPermissions();
   const userId = req.user?.id;
 

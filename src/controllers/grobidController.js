@@ -5,7 +5,7 @@ const config = require('../config');
 const grobidConfig = require(config.grobidConfigPath);
 const healthConfig = grobidConfig.health;
 
-exports.getGrobidHealth = async (req, res) => {
+module.exports.getGrobidHealth = async (req, res) => {
   try {
     const response = await axios({
       method: healthConfig.method,

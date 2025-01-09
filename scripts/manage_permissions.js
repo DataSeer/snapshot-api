@@ -101,25 +101,30 @@ function main() {
   const command = args[0];
 
   switch (command) {
-    case 'add':
+    case 'add': {
       const [path, method] = args.slice(1, 3);
       const allowed = args[3] ? JSON.parse(args[3]) : [];
       const blocked = args[4] ? JSON.parse(args[4]) : [];
       addRoute(path, method, allowed, blocked);
       break;
-    case 'remove':
+    }
+    case 'remove': {
       removeRoute(args[1], args[2]);
       break;
-    case 'allow':
+    }
+    case 'allow': {
       allowUser(args[1], args[2], args[3]);
       break;
-    case 'block':
+    }
+    case 'block': {
       blockUser(args[1], args[2], args[3]);
       break;
-    case 'list':
+    }
+    case 'list': {
       listRoutes();
       break;
-    default:
+    }
+    default: {
       console.log('Usage: node manage_permissions.js <command> [options]');
       console.log('Commands:');
       console.log('  add <path> <method> [allowed] [blocked]    Add a new route');
@@ -133,6 +138,7 @@ function main() {
       console.log('  node manage_permissions.js allow /api/data GET user4');
       console.log('  node manage_permissions.js block /api/data GET user5');
       console.log('  node manage_permissions.js remove /api/data GET');
+    }
   }
 }
 

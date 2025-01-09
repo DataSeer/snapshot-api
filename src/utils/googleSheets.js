@@ -1,6 +1,7 @@
 // File: src/utils/googleSheets.js
 const path = require('path');
 const { google } = require('googleapis');
+// eslint-disable-next-line node/no-unpublished-require
 const config = require('../../conf/googleSheets.json');
 
 // Initialize the Sheets API client

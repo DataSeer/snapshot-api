@@ -93,7 +93,7 @@ const appendToSummary = async ({ session, errorStatus, req }) => {
     }
 };
 
-exports.getGenShareHealth = async (req, res) => {
+module.exports.getGenShareHealth = async (req, res) => {
   try {
     const response = await axios({
       method: healthConfig.method,
@@ -117,7 +117,7 @@ exports.getGenShareHealth = async (req, res) => {
   }
 };
 
-exports.processPDF = async (req, res) => {
+module.exports.processPDF = async (req, res) => {
   // Initialize processing session
   const session = new ProcessingSession(req.user.id, req.file);
   let errorStatus = "No"; // Initialize error status
@@ -237,10 +237,8 @@ exports.processPDF = async (req, res) => {
     await appendToSummary({ session, errorStatus, req });
 
     // Clean up temporary file
-    fs.unlink(req.file.path, (err) => {
-      if (err) {
-        console.error('Error deleting temporary file:', err);
-      }
+    await fs.promises.unlink(req.file.path).catch(err => {
+      console.error('Error deleting temporary file:', err);
     });
 
     // Forward modified response to client
@@ -273,8 +271,8 @@ exports.processPDF = async (req, res) => {
 
     // Clean up temporary file if it exists
     if (req.file && req.file.path) {
-      fs.unlink(req.file.path, (err) => {
-        if (err) console.error('Error deleting temporary file:', err);
+      await fs.promises.unlink(req.file.path).catch(err => {
+        console.error('Error deleting temporary file:', err);
       });
     }
     

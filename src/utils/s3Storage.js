@@ -2,9 +2,9 @@
 const AWS = require('aws-sdk');
 const crypto = require('crypto');
 const fs = require('fs');
-const path = require('path');
 
 // Load S3 configuration from JSON file
+// eslint-disable-next-line node/no-unpublished-require
 const s3Config = require('../../conf/aws.s3.json');
 
 // Initialize S3 client
