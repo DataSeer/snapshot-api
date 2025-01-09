@@ -1,4 +1,5 @@
 // File: src/controllers/genshareController.js
+const packageJson = require('../../package.json');
 const fs = require('fs');
 const axios = require('axios');
 const FormData = require('form-data');
@@ -79,6 +80,8 @@ const appendToSummary = async ({ session, errorStatus, req }) => {
       // Log to Google Sheets
       await appendToSheet([
         `=HYPERLINK("${session.url}","${session.requestId}")`, // Query ID with S3 link
+        session.getSnapshotAPIVersion(),                       // Snapshot API version
+        session.getGenshareVersion(),                          // GenShare version
         errorStatus,                                           // Error status
         convertToGoogleSheetsDate(now),                        // Date
         convertToGoogleSheetsTime(now),                        // Time
@@ -120,6 +123,8 @@ module.exports.getGenShareHealth = async (req, res) => {
 module.exports.processPDF = async (req, res) => {
   // Initialize processing session
   const session = new ProcessingSession(req.user.id, req.file);
+  session.setSnapshotAPIVersion(`v${packageJson.version}`);
+  session.setGenshareVersion("");
   let errorStatus = "No"; // Initialize error status
   
   try {
