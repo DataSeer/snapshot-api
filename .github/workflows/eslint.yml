@@ -13,16 +13,6 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/eslint.yml'
-  pull_request:
-    branches:
-      - dev
-    paths:
-      - '**.js'
-      - '.eslintrc.*'
-      - '.eslintignore'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/eslint.yml'
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
