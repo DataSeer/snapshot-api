@@ -1,23 +1,20 @@
 name: Docker Build (Dev)
 
 on:
+  push:
+    branches:
+      - dev
   workflow_run:
     workflows: ["ESLint"]
     types:
       - completed
-  pull_request:
-    types:
-      - closed
-    branches:
-      - dev
 
 jobs:
   build:
     if: |
-      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
+      github.event_name == 'push' ||
       (github.event_name == 'workflow_run' && 
-       github.event.workflow_run.conclusion == 'success' && 
-       github.event.workflow_run.head_branch == 'dev')
+       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
 
     steps:
