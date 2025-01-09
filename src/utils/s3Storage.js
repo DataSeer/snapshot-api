@@ -2,9 +2,9 @@
 const AWS = require('aws-sdk');
 const crypto = require('crypto');
 const fs = require('fs');
-const path = require('path');
 
 // Load S3 configuration from JSON file
+// eslint-disable-next-line node/no-unpublished-require
 const s3Config = require('../../conf/aws.s3.json');
 
 // Initialize S3 client
@@ -69,6 +69,8 @@ class ProcessingSession {
     this.logs = [];
     this.response = null;
     this.startTime = new Date();
+    this.endTime = null;
+    this.duration = -1;
     
     // Add initial log with session start
     this.addLog('Session started', 'INFO');
@@ -94,9 +96,9 @@ class ProcessingSession {
   async saveToS3() {
     try {
       // Add session end time to logs
-      const endTime = new Date();
-      const duration = endTime - this.startTime;
-      this.addLog(`Session ended - Duration: ${duration}ms`, 'INFO');
+      this.endTime = new Date();
+      this.duration = this.endTime - this.startTime;
+      this.addLog(`Session ended - Duration: ${this.duration}ms`, 'INFO');
 
       // Prepare files for batch upload
       const filesToUpload = [];
@@ -132,8 +134,8 @@ class ProcessingSession {
       // Prepare process metadata
       const processMetadata = {
         startDate: formatLogDate(this.startTime),
-        endDate: formatLogDate(endTime),
-        duration: `${duration}ms`,
+        endDate: formatLogDate(this.endTime),
+        duration: `${this.duration}ms`,
         hasFile: !!this.file
       };
 

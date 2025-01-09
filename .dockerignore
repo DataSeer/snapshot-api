@@ -1,5 +1,7 @@
 .env
 
+.git
+
 conf/*.json
 
 node_modules/

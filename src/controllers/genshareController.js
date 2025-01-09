@@ -4,22 +4,32 @@ const axios = require('axios');
 const FormData = require('form-data');
 const config = require('../config');
 const { ProcessingSession } = require('../utils/s3Storage');
-const { appendToSheet, convertToGoogleSheetsDate } = require('../utils/googleSheets');
+const { appendToSheet, convertToGoogleSheetsDate, convertToGoogleSheetsTime, convertToGoogleSheetsDuration } = require('../utils/googleSheets');
 
 const genshareConfig = require(config.genshareConfigPath);
 const processPDFConfig = genshareConfig.processPDF;
 const healthConfig = genshareConfig.health;
 
 const getPath = (path = []) => {
-  let defaultResult = ["","","","","","","","","","","","","","","","","","","","","","",""];
+  let headers = [
+      "A", "B", "C", "C Score", "D", "E", "E Score", "F", "F Score",
+      "G", "G Score", "H", "I", "J", "K", "L", "M", "N", "O", "P",
+      "P Score", "Q", "Q Score", "R", "R Score", "S", "S Score",
+      "T", "T Score", "U", "U Score", "V", "SnapShot Score"
+  ];
+  let defaultResult = Array(headers.length).fill('');
   if (!Array.isArray(path) || path.length !== 2) return defaultResult;
   let data = path[1];
   let result = data.split(',');
-  // Score is stored at the end of the result
-  result[result.length - 1] = parseInt(result[result.length - 1]);
-  if (isNaN(result[result.length - 1])) return defaultResult;
-  // Do no keep the n-1 & n-2 element
-  result.splice(-3, 2);
+  // Convert "Score" to integer if possible
+  if (result.length === headers.length) {
+    for (let i = 0; i < headers.length; i++) {
+      if (headers[i].indexOf("Score") > -1) {
+        let parsedScore = parseInt(result[i]);
+        if (!isNaN(parsedScore)) result[i] = parsedScore;
+      }
+    }
+  }
   return result;
 };
 
@@ -34,7 +44,7 @@ const getResponse = (response = []) => {
     "warrant_generalist": 5,
     "data_specialist": 6,
     "warrant_specialist": 7,
-    "non": 8,
+    "non-functional_urls": 8,
     "computer_gen": 9,
     "computer_si": 10,
     "computer_online": 11,
@@ -64,11 +74,15 @@ const appendToSummary = async ({ session, errorStatus, req }) => {
       let response = getResponse(session.response?.data?.response);
       // Get the Path info
       let path = getPath(session.response?.data?.path);
+      // Current date
+      const now = new Date()
       // Log to Google Sheets
       await appendToSheet([
         `=HYPERLINK("${session.url}","${session.requestId}")`, // Query ID with S3 link
         errorStatus,                                           // Error status
-        convertToGoogleSheetsDate(new Date()),                 // Date
+        convertToGoogleSheetsDate(now),                        // Date
+        convertToGoogleSheetsTime(now),                        // Time
+        convertToGoogleSheetsDuration(session.duration),       // Session duration
         req.user.id,                                           // User ID
         filename                                               // PDF filename or "No file"
       ].concat(response).concat(path));
@@ -79,7 +93,7 @@ const appendToSummary = async ({ session, errorStatus, req }) => {
     }
 };
 
-exports.getGenShareHealth = async (req, res) => {
+module.exports.getGenShareHealth = async (req, res) => {
   try {
     const response = await axios({
       method: healthConfig.method,
@@ -103,7 +117,7 @@ exports.getGenShareHealth = async (req, res) => {
   }
 };
 
-exports.processPDF = async (req, res) => {
+module.exports.processPDF = async (req, res) => {
   // Initialize processing session
   const session = new ProcessingSession(req.user.id, req.file);
   let errorStatus = "No"; // Initialize error status
@@ -223,10 +237,8 @@ exports.processPDF = async (req, res) => {
     await appendToSummary({ session, errorStatus, req });
 
     // Clean up temporary file
-    fs.unlink(req.file.path, (err) => {
-      if (err) {
-        console.error('Error deleting temporary file:', err);
-      }
+    await fs.promises.unlink(req.file.path).catch(err => {
+      console.error('Error deleting temporary file:', err);
     });
 
     // Forward modified response to client
@@ -259,8 +271,8 @@ exports.processPDF = async (req, res) => {
 
     // Clean up temporary file if it exists
     if (req.file && req.file.path) {
-      fs.unlink(req.file.path, (err) => {
-        if (err) console.error('Error deleting temporary file:', err);
+      await fs.promises.unlink(req.file.path).catch(err => {
+        console.error('Error deleting temporary file:', err);
       });
     }
     

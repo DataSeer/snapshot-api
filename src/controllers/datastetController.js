@@ -5,7 +5,7 @@ const config = require('../config');
 const datastetConfig = require(config.datastetConfigPath);
 const healthConfig = datastetConfig.health;
 
-exports.getDatastetHealth = async (req, res) => {
+module.exports.getDatastetHealth = async (req, res) => {
   try {
     const response = await axios({
       method: healthConfig.method,

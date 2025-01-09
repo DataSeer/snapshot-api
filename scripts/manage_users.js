@@ -91,24 +91,29 @@ function main() {
   const userId = args[1] || uuidv4();
 
   switch (command) {
-    case 'add':
+    case 'add': {
       const rateLimit = args[2] ? JSON.parse(args[2]) : undefined;
       addUser(userId, rateLimit);
       break;
-    case 'remove':
+    }
+    case 'remove': {
       removeUser(userId);
       break;
-    case 'refresh-token':
+    }
+    case 'refresh-token': {
       refreshToken(userId);
       break;
-    case 'update-limit':
+    }
+    case 'update-limit': {
       const newRateLimit = JSON.parse(args[2]);
       updateUserRateLimit(userId, newRateLimit);
       break;
-    case 'list':
+    }
+    case 'list': {
       listUsers();
       break;
-    default:
+    }
+    default: {
       console.log('Usage: node manage_users.js <command> [userId] [options]');
       console.log('Commands:');
       console.log('  add [userId] [rateLimit]     Add a new user');
@@ -121,6 +126,7 @@ function main() {
       console.log('  node manage_users.js add user123 \'{"max": 200, "windowMs": 900000}\'');
       console.log('  node manage_users.js refresh-token user123');
       console.log('  node manage_users.js update-limit user123 \'{"max": 300}\'');
+    }
   }
 }
 

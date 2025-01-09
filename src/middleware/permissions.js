@@ -5,7 +5,7 @@ const normalizeUrl = (url) => {
     return url === '/' ? url : url.replace(/\/$/, '');
 };
 
-exports.checkPermissions = (req, res, next) => {
+module.exports.checkPermissions = (req, res, next) => {
     const permissionsConfig = getPermissions();
     const path = normalizeUrl(req.path);
     const method = req.method;
