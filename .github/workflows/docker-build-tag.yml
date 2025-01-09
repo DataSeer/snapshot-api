@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    needs: lint  # Reference the lint job from eslint.yml
 
     steps:
       - name: Checkout repository
@@ -42,3 +43,4 @@ jobs:
           push: true
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ steps.extract_repo.outputs.repo_name }}:${{ steps.extract_repo.outputs.tag }}
+
