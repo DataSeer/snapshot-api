@@ -44,7 +44,9 @@ jobs:
         run: npm ci
 
       - name: Copy default config files
-        run: cp conf/*.json.default conf/*.json
+        run: |
+          mkdir -p conf
+          cp conf/*.json.default conf/*.json
 
       - name: Run ESLint
         run: npm run lint
