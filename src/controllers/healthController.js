@@ -6,7 +6,7 @@ const genshareConfig = require(config.genshareConfigPath);
 const grobidConfig = require(config.grobidConfigPath);
 const datastetConfig = require(config.datastetConfigPath);
 
-const checkHealth = async (config, serviceName) => {
+const checkHealth = async (config) => {
   const request = `${config.health.method.toUpperCase()} ${config.health.url}`;
   
   try {
@@ -37,12 +37,12 @@ const checkHealth = async (config, serviceName) => {
   }
 };
 
-exports.getPing = async (req, res) => {
+module.exports.getPing = async (req, res) => {
   try {
     const [genshareResult, grobidResult, datastetResult] = await Promise.all([
-      checkHealth(genshareConfig, 'genshare'),
-      checkHealth(grobidConfig, 'grobid'),
-      checkHealth(datastetConfig, 'datastet')
+      checkHealth(genshareConfig),
+      checkHealth(grobidConfig),
+      checkHealth(datastetConfig)
     ]);
 
     const allHealthy = [genshareResult, grobidResult, datastetResult]
