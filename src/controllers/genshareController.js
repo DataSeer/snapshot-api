@@ -124,7 +124,6 @@ module.exports.processPDF = async (req, res) => {
   // Initialize processing session
   const session = new ProcessingSession(req.user.id, req.file);
   session.setSnapshotAPIVersion(`v${packageJson.version}`);
-  session.setGenshareVersion("");
   let errorStatus = "No"; // Initialize error status
   
   try {
@@ -233,6 +232,8 @@ module.exports.processPDF = async (req, res) => {
     if (response.data && typeof response.data === 'object') {
       filteredData = { response: response.data.response };
     }
+
+    session.setGenshareVersion(`v${response.data.version}`);
 
     // Save session data and clean up
     session.addLog('Response processing completed');
