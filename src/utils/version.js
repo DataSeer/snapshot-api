@@ -1,4 +1,4 @@
-// src/utils/version.js
+// File: src/utils/version.js
 const semver = require('semver');
 
 const VERSION_REGEX = /^v\d+\.\d+\.\d+$/;
