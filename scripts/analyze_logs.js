@@ -1,3 +1,4 @@
+// File: scripts/manage_permissions.js
 const fs = require('fs');
 const readline = require('readline');
 const path = require('path');

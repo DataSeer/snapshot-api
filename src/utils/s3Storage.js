@@ -3,6 +3,8 @@ const AWS = require('aws-sdk');
 const crypto = require('crypto');
 const fs = require('fs');
 
+const { isValidVersion } = require('./version');
+
 // Load S3 configuration from JSON file
 // eslint-disable-next-line node/no-unpublished-require
 const s3Config = require('../../conf/aws.s3.json');
@@ -71,12 +73,42 @@ class ProcessingSession {
     this.startTime = new Date();
     this.endTime = null;
     this.duration = -1;
+    this.snapshotAPIVersion = "";
+    this.genshareVersion = "";
     
     // Add initial log with session start
     this.addLog('Session started', 'INFO');
     if (!file) {
       this.addLog('No file provided in this session', 'INFO');
     }
+  }
+
+  getSnapshotAPIVersion() {
+    return this.snapshotAPIVersion;
+  }
+
+  getGenshareVersion() {
+    return this.genshareVersion;
+  }
+
+  setSnapshotAPIVersion(version) {
+    if (!isValidVersion(version)) {
+      this.snapshotAPIVersion = '';
+      this.addLog(`Invalid Snapshot API Version format: ${version}. Setting empty string.`, 'WARN');
+      return;
+    }
+    this.snapshotAPIVersion = version;
+    this.addLog(`Snapshot API Version set to: ${version}`, 'INFO');
+  }
+
+  setGenshareVersion(version) {
+    if (!isValidVersion(version)) {
+      this.genshareVersion = '';
+      this.addLog(`Invalid Genshare Version format: ${version}. Setting empty string.`, 'WARN');
+      return;
+    }
+    this.genshareVersion = version;
+    this.addLog(`Genshare Version set to: ${version}`, 'INFO');
   }
 
   getBasePath() {
@@ -136,7 +168,9 @@ class ProcessingSession {
         startDate: formatLogDate(this.startTime),
         endDate: formatLogDate(this.endTime),
         duration: `${this.duration}ms`,
-        hasFile: !!this.file
+        hasFile: !!this.file,
+        snapshotAPIVersion: this.snapshotAPIVersion,
+        genshareVersion: this.genshareVersion
       };
 
       // Add common files that don't depend on this.file
