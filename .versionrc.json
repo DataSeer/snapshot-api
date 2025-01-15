@@ -13,7 +13,7 @@
   ],
   "commitUrlFormat": "https://github.com/DataSeer/snapshot-api/commits/{{hash}}",
   "compareUrlFormat": "https://github.com/DataSeer/snapshot-api/compare/{{previousTag}}...{{currentTag}}",
-  "releaseCommitMessageFormat": "chore(release): {{currentTag}} [skip ci]",
+  "releaseCommitMessageFormat": "chore(release): {{currentTag}}",
   "skip": {
     "bump": false,
     "changelog": false,
