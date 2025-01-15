@@ -1,682 +1,358 @@
-# Snapshot API 
+# Snapshot API
 
-The Snapshot API allow processing of PDF documents through a verification system in respect of the OSI (Open Science Indicators). 
-This project provides a Node.js REST API that implements JWT authentication and integrates with the DataSeer AI "Genshare" API for PDF processing. It features user-specific rate limiting, script-based user management, secure token handling, S3 storage for request data, and Google Sheets integration for summary logging.
+A Node.js REST API for processing PDF documents through OSI (Open Science Indicators) verification system. It integrates with DataSeer AI "Genshare" API, featuring JWT authentication, user-specific rate limiting, S3 storage for request data, and Google Sheets integration for summary logging.
 
 ## Table of Contents
 
-1. [Features](#features)
-2. [Prerequisites](#prerequisites)
-3. [Installation](#installation)
-   - [Using Docker](#using-docker)
-   - [Direct Installation](#direct-installation)
-4. [Usage](#usage)
-   - [Starting the Server](#starting-the-server)
-   - [Managing Users](#managing-users)
-   - [Permissions Management](#permissions-management)
-   - [API Endpoints](#api-endpoints)
-5. [Health Monitoring](#health-monitoring)
-   - [Health Endpoints](#health-endpoints)
-   - [Health Response Format](#health-response-format)
-   - [Health Status Codes](#health-status-codes)
-   - [Health Configuration](#health-configuration)
-6. [Error Handling](#error-handling)
-   - ["file" Errors](#file-errors)
-   - ["options" Errors](#options-errors)
-7. [GenShare Response](#genshare-response)
-8. [Authentication](#authentication)
-   - [Token Management](#token-management)
-   - [Token Lifecycle](#token-lifecycle)
-   - [User Management Commands](#user-management-commands)
-   - [Security Features](#security-features)
-9. [S3 Storage](#s3-storage)
-   - [Storage Structure](#storage-structure)
-   - [Stored Data](#stored-data)
-   - [Configuration](#s3-configuration)
-   - [Process Session](#process-session)
-10. [Google Sheets Integration](#google-sheets-integration)
-    - [Summary Sheet Structure](#summary-sheet-structure)
-    - [Configuration](#sheets-configuration)
-    - [Data Logging](#data-logging)
-11. [Project Structure](#project-structure)
-12. [Configuration Files](#configuration-files)
-13. [Rate Limiting](#rate-limiting)
-14. [Logging System](#logging-system)
-    - [Log Format](#log-format)
-    - [Log Analysis](#log-analysis)
-15. [Security Considerations](#security-considerations)
-16. [Contributing](#contributing)
-17. [License](#license)
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [API Architecture](#api-architecture)
+- [Usage](#usage)
+- [Development](#development)
+- [Deployment](#deployment)
+- [Contributing](#contributing)
+- [Scripts](#scripts)
+- [Security](#security)
 
 ## Features
 
-- JWT-based authentication for all routes
-- PDF processing via Genshare API integration
+- PDF document processing via Genshare integration
+- JWT-based authentication system
+- Role-based access control
 - User-specific rate limiting
-- Script-based user and permissions management
-- Secure token handling
-- Health monitoring for all dependent services
-- Route-specific access control with allow/block lists
-- S3 storage for request and response data
-- Google Sheets integration for summary logging
+- AWS S3 storage integration
+- Google Sheets logging integration
+- Health monitoring for all services
+- Comprehensive logging system
+- Version synchronization
+- Complete request traceability
 
 ## Prerequisites
 
-- Node.js (v14+ recommended)
-- npm (comes with Node.js)
+- Node.js (>= 20.18.0)
+- Docker for containerization
+- AWS Account (ECR & S3)
+- Google Cloud Account (Sheets API)
+- Access to:
+  - GROBID service
+  - DataStet service
+  - GenShare service
 
 ## Installation
 
 ### Using Docker
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/DataSeer/snapshot-api.git
-   cd snapshot-api
-   ```
+```bash
+# Build image
+docker build -t snapshot-api .
 
-2. Build image:
-   ```bash
-   docker build -t snapshot-api .
-   ```
+# Run with default configuration
+docker run -d -p 3000:3000 --name snapshot-api snapshot-api
 
-3. Run container:
-   ```bash
-   # using default conf & env files
-   docker run -d -it -p 3000:3000 --network host --name snapshot-api-instance snapshot-api
-
-   # using custom conf & env files
-   docker run -d -it -p 3000:3000 --network host --name snapshot-api-instance -v $(pwd)/.env:/usr/src/app/.env -v $(pwd)/conf:/usr/src/app/conf -v $(pwd)/log:/usr/src/app/log snapshot-api
-   ```
-
-4. Interact with the container:
-   ```bash
-   # using default conf & env files
-   docker exec -it snapshot-api-instance /bin/bash
-   ```
+# Run with custom configuration
+docker run -d -p 3000:3000 \
+  -v $(pwd)/.env:/usr/src/app/.env \
+  -v $(pwd)/conf:/usr/src/app/conf \
+  -v $(pwd)/log:/usr/src/app/log \
+  snapshot-api
+```
 
 ### Direct Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/DataSeer/snapshot-api.git
-   cd snapshot-api
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Set up configuration:
-   - Create service configuration files in the `conf` directory:
-     ```json
-     // conf/genshare.json
-     {
-       "processPDF": {
-         "url": "http://localhost:5000/process/pdf",
-         "method": "POST",
-         "apiKey": "your_genshare_api_key"
-       },
-       "health": {
-         "url": "http://localhost:5000/health",
-         "method": "GET"
-       }
-     }
-
-     // conf/grobid.json
-     {
-       "health": {
-         "url": "http://localhost:8070/health",
-         "method": "GET"
-       }
-     }
-
-     // conf/datastet.json
-     {
-       "health": {
-         "url": "http://localhost:8080/health",
-         "method": "GET"
-       }
-     }
-     ```
-   - The `conf/users.json` file will be created automatically when you add users.
-
-4. Set environment variables:
-   - `PORT`: The port on which the server will run (default: 3000)
-   - `JWT_SECRET`: Secret key for JWT token generation and validation
-
-## Usage
-
-### Starting the Server
-
-To start the server in production mode:
-
 ```bash
-npm start
+# Clone repository
+git clone https://github.com/DataSeer/snapshot-api.git
+cd snapshot-api
+
+# Install dependencies
+npm install
+
+# Copy configuration files
+cp .env.default .env
+cp conf/*.default conf/*
 ```
 
-### Managing Users
+## Configuration
 
-Use the following command to manage users:
-
-```bash
-npm run manage-users <command> [userId] [options]
+### Environment Variables (.env)
+```env
+JWT_SECRET=your_jwt_secret_key
+PORT=3000
 ```
 
-Commands:
-- `add [userId] [rateLimit]`: Add a new user
-- `remove <userId>`: Remove a user
-- `refresh-token <userId>`: Refresh a user's token
-- `update-limit <userId> <rateLimit>`: Update a user's rate limit
-- `list`: List all users
+### Required Configuration Files
 
-Examples:
-```bash
-# Add a new user with custom rate limit
-npm run manage-users add user123 '{"max": 200, "windowMs": 900000}'
-
-# Refresh a user's token
-npm run manage-users refresh-token user123
-
-# Update a user's rate limit
-npm run manage-users update-limit user123 '{"max": 300}'
-
-# List all users
-npm run manage-users list
-
-# Remove a user
-npm run manage-users remove user123
-```
-
-Rate limits are specified as a JSON object with `max` (maximum number of requests) and `windowMs` (time window in milliseconds) properties. If not specified when adding a user, it defaults to 100 requests per 15-minute window.
-
-### Permissions Management
-
-The API includes a route-specific permissions system managed through a dedicated script:
-
-```bash
-npm run manage-permissions <command> [options]
-```
-
-Commands:
-- `add <path> <method> [allowed] [blocked]`: Add route permissions
-- `remove <path> <method>`: Remove route permissions
-- `allow <path> <method> <userId>`: Grant user access
-- `block <path> <method> <userId>`: Revoke user access
-- `list`: List all route permissions
-
-Examples:
-```bash
-# Add new route permissions
-npm run manage-permissions add /processPDF POST '["user1","user2"]' '["user3"]'
-
-# Allow user access
-npm run manage-permissions allow /processPDF POST user4
-
-# Block user access
-npm run manage-permissions block /processPDF POST user3
-
-# List all permissions
-npm run manage-permissions list
-
-# Remove route permissions
-npm run manage-permissions remove /processPDF POST
-```
-
-Access Control Rules:
-- Empty allowed list + empty blocked list: all authenticated users have access
-- Populated allowed list: only listed users have access
-- Blocked list: listed users are denied access (overrides allowed list)
-- Users not in either list: allowed if allowed list is empty, blocked if it's not
-
-### API Endpoints
-
-All API endpoints require authentication using a JWT token.
-
-- `GET /`: Get information about available API routes
-- `POST /processPDF`: Process a PDF file
-  - Form data:
-    - `file`: PDF file
-    - `options`: JSON string of processing options (must be a valid JSON object. If it's not well-formed or is not a valid JSON object, the API will return a 400 Bad Request error)
-
-For all requests, include the JWT token in the Authorization header:
-```
-Authorization: Bearer <your_token>
-```
-
-## Health Monitoring
-
-The API provides comprehensive health monitoring for all dependent services (GenShare, GROBID, and DataStet).
-
-### Health Endpoints
-
-- `GET /ping`: Check health status of all services
-  - Returns aggregated health status of all services
-  - Response includes timestamp and detailed service status
-
-- `GET /genshare/health`: Direct health check proxy to GenShare service
-  - Returns the raw response from GenShare's health endpoint
-  - Returns 500 with message "GenShare health check failed" if the request fails
-
-- `GET /grobid/health`: Direct health check proxy to GROBID service
-  - Returns the raw response from GROBID's health endpoint
-  - Returns 500 with message "Grobid health check failed" if the request fails
-
-- `GET /datastet/health`: Direct health check proxy to DataStet service
-  - Returns the raw response from DataStet's health endpoint
-  - Returns 500 with message "Datastet health check failed" if the request fails
-
-These individual health endpoints act as direct proxies to their respective services, forwarding the raw response data when successful. In case of failure, they return a 500 status code with a service-specific error message.
-
-### Health Response Format
-
-The `/ping` endpoint returns:
-
+1. Service Configuration:
 ```json
+// conf/genshare.json
 {
-  "status": "healthy" | "unhealthy" | "error",
-  "timestamp": "2024-12-02T12:00:00.000Z",
-  "services": {
-    "genshare": {
-      "err": null,
-      "request": "GET http://genshare-service/health",
-      "response": {
-        "status": 200,
-        "data": { /* service-specific health data */ }
-      }
-    },
-    "grobid": {
-      "err": null,
-      "request": "GET http://grobid-service/health",
-      "response": {
-        "status": 200,
-        "data": { /* service-specific health data */ }
-      }
-    },
-    "datastet": {
-      "err": null,
-      "request": "GET http://datastet-service/health",
-      "response": {
-        "status": 200,
-        "data": { /* service-specific health data */ }
-      }
-    }
-  }
-}
-```
-
-Individual service endpoints return raw response from their respective health endpoints.
-
-### Health Status Codes
-
-- 200: Service(s) healthy
-- 503: One or more services unhealthy
-- 500: Error occurred while checking service health
-
-### Health Configuration
-
-Each service requires health check configuration in its respective config file:
-
-```json
-{
+  "processPDF": {
+    "url": "http://localhost:5000/process/pdf",
+    "method": "POST",
+    "apiKey": "your_genshare_api_key"
+  },
   "health": {
-    "url": "http://service-url/health",
+    "url": "http://localhost:5000/health",
     "method": "GET"
   }
 }
 ```
 
-## Error Handling
-
-### "file" Errors
-
-HTTP 400: 'Required "file" missing' (parameter not set)
-```bash
-curl -X POST -H "Authorization: Bearer <your_token>" \
-     -F 'options={"key":"value","anotherKey":123}' \
-     http://localhost:3000/processPDF
-# HTTP 400 Bad Request 
-Required "file" missing
-```
-
-HTTP 400: 'Required "file" invalid. Must have mimetype "application/pdf".' (file with incorrect mimetype)
-```bash
-curl -X POST -H "Authorization: Bearer <your_token>" \
-     -F "file=@path/to/your/file.xml" \
-     -F 'options={"key":"value","anotherKey":123}' \
-     http://localhost:3000/processPDF
-# HTTP 400 Bad Request 
-Required "file" invalid. Must have mimetype "application/pdf".
-```
-
-### "options" Errors
-
-HTTP 400: 'Required "options" missing.' (parameter not set)
-```bash
-curl -X POST -H "Authorization: Bearer <your_token>" \
-     -F "file=@path/to/your/file.pdf" \
-     http://localhost:3000/processPDF
-# HTTP 400 Bad Request 
-Required "options" missing.
-```
-
-HTTP 400: 'Required "options" invalid. Must be a valid JSON object.' (data are not JSON)
-```bash
-curl -X POST -H "Authorization: Bearer <your_token>" \
-     -F "file=@path/to/your/file.pdf" \
-     -F 'options="key value anotherKey 123"' \
-     http://localhost:3000/processPDF
-# HTTP 400 Bad Request 
-Required "options" invalid. Must be a valid JSON object.
-```
-
-HTTP 400: 'Required "options" invalid. Must be a JSON object.' (data are JSON but not an object)
-```bash
-curl -X POST -H "Authorization: Bearer <your_token>" \
-     -F "file=@path/to/your/file.pdf" \
-     -F 'options=["key","value","anotherKey",123]' \
-     http://localhost:3000/processPDF
-# HTTP 400 Bad Request 
-Required "options" invalid. Must be a JSON object.
-```
-
-## GenShare Response
-
-[More info available here](USER_DOCUMENTATION.md#example-response-1)
-
-## Authentication
-
-The API uses JSON Web Tokens (JWT) for authentication.
-
-### Token Management
-
-- `TokenManager`: Handles token storage and validation
-- `UserManager`: Manages user data and updates
-- Tokens are stored in `conf/users.json` separate from user data for security
-
-### Token Lifecycle
-
-1. **Creation**: Tokens are generated using:
-   ```bash
-   npm run manage-users add <userId>
-   ```
-
-2. **Usage**: Include token in requests:
-   ```bash
-   curl -H "Authorization: Bearer <your_token>" http://localhost:3000/endpoint
-   ```
-
-3. **Validation**: Each request is authenticated by:
-   - Extracting token from Authorization header
-   - Verifying JWT signature
-   - Looking up associated user
-   - Checking rate limits
-
-4. **Renewal**: Refresh expired tokens using:
-   ```bash
-   npm run manage-users refresh-token <userId>
-   ```
-
-### User Management Commands
-
-```bash
-# Generate new user with token
-npm run manage-users add user123
-
-# List all users and their tokens
-npm run manage-users list
-
-# Refresh token for existing user
-npm run manage-users refresh-token user123
-
-# Remove user and invalidate token
-npm run manage-users remove user123
-```
-
-### Security Features
-
-- JWT tokens are signed with a secret key (`JWT_SECRET` environment variable)
-- Tokens are stored separately from user data
-- Rate limiting is tied to authentication
-- Invalid tokens return 401 Unauthorized
-- Missing tokens return 403 Forbidden
-
-## S3 Storage
-
-The API implements comprehensive storage of all request and response data in Amazon S3, providing complete traceability and audit capabilities for all PDF processing operations.
-
-### Storage Structure
-
-Files are stored in S3 using the following path structure:
-```
-{s3Folder}/{userId}/{requestId}/
-├── file.pdf              # Original uploaded PDF
-├── file.metadata.json    # File metadata (name, size, MD5, etc.)
-├── options.json         # Processing options
-├── process.json         # Process metadata
-├── process.log          # Detailed process log
-└── response.json        # GenShare API response
-```
-
-### Stored Data
-
-1. **File Data**
-   - Original PDF file
-   - File metadata including:
-     - Original filename
-     - File size
-     - MD5 hash
-     - MIME type
-
-2. **Process Information**
-   - Process metadata:
-     - Start date/time
-     - End date/time
-     - Process duration
-     - File presence indicator
-   - Detailed process log with timestamped entries
-   - Processing options used
-
-3. **Response Data**
-   - Complete GenShare API response
-   - Response status and headers
-   - Response data including decision tree path
-
-### S3 Configuration
-
-Configure S3 storage in `conf/aws.s3.json`:
+2. AWS S3 (`conf/aws.s3.json`):
 ```json
 {
-  "accessKeyId": "your_access_key",
-  "secretAccessKey": "your_secret_key",
-  "region": "your_region",
-  "bucketName": "your_bucket",
-  "s3Folder": "your_folder"
+  "accessKeyId": "YOUR_ACCESS_KEY",
+  "secretAccessKey": "YOUR_SECRET_KEY",
+  "region": "YOUR_REGION",
+  "bucketName": "YOUR_BUCKET_NAME",
+  "s3Folder": "YOUR-FOLDER-NAME"
 }
 ```
 
-### Process Session
+3. Additional Configurations:
+- `conf/grobid.json`: GROBID service settings
+- `conf/datastet.json`: DataStet service settings
+- `conf/permissions.json`: Route permissions
+- `conf/users.json`: User management
+- `conf/googleSheets.json` & `conf/googleSheets.credentials.json`: Google Sheets integration
 
-Each PDF processing request creates a ProcessingSession that manages:
-- Unique request ID generation
-- Log accumulation
-- File handling
-- S3 upload operations
-- Process metadata tracking
+## API Architecture
 
-## Google Sheets Integration
+### Available Endpoints
 
-The API logs summary information for each PDF processing request to a Google Sheets spreadsheet, providing easy access to processing history and analytics.
+```
+GET    /                  - List available API routes
+GET    /versions         - Get version information
+POST   /processPDF       - Process a PDF file
+GET    /ping             - Health check all services
+GET    /genshare/health  - Check GenShare service health
+GET    /grobid/health    - Check GROBID service health
+GET    /datastet/health  - Check DataStet service health
+```
 
-### Summary Sheet Structure
+### Authentication Flow
 
-The summary sheet includes the following columns:
-1. Request ID (with S3 link)
-2. Error status
-3. Processing date
-4. User ID
-5. PDF filename
-6. Response data columns:
-   - Article ID
-   - DAS presence
-   - Data availability requirements
-   - DAS sharing statement
-   - Data generalist info
-   - Warrant generalist info
-   - Data specialist info
-   - Warrant specialist info
-   - Non-standard info
-   - Computer-generated content
-   - Computer-generated SI
-   - Computer-generated online
-   - Warrants code online
-7. Path information (decision tree path)
+1. Token Generation:
+```bash
+npm run manage-users -- add user123
+# Output: User user123 added with token: eyJhbGciOiJ...
+```
 
-### Configuration
+2. Request Authentication:
+```bash
+curl -H "Authorization: Bearer <your-token>" http://localhost:3000/endpoint
+```
 
-1. Set up Google Sheets credentials:
-   - Place service account credentials in `conf/googleSheets.credentials.json`
-   - Configure sheet details in `conf/googleSheets.json`:
-     ```json
-     {
-       "spreadsheetId": "your_spreadsheet_id",
-       "sheetName": "your_sheet_name"
-     }
-     ```
+### Rate Limiting
 
-2. Required permissions:
-   - Google Sheets API enabled
-   - Service account with appropriate permissions
-   - Spreadsheet shared with service account email
+```json
+{
+  "max": 100,        // Maximum requests
+  "windowMs": 900000 // Time window (15 minutes)
+}
+```
 
-### Data Logging
+### Storage Architecture
 
-The API automatically logs:
-- Every PDF processing request
-- Processing outcomes
-- Error statuses
-- GenShare response data
-- Decision tree paths
+S3 Storage Structure:
+```
+{s3Folder}/{userId}/{requestId}/
+├── file.pdf              # Original PDF
+├── file.metadata.json    # File metadata
+├── options.json         # Processing options
+├── process.json         # Process metadata
+├── process.log          # Process log
+└── response.json        # API response
+```
 
-## Project Structure
+### Error Handling
 
-- `src/`: Contains the main application code
-  - `server.js`: Entry point
-  - `config.js`: Configuration management
-  - `middleware/`: Custom middleware (e.g., authentication)
-  - `routes/`: API route definitions
-  - `controllers/`: Request handling logic
-  - `utils/`: Utility functions and classes
-- `scripts/`: Contains the user management script
-- `conf/`: Configuration files
-  - `genshare.json`: Genshare API configuration
-  - `users.json`: User data storage (managed by scripts)
-- `tmp/`: folder containing temporary files
+1. File Errors:
+```bash
+# Missing file
+curl -X POST -H "Authorization: Bearer <token>" \
+     -F 'options={"key":"value"}' \
+     http://localhost:3000/processPDF
+# Response: HTTP 400 "Required 'file' missing"
 
-## Configuration Files
+# Invalid file type
+curl -X POST -H "Authorization: Bearer <token>" \
+     -F "file=@document.txt" \
+     -F 'options={"key":"value"}' \
+     http://localhost:3000/processPDF
+# Response: HTTP 400 "Required 'file' invalid"
+```
 
-The application uses several configuration files:
+2. Options Errors:
+```bash
+# Missing options
+curl -X POST -H "Authorization: Bearer <token>" \
+     -F "file=@document.pdf" \
+     http://localhost:3000/processPDF
+# Response: HTTP 400 "Required 'options' missing"
+```
 
-- `conf/genshare.json`: Contains configuration for the Genshare API integration
-- `conf/grobid.json`: Contains configuration for the GROBID service
-- `conf/datastet.json`: Contains configuration for the DataStet service
-- `conf/users.json`: Stores user data, including tokens and rate limits
-- `conf/permissions.json`: Stores route-specific access permissions
-- `conf/aws.s3.json`: Contains S3 storage configuration
-- `conf/googleSheets.json`: Contains Google Sheets configuration
-- `conf/googleSheets.credentials.json`: Service account credentials for Google Sheets
+## Usage
 
-Make sure to keep these files secure and do not commit them to version control.
-
-## Rate Limiting
-
-This API implements user-specific rate limiting:
-
-- Rate limits are customized for each user and stored in their user data
-- Unauthenticated requests are limited to 100 requests per 15-minute window
-- Authenticated requests use the limits specified in the user's data:
-  - `max`: Maximum number of requests allowed in the time window
-  - `windowMs`: Time window in milliseconds
-  - If not specified, defaults to 100 requests per 15-minute window
-- To give a user unlimited requests, set `windowMs` to 0 when adding or updating the user
-
-Rate limiting is implemented in `src/utils/rateLimiter.js` and can be further customized as needed.
-
-## Logging System
-
-The API implements comprehensive logging using Winston and Morgan.
-
-### Log Format
-- Each log entry contains:
-  - IP address
-  - User ID (or 'unauthenticated')
-  - Timestamp
-  - HTTP method and URL
-  - Status code
-  - Response size
-  - Referrer
-  - User agent
-  - Request success status
-
-### Log Analysis
-
-The project includes a log analysis script that provides detailed statistics about API usage:
+### Processing PDFs
 
 ```bash
-# analyze log/combined.log file
-npm run analyze-logs
-
-# analyze a given log file
-node scripts/analyze_logs.js [path/to/logfile]
+curl -X POST http://localhost:3000/processPDF \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@document.pdf" \
+  -F 'options={"option1": "value1"}'
 ```
 
-The analyzer provides:
-- Per-user statistics:
-  - Total requests
-  - Successful requests
-  - Success rate
-  - URL-specific breakdown
-- Per-IP statistics:
-  - Similar metrics as per-user
-  - Useful for tracking unauthenticated requests
+### Managing Users
 
-Example output:
-```
-Request Statistics:
+```bash
+# Add user with custom rate limit
+npm run manage-users -- add user123 '{"max": 200, "windowMs": 900000}'
 
-USERS Statistics:
-User: user123
-  Total Requests: 150
-  Successful Requests: 145
-  Overall Success Rate: 96.67%
-  URL Breakdown:
-    URL: /processPDF
-      Total Requests: 120
-      Successful Requests: 118
-      Success Rate: 98.33%
+# List users
+npm run manage-users -- list
 
-IPS Statistics:
-IP: 192.168.1.1
-  Total Requests: 75
-  Successful Requests: 70
-  Overall Success Rate: 93.33%
-  ...
+# Update rate limit
+npm run manage-users -- update-limit user123 '{"max": 300}'
+
+# Refresh token
+npm run manage-users -- refresh-token user123
 ```
 
-## Security Considerations
+### Managing Permissions
 
-- All routes require JWT authentication
-- Route-specific access control through permissions system
-- JWT tokens are stored separately and managed through a dedicated script
-- The main application can only read tokens, not modify them
-- Rate limiting is implemented to prevent API abuse
-- Sensitive configuration files (`users.json`, `permissions.json`, `genshare.json`, `grobid.json`, `datastet.json`) are not committed to version control
+```bash
+# Add route permission
+npm run manage-permissions -- add /processPDF POST '["user1","user2"]' '["user3"]'
 
-## Contributing
+# Allow user
+npm run manage-permissions -- allow /processPDF POST user4
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+# List permissions
+npm run manage-permissions -- list
+```
 
-## License
+## Development
 
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+### Project Structure
+```
+.
+├── src/
+│   ├── server.js           # Entry point
+│   ├── config.js           # Configuration
+│   ├── middleware/         # Custom middleware
+│   ├── routes/            # API routes
+│   ├── controllers/       # Request handlers
+│   └── utils/            # Utility functions
+├── scripts/               # Management scripts
+├── conf/                 # Configuration files
+└── tmp/                  # Temporary files
+```
+
+### Setting Up Development Environment
+
+1. Clone and setup:
+```bash
+git clone https://github.com/DataSeer/snapshot-api.git
+cd snapshot-api
+npm install
+```
+
+2. Configure development environment:
+```bash
+cp .env.default .env
+cp conf/*.default conf/*
+```
+
+### Commit Guidelines
+
+Follow Conventional Commits specification:
+```bash
+# Format
+<type>: <description>
+
+# Examples
+feat: add new PDF processing option
+fix: resolve rate limiting issue
+docs: update API documentation
+refactor: improve error handling
+```
+
+Supported types (from .versionrc.json):
+- feat: Features
+- fix: Bug Fixes
+- docs: Documentation
+- style: Styling
+- refactor: Code Refactoring
+- perf: Performance Improvements
+- test: Tests
+- build: Build System
+- ci: CI Implementation
+- chore: Maintenance
+
+### Version Management
+
+```bash
+# Create new version
+npm run release
+
+# Manual version tag
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+## Scripts
+
+```bash
+npm run start              # Start server
+npm run manage-permissions # Manage permissions
+npm run manage-users      # Manage users
+npm run analyze-logs      # Analyze logs
+npm run lint             # Run ESLint
+npm run lint:fix         # Fix ESLint issues
+npm run prepare         # Install Husky
+npm run sync-version    # Sync version
+npm run version        # Update changelog
+npm run post-version   # Push changes
+npm run release       # Create release
+```
+
+## Security
+
+- JWT-based authentication required for all routes
+- Route-specific access control
+- User-specific rate limiting
+- Secure token storage and management
+- Request logging and monitoring
+- S3 storage for complete request traceability
+- Automated security scanning in CI/CD
+- Regular token rotation recommended
+- Access logs monitoring for suspicious activity
+- Principle of least privilege for AWS IAM
+
+## Dependencies
+
+### Production
+```json
+{
+  "aws-sdk": "^2.1692.0",
+  "axios": "^1.7.7",
+  "express": "^4.17.1",
+  "express-rate-limit": "^5.2.6",
+  "googleapis": "^144.0.0",
+  "jsonwebtoken": "^9.0.2",
+  "winston": "^3.15.0"
+}
+```
+
+### Development
+```json
+{
+  "@commitlint/cli": "^19.6.1",
+  "@commitlint/config-conventional": "^19.6.0",
+  "eslint": "^8.56.0",
+  "husky": "^8.0.3",
+  "standard-version": "^9.5.0"
+}
