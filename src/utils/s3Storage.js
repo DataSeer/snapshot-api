@@ -3,11 +3,11 @@ const AWS = require('aws-sdk');
 const crypto = require('crypto');
 const fs = require('fs');
 
+const { isValidVersion } = require('./version');
+
 // Load S3 configuration from JSON file
 // eslint-disable-next-line node/no-unpublished-require
 const s3Config = require('../../conf/aws.s3.json');
-
-const versionRegex = /^v[0-9]+\.[0-9]+\.[0-9]+$/;
 
 // Initialize S3 client
 const s3 = new AWS.S3({
@@ -92,7 +92,7 @@ class ProcessingSession {
   }
 
   setSnapshotAPIVersion(version) {
-    if (!versionRegex.test(version)) {
+    if (!isValidVersion(version)) {
       this.snapshotAPIVersion = '';
       this.addLog(`Invalid Snapshot API Version format: ${version}. Setting empty string.`, 'WARN');
       return;
@@ -102,7 +102,7 @@ class ProcessingSession {
   }
 
   setGenshareVersion(version) {
-    if (!versionRegex.test(version)) {
+    if (!isValidVersion(version)) {
       this.genshareVersion = '';
       this.addLog(`Invalid Genshare Version format: ${version}. Setting empty string.`, 'WARN');
       return;

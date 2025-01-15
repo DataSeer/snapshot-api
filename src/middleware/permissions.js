@@ -1,4 +1,4 @@
-// middleware/permissions.js
+// File: middleware/permissions.js
 const { getPermissions } = require('../utils/permissionsManager');
 
 const normalizeUrl = (url) => {
