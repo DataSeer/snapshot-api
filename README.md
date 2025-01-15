@@ -10,11 +10,11 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - [Configuration](#configuration)
 - [API Architecture](#api-architecture)
 - [Usage](#usage)
+- [Scripts](#scripts)
 - [Development](#development)
 - [Deployment](#deployment)
-- [Contributing](#contributing)
-- [Scripts](#scripts)
 - [Security](#security)
+- [Dependencies](#dependencies)
 
 ## Features
 
@@ -234,6 +234,125 @@ npm run manage-permissions -- allow /processPDF POST user4
 npm run manage-permissions -- list
 ```
 
+## Scripts
+
+### Server Management
+```bash
+# Start the server
+npm run start
+```
+
+### User Management
+```bash
+# Add new user with default rate limit
+npm run manage-users -- add user123
+# Output: User user123 added with token: eyJhbGciOiJ...
+
+# Add user with custom rate limit
+npm run manage-users -- add user123 '{"max": 200, "windowMs": 900000}'
+# Output: User user123 added with rate limit: {"max":200,"windowMs":900000}
+
+# List all users
+npm run manage-users -- list
+# Output: Lists all users with their tokens and rate limits
+
+# Refresh user token
+npm run manage-users -- refresh-token user123
+# Output: Token refreshed for user user123. New token: eyJhbGciOiJ...
+
+# Update user rate limit
+npm run manage-users -- update-limit user123 '{"max": 300}'
+# Output: Rate limit updated for user user123: {"max":300,"windowMs":900000}
+
+# Remove user
+npm run manage-users -- remove user123
+# Output: User user123 removed
+```
+
+### Permission Management
+```bash
+# Add new route with permissions
+npm run manage-permissions -- add /api/route GET '["user1"]' '["user2"]'
+# Output: Route /api/route [GET] added with permissions
+
+# Allow user access to route
+npm run manage-permissions -- allow /api/route GET user3
+# Output: User user3 allowed on route /api/route [GET]
+
+# Block user from route
+npm run manage-permissions -- block /api/route GET user2
+# Output: User user2 blocked from route /api/route [GET]
+
+# List all route permissions
+npm run manage-permissions -- list
+# Output: Displays all routes and their permissions
+```
+
+### Log Analysis
+```bash
+# Analyze default log file
+npm run analyze-logs
+# Output: Shows usage statistics from log/combined.log
+
+# Analyze specific log file
+npm run analyze-logs -- /path/to/custom.log
+# Output: Shows usage statistics for specified log file
+
+# Analysis includes:
+# - Per-user statistics
+# - Per-IP statistics
+# - URL-specific breakdown
+# - Success rates
+```
+
+### Code Quality
+```bash
+# Run ESLint check
+npm run lint
+# Output: Shows any code style violations
+
+# Fix auto-fixable ESLint issues
+npm run lint:fix
+# Output: Fixes and shows remaining issues
+
+# Install Git hooks (automatic on npm install)
+npm run prepare
+# Output: Husky hooks installed
+```
+
+### Version Management
+```bash
+# Sync version with git tags
+npm run sync-version
+# Output: Updates package.json version to match latest git tag
+
+# Update changelog
+npm run version
+# Effect: Updates CHANGELOG.md with recent changes
+# Note: Part of npm version lifecycle, rarely used directly
+
+# Push version changes
+npm run post-version
+# Effect: Pushes commits and tags to repository
+# Note: Usually part of release process
+
+# Create new release
+npm run release
+# Effect: 
+# 1. Bumps version based on conventional commits
+# 2. Updates CHANGELOG.md
+# 3. Creates version commit
+# 4. Creates git tag
+# 5. Pushes changes and tags
+```
+
+Notes:
+- All user and permission management commands require appropriate permissions
+- Log analysis can be memory-intensive for large log files
+- Version management commands affect git repository state
+- Always run lint before committing changes
+- The release process is automated but can be done manually if needed
+
 ## Development
 
 ### Project Structure
@@ -303,22 +422,6 @@ git tag v1.1.0
 git push origin v1.1.0
 ```
 
-## Scripts
-
-```bash
-npm run start              # Start server
-npm run manage-permissions # Manage permissions
-npm run manage-users      # Manage users
-npm run analyze-logs      # Analyze logs
-npm run lint             # Run ESLint
-npm run lint:fix         # Fix ESLint issues
-npm run prepare         # Install Husky
-npm run sync-version    # Sync version
-npm run version        # Update changelog
-npm run post-version   # Push changes
-npm run release       # Create release
-```
-
 ## Security
 
 - JWT-based authentication required for all routes
@@ -356,3 +459,4 @@ npm run release       # Create release
   "husky": "^8.0.3",
   "standard-version": "^9.5.0"
 }
+```
