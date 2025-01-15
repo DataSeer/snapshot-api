@@ -1,4 +1,4 @@
-// utils/permissionsManager.js
+// File: src/utils/permissionsManager.js
 const fs = require('fs');
 const config = require('../config');
 

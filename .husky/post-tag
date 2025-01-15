@@ -1,0 +1,14 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+# Extract version from tag
+VERSION=$(git describe --tags --abbrev=0)
+# Remove 'v' prefix if present
+VERSION=${VERSION#v}
+
+# Update package.json version
+npm version $VERSION --no-git-tag-version --allow-same-version
+
+# Stage and commit package.json changes
+git add package.json
+git commit -m "chore: update package.json version to $VERSION" --no-verify

@@ -1,4 +1,4 @@
-// scripts/manage_permissions.js
+// File: scripts/manage_permissions.js
 const fs = require('fs');
 const path = require('path');
 

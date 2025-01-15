@@ -6,6 +6,7 @@ const { getGrobidHealth } = require('../controllers/grobidController');
 const { getDatastetHealth } = require('../controllers/datastetController');
 const { getPing } = require('../controllers/healthController');
 const { getApiRoutes } = require('../controllers/apiController');
+const { getVersions } = require('../controllers/versionController');
 const rateLimiter = require('../utils/rateLimiter');
 
 const router = express.Router();
@@ -14,6 +15,7 @@ const router = express.Router();
 const upload = multer({ dest: 'tmp/' });
 
 router.get('/', rateLimiter, getApiRoutes);
+router.get('/versions', rateLimiter, getVersions);
 router.post('/processPDF', rateLimiter, upload.single('file'), processPDF);
 
 // Health check endpoints
