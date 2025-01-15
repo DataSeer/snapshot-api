@@ -1,9 +1,40 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [2.0.0](https://github.com/DataSeer/snapshot-api/compare/v1.0.0...v2.0.0) (2025-01-15)
+
+
+### Features
+
+* add script to manually sync the version ([013d2c4](https://github.com/DataSeer/snapshot-api/commits/013d2c433d33a263eeb5ab528b6871e3d65c2f50))
+* **api:** add version endpoint & version management in the app (logs) ([0908b28](https://github.com/DataSeer/snapshot-api/commits/0908b28765e6cb6bceda3ece087f2f500e4608b4))
+* update all dependencies ([c3e9004](https://github.com/DataSeer/snapshot-api/commits/c3e9004429640db3c499de6d87c1136e9bce9e4e))
+* update permissions for /versions API route ([1ecc20d](https://github.com/DataSeer/snapshot-api/commits/1ecc20d922da9672f26981961530cd000673d726))
+
+
+### Styling
+
+* update first comment (file path) ([1c4e867](https://github.com/DataSeer/snapshot-api/commits/1c4e86783153b9c2885869c84b5a874b82ba82df))
+
+
+### Documentation
+
+* add first version of changelog ([80bcb09](https://github.com/DataSeer/snapshot-api/commits/80bcb09aa1a043b2042c86059c2689ac9e184423))
+* fix first version of changelog ([36488a8](https://github.com/DataSeer/snapshot-api/commits/36488a8e8314fff6e49abac5173844a5ffa4e4f6))
+* update documentation ([0e71734](https://github.com/DataSeer/snapshot-api/commits/0e7173409087ce493ad4bf1db1985d357efa3a05))
+* update documentation ([4ef89bf](https://github.com/DataSeer/snapshot-api/commits/4ef89bf917ee6472327d7354d34129becd5dc602))
+
+
+### Chores
+
+* **release:** 1.1.0 [skip ci] ([7798d4f](https://github.com/DataSeer/snapshot-api/commits/7798d4f8b07ccea2b4962a852e26ce47e41c9b21))
+
+
+### Continuous Integration
+
+* add husky hooks & commit management files ([08b4270](https://github.com/DataSeer/snapshot-api/commits/08b427001aa5e9bd5d0f2fd2c38ab15866c174a2))
+* update release commit comment ([d705d5f](https://github.com/DataSeer/snapshot-api/commits/d705d5f05294b98f544013a081bf96b776cfcfb2))
 
 ## [1.0.0] - 2024-01-09
 
