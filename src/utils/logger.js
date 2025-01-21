@@ -1,6 +1,7 @@
 // File: src/utils/logger.js
 const winston = require('winston');
 const morgan = require('morgan');
+const onHeaders = require('on-headers');
 
 // Create a Winston logger
 const logger = winston.createLogger({
@@ -35,8 +36,26 @@ morgan.token('success', (req, res) => {
   return res.statusCode < 400 ? 'true' : 'false';
 });
 
-// Create a custom logging format
-const morganFormat = ':remote-addr - :user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent" :success';
+// Create a custom token for request duration
+morgan.token('duration', (req, res) => {
+  return res.locals.duration ? `${res.locals.duration}ms` : '0ms';
+});
+
+// Create a custom logging format with duration
+const morganFormat = ':remote-addr - :user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent" :success :duration';
+
+// Middleware to track request duration
+const trackDuration = (req, res, next) => {
+  const startTime = process.hrtime();
+  
+  onHeaders(res, () => {
+    const diff = process.hrtime(startTime);
+    // Convert to milliseconds (1 second = 1e9 nanoseconds)
+    res.locals.duration = Math.round((diff[0] * 1e9 + diff[1]) / 1e6);
+  });
+  
+  next();
+};
 
 // Create the Morgan middleware with custom logging logic
 const httpLogger = morgan(morganFormat, {
@@ -54,8 +73,9 @@ const httpLogger = morgan(morganFormat, {
       logObject.status = parseInt(parts[8]);
       logObject.responseSize = parts[9];
       logObject.referrer = parts[10] + ' ' + parts[11];
-      logObject.userAgent = parts.slice(12, -1).join(' ');
-      logObject.success = parts[parts.length - 1].trim() === 'true';
+      logObject.userAgent = parts.slice(12, -2).join(' ');
+      logObject.success = parts[parts.length - 2].trim() === 'true';
+      logObject.duration = parts[parts.length - 1].trim();
 
       // Log all requests, including unauthorized ones
       logger.info('HTTP Request', logObject);
@@ -65,4 +85,4 @@ const httpLogger = morgan(morganFormat, {
   skip: () => false
 });
 
-module.exports = { logger, httpLogger };
+module.exports = { logger, httpLogger, trackDuration };

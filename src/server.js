@@ -4,7 +4,7 @@ const morgan = require('morgan');
 const routes = require('./routes');
 const { authenticateToken } = require('./middleware/auth');
 const { checkPermissions } = require('./middleware/permissions');
-const { httpLogger } = require('./utils/logger');
+const { httpLogger, trackDuration } = require('./utils/logger');
 const config = require('./config');
 
 const app = express();
@@ -13,6 +13,7 @@ app.use(express.json());
 app.use(morgan('combined'));
 
 // Use the HTTP logger middleware
+app.use(trackDuration);
 app.use(httpLogger);
 
 // Apply authentication to all routes
