@@ -134,6 +134,14 @@ fetch('https://snapshot.dataseer.ai/processPDF', {
 
 #### Example Response
 
+Here is an example of JSON data returned by the API.
+The ‘response’ key is an array of objects. Each item is structured as follows:
+  - `name`: the name of the data (ex: das, non-functional_urls, cumulated_score)
+  - `description`: the description of the data (ex: "Data availability statement" for "das")
+  - `value`: the value of the data
+
+***Note: the value of `cumulated_score` is between -10 and 32***
+
 ```json
 {
   "response": [
@@ -207,7 +215,7 @@ fetch('https://snapshot.dataseer.ai/processPDF', {
     {
         "name": "cumulated_score",
         "description": "Cumulated score from snapshot",
-        "value": 0
+        "value": 0 // The score is between -10 and 32
     }
   ]
 }
