@@ -1,4 +1,4 @@
-// .eslintrc.js
+// File: .eslintrc.js
 module.exports = {
   env: {
     node: true,
