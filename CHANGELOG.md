@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [2.0.1](https://github.com/DataSeer/snapshot-api/compare/v2.0.0...v2.0.1) (2025-02-13)
+
+
+### Features
+
+* add durations (ms) in HTTP logs, for grafana charts ([5cc660c](https://github.com/DataSeer/snapshot-api/commits/5cc660cd03e0da98e07c25618c3319298091e626))
+
+
+### Bug Fixes
+
+* ping API route (/ping) must return HTTP status 200 even if a service check health status failed ([db53d4d](https://github.com/DataSeer/snapshot-api/commits/db53d4dd21d4ad7a771d2d82cfdfe02f7ed1676f))
+
+
+### Documentation
+
+* update the 'user documentation' (cumulated score) ([46d7868](https://github.com/DataSeer/snapshot-api/commits/46d7868d99e059f08c769c7b1b42c2a5ea4731cb))
+
 ## [2.0.0](https://github.com/DataSeer/snapshot-api/compare/v1.0.0...v2.0.0) (2025-01-15)
 
 
