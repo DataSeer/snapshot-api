@@ -48,7 +48,7 @@ module.exports.getPing = async (req, res) => {
     const allHealthy = [genshareResult, grobidResult, datastetResult]
       .every(service => service.response.status === 200);
 
-    const overallStatus = allHealthy ? 200 : 503;
+    const overallStatus = 200;
 
     res.status(overallStatus).json({
       status: allHealthy ? 'healthy' : 'unhealthy',
