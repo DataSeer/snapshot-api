@@ -1,12 +1,96 @@
 {
-  "processPDF": {
-    "url": "http://localhost:5000/process/pdf",
-    "method": "POST",
-    "apiKey": "your_genshare_api_key_for_process_pdf"
-  },
-  "health": {
-    "url": "http://localhost:5000/health",
-    "method": "GET",
-    "apiKey": "your_genshare_api_key_for_process_pdf"
+  "defaultVersion": "v81.3.0",
+  "versions": {
+    "v81.2.1": {
+      "processPDF": {
+        "url": "http://localhost:5000/snapshot",
+        "method": "POST",
+        "apiKey": "your_genshare_api_key_for_v1"
+      },
+      "health": {
+        "url": "http://localhost:5000/health",
+        "method": "GET"
+      },
+      "googleSheets": {
+        "spreadsheetId": "your-spreadsheet-id-for-v1",
+        "sheetName": "v1_Sheet"
+      },
+      "responseMapping": {
+        "getPath": [
+          "A", "B", "C", "C Score", "D", "E", "E Score", "F", "F Score",
+          "G", "G Score", "H", "I", "J", "K", "L", "M", "N", "O", "P",
+          "P Score", "Q", "Q Score", "R", "R Score", "S", "S Score",
+          "T", "T Score", "U", "U Score", "V", "SnapShot Score"
+        ],
+        "getResponse": {
+          "article_id": 0,
+          "das": 1,
+          "data_avail_req": 2,
+          "das_share_si": 3,
+          "data_generalist": 4,
+          "warrant_generalist": 5,
+          "data_specialist": 6,
+          "warrant_specialist": 7,
+          "non-functional_urls": 8,
+          "computer_gen": 9,
+          "computer_si": 10,
+          "computer_online": 11,
+          "warrants_code_online": 12
+        }
+      }
+    },
+    "v81.3.0": {
+      "processPDF": {
+        "url": "http://localhost:5001/snapshot",
+        "method": "POST",
+        "apiKey": "your_genshare_api_key_for_v2"
+      },
+      "health": {
+        "url": "http://localhost:5001/health",
+        "method": "GET"
+      },
+      "googleSheets": {
+        "spreadsheetId": "your-spreadsheet-id-for-v2",
+        "sheetName": "v2_Sheet"
+      },
+      "responseMapping": {
+        "getPath": [
+          "A", "B", "C", "C Score", "D", "E", "E Score", "F", "F Score",
+          "G", "G Score", "H", "I", "J", "K", "L", "M", "N", "O", "P",
+          "P Score", "Q", "Q Score", "R", "R Score", "S", "S Score",
+          "T", "T Score", "U", "U Score", "V", "SnapShot Score"
+        ],
+        "getResponse": {
+          "article_id": 0,
+          "das_presence": 1,
+          "das": 2,
+          "data_avail_req_gen": 3,
+          "data_avail_req": 4,
+          "das_share_ms": 5,
+          "das_share_si_gen": 6,
+          "das_share_si": 7,
+          "data_not_generated": 8,
+          "exemption_requested": 9,
+          "exemption_sensitive_ethics_protection": 10,
+          "exemption_large": 11,
+          "exemption_no_suitable_repository": 12,
+          "exemption_third_party": 13,
+          "das_exemption_reasons": 14,
+          "data_in_repository": 15,
+          "reasoning_summary": 16,
+          "data_generalist": 17,
+          "warrant_generalist": 18,
+          "data_specialist": 19,
+          "warrant_specialist": 20,
+          "data_url": 21,
+          "non-functional_urls": 22,
+          "computer_gen": 23,
+          "computer_si": 24,
+          "computer_online": 25,
+          "warrants_code_online": 26,
+          "cumulated_score": 27
+        }
+      }
+    }
   }
 }

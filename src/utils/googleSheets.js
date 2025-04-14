@@ -1,8 +1,11 @@
 // File: src/utils/googleSheets.js
 const path = require('path');
 const { google } = require('googleapis');
-// eslint-disable-next-line node/no-unpublished-require
-const config = require('../../conf/googleSheets.json');
+// Load Genshare configuration which now contains Google Sheets settings per version
+const config = require('../config');
+
+// Load the genshare configuration
+const genshareConfig = require(config.genshareConfigPath);
 
 // Initialize the Sheets API client
 const auth = new google.auth.GoogleAuth({
@@ -12,11 +15,25 @@ const auth = new google.auth.GoogleAuth({
 
 const sheets = google.sheets({ version: 'v4', auth });
 
-async function appendToSheet(data) {
+/**
+ * Appends data to a specific version's Google Sheet
+ * @param {Array} data - Array of data to append to the sheet
+ * @param {string} version - GenShare version to determine which sheet to use
+ * @returns {Promise<Object>} - Google Sheets API response
+ */
+async function appendToSheet(data, version) {
   try {
+    // Get spreadsheet configuration for the specified version
+    const versionConfig = genshareConfig.versions[version] || genshareConfig.versions[genshareConfig.defaultVersion];
+    const sheetConfig = versionConfig.googleSheets;
+    
+    if (!sheetConfig || !sheetConfig.spreadsheetId || !sheetConfig.sheetName) {
+      throw new Error(`No Google Sheets configuration found for GenShare version ${version}`);
+    }
+
     const response = await sheets.spreadsheets.values.append({
-      spreadsheetId: config.spreadsheetId,
-      range: config.sheetName,
+      spreadsheetId: sheetConfig.spreadsheetId,
+      range: sheetConfig.sheetName,
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'OVERWRITE',
       requestBody: {
@@ -26,7 +43,7 @@ async function appendToSheet(data) {
 
     return response.data;
   } catch (error) {
-    console.error('Error appending to Google Sheet:', error);
+    console.error(`Error appending to Google Sheet for version ${version}:`, error);
     throw error;
   }
 }

@@ -10,6 +10,8 @@
     "start": "node src/server.js",
     "manage-permissions": "node scripts/manage_permissions.js",
     "manage-users": "node scripts/manage_users.js",
+    "manage-permissions": "node scripts/manage_permissions.js",
+    "manage-genshare": "node scripts/manage_genshare_versions.js",
     "analyze-logs": "node scripts/analyze_logs.js",
     "lint": "eslint . --ext .js",
     "lint:fix": "eslint . --ext .js --fix",
