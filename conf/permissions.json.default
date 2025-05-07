@@ -7,17 +7,24 @@
         "blocked": []
       }
     },
-    "/versions": {
-      "GET": {
-        "description": "Get version of all Snapshot services",
-        "allowed": ["admin"],
-        "blocked": []
-      }
-    },
     "/processPDF": {
       "POST": {
         "description": "Process a PDF file",
         "allowed": [],
+        "blocked": []
+      }
+    },
+    "/reports/search": {
+      "GET": {
+        "description": "Get reports by request ID",
+        "allowed": ["admin"],
+        "blocked": []
+      }
+    },
+    "/links/refresh": {
+      "POST": {
+        "description": "Refresh article ID links from S3",
+        "allowed": ["admin"],
         "blocked": []
       }
     },

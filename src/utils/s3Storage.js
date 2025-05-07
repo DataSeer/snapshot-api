@@ -3,7 +3,7 @@ const AWS = require('aws-sdk');
 const crypto = require('crypto');
 const fs = require('fs');
 
-const { isValidVersion } = require('./version');
+const { isValidVersion } = require('./versions');
 
 // Load S3 configuration from JSON file
 // eslint-disable-next-line node/no-unpublished-require
@@ -61,6 +61,114 @@ const uploadBatchToS3 = async (files) => {
   }
 };
 
+// List all objects in a prefix with pagination
+const listObjects = async (prefix) => {
+  let allObjects = [];
+  let continuationToken = null;
+  
+  do {
+    const params = {
+      Bucket: s3Config.bucketName,
+      Prefix: prefix,
+      ContinuationToken: continuationToken
+    };
+    
+    const response = await s3.listObjectsV2(params).promise();
+    allObjects = [...allObjects, ...(response.Contents || [])];
+    continuationToken = response.NextContinuationToken;
+    
+    console.log(`Retrieved ${response.Contents?.length || 0} objects, ${allObjects.length} total so far.`);
+    
+  } while (continuationToken);
+  
+  return allObjects;
+};
+
+// Get file from S3
+const getFile = (key) => {
+  return new Promise((resolve, reject) => {
+    const params = {
+      Bucket: s3Config.bucketName,
+      Key: key
+    };
+    
+    s3.getObject(params, (err, data) => {
+      if (err) reject(err);
+      else resolve(data.Body.toString());
+    });
+  });
+};
+
+// Get all options.json files from S3
+const getAllOptionsFiles = async () => {
+  try {
+    console.log("Starting to fetch options files from S3...");
+    const prefix = `${s3Config.s3Folder}/`;
+    console.log(`Using prefix: ${prefix}`);
+    
+    const objects = await listObjects(prefix);
+    console.log(`Total objects retrieved from S3: ${objects.length}`);
+    
+    const optionsFiles = objects.filter(obj => obj.Key.endsWith('/options.json'));
+    console.log(`Total options.json files found: ${optionsFiles.length}`);
+    
+    const fileData = await Promise.all(optionsFiles.map(async (file) => {
+      try {
+        const content = await getFile(file.Key);
+        const pathParts = file.Key.split('/');
+        
+        // Extract userId and requestId from the path
+        // Path format: snapshot-api-dev/userId/requestId/options.json
+        const userId = pathParts[pathParts.length - 3];
+        const requestId = pathParts[pathParts.length - 2];
+        
+        let parsedContent;
+        try {
+          parsedContent = JSON.parse(content);
+        } catch (e) {
+          console.error(`JSON parse error for ${file.Key}:`, e);
+          parsedContent = null;
+        }
+        
+        return {
+          userId,
+          requestId,
+          content: parsedContent,
+          lastModified: file.LastModified
+        };
+      } catch (error) {
+        console.error(`Error processing file ${file.Key}:`, error);
+        return null;
+      }
+    }));
+    
+    // Filter out any null entries from errors
+    const validFileData = fileData.filter(file => file !== null);
+    console.log(`Processed ${validFileData.length} valid files out of ${optionsFiles.length}`);
+    
+    return validFileData;
+  } catch (error) {
+    console.error('Error getting options files:', error);
+    throw error;
+  }
+};
+
+
+// Get report file from S3
+const getReportFile = async (userId, requestId) => {
+  try {
+    const key = `${s3Config.s3Folder}/${userId}/${requestId}/report.json`;
+    const content = await getFile(key);
+    return JSON.parse(content);
+  } catch (error) {
+    if (error.code === 'NoSuchKey') {
+      return null;
+    }
+    console.error('Error getting report file:', error);
+    throw error;
+  }
+};
+
 // Create a ProcessingSession class to handle the accumulation of data
 class ProcessingSession {
   constructor(userId, file = null) {
@@ -70,6 +178,7 @@ class ProcessingSession {
     this.file = file;
     this.logs = [];
     this.response = null;
+    this.report = null;
     this.startTime = new Date();
     this.endTime = null;
     this.duration = -1;
@@ -123,6 +232,11 @@ class ProcessingSession {
   setResponse(response) {
     this.response = response;
     this.addLog(`Response status: ${response.status}`, 'INFO');
+  }
+
+  setReport(report) {
+    this.report = report;
+    this.addLog(`report JSON data setup`, 'INFO');
   }
 
   async saveToS3() {
@@ -205,6 +319,15 @@ class ProcessingSession {
         });
       }
 
+      // Add report if it exists
+      if (this.report) {
+        filesToUpload.push({
+          key: `${this.getBasePath()}/report.json`,
+          data: JSON.stringify(this.report, null, 2),
+          contentType: 'application/json'
+        });
+      }
+
       // Upload everything in a single batch
       await uploadBatchToS3(filesToUpload);
 
@@ -216,4 +339,8 @@ class ProcessingSession {
   }
 }
 
-module.exports = { ProcessingSession };
+module.exports = { 
+  ProcessingSession,
+  getAllOptionsFiles,
+  getReportFile
+};
