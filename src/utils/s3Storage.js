@@ -1,5 +1,11 @@
 // File: src/utils/s3Storage.js
-const AWS = require('aws-sdk');
+const { 
+  S3Client, 
+  PutObjectCommand, 
+  ListObjectsV2Command, 
+  GetObjectCommand
+} = require('@aws-sdk/client-s3');
+const { createReadStream } = require('fs');
 const crypto = require('crypto');
 const fs = require('fs');
 
@@ -10,9 +16,11 @@ const { isValidVersion } = require('./versions');
 const s3Config = require('../../conf/aws.s3.json');
 
 // Initialize S3 client
-const s3 = new AWS.S3({
-  accessKeyId: s3Config.accessKeyId,
-  secretAccessKey: s3Config.secretAccessKey,
+const s3Client = new S3Client({
+  credentials: {
+    accessKeyId: s3Config.accessKeyId,
+    secretAccessKey: s3Config.secretAccessKey,
+  },
   region: s3Config.region
 });
 
@@ -46,14 +54,15 @@ const calculateMD5 = (filePath) => {
 // Store multiple files in S3 with a single batch
 const uploadBatchToS3 = async (files) => {
   try {
-    await Promise.all(files.map(({ key, data, contentType }) => {
+    await Promise.all(files.map(async ({ key, data, contentType }) => {
       const params = {
         Bucket: s3Config.bucketName,
         Key: key,
         Body: data,
         ContentType: contentType
       };
-      return s3.upload(params).promise();
+      const command = new PutObjectCommand(params);
+      return s3Client.send(command);
     }));
   } catch (error) {
     console.error('Error in batch upload:', error);
@@ -64,7 +73,7 @@ const uploadBatchToS3 = async (files) => {
 // List all objects in a prefix with pagination
 const listObjects = async (prefix) => {
   let allObjects = [];
-  let continuationToken = null;
+  let continuationToken = undefined;
   
   do {
     const params = {
@@ -73,7 +82,8 @@ const listObjects = async (prefix) => {
       ContinuationToken: continuationToken
     };
     
-    const response = await s3.listObjectsV2(params).promise();
+    const command = new ListObjectsV2Command(params);
+    const response = await s3Client.send(command);
     allObjects = [...allObjects, ...(response.Contents || [])];
     continuationToken = response.NextContinuationToken;
     
@@ -85,18 +95,31 @@ const listObjects = async (prefix) => {
 };
 
 // Get file from S3
-const getFile = (key) => {
-  return new Promise((resolve, reject) => {
+const getFile = async (key) => {
+  try {
     const params = {
       Bucket: s3Config.bucketName,
       Key: key
     };
     
-    s3.getObject(params, (err, data) => {
-      if (err) reject(err);
-      else resolve(data.Body.toString());
-    });
-  });
+    const command = new GetObjectCommand(params);
+    const response = await s3Client.send(command);
+    
+    // In v3, Body is a readable stream
+    return await streamToString(response.Body);
+  } catch (error) {
+    console.error(`Error getting file ${key}:`, error);
+    throw error;
+  }
+};
+
+// Helper function to convert stream to string
+const streamToString = async (stream) => {
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString('utf-8');
 };
 
 // Get all options.json files from S3
@@ -161,7 +184,7 @@ const getReportFile = async (userId, requestId) => {
     const content = await getFile(key);
     return JSON.parse(content);
   } catch (error) {
-    if (error.code === 'NoSuchKey') {
+    if (error.$metadata?.httpStatusCode === 404 || error.name === 'NoSuchKey') {
       return null;
     }
     console.error('Error getting report file:', error);
@@ -179,6 +202,7 @@ class ProcessingSession {
     this.logs = [];
     this.response = null;
     this.report = null;
+    this.options = null;
     this.startTime = new Date();
     this.endTime = null;
     this.duration = -1;
@@ -239,6 +263,11 @@ class ProcessingSession {
     this.addLog(`report JSON data setup`, 'INFO');
   }
 
+  setOptions(options) {
+    this.options = options;
+    this.addLog(`options JSON data setup`, 'INFO');
+  }
+
   async saveToS3() {
     try {
       // Add session end time to logs
@@ -266,7 +295,7 @@ class ProcessingSession {
         filesToUpload.push(
           {
             key: `${this.getBasePath()}/file.pdf`,
-            data: fs.createReadStream(this.file.path),
+            data: createReadStream(this.file.path),
             contentType: 'application/pdf'
           },
           {

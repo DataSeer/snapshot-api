@@ -11,7 +11,6 @@
     "start:dev": "NODE_ENV=development NO_DB_REFRESH=true node src/server.js",
     "manage-permissions": "node scripts/manage_permissions.js",
     "manage-users": "node scripts/manage_users.js",
-    "manage-permissions": "node scripts/manage_permissions.js",
     "manage-genshare": "node scripts/manage_genshare_versions.js",
     "analyze-logs": "node scripts/analyze_logs.js",
     "lint": "eslint . --ext .js",
@@ -29,7 +28,7 @@
     "*.js": "eslint --fix"
   },
   "dependencies": {
-    "aws-sdk": "^2.1692.0",
+    "@aws-sdk/client-s3": "^3.804.0",
     "axios": "^1.9.0",
     "express": "^4.17.1",
     "express-rate-limit": "^5.2.6",
