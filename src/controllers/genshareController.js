@@ -399,8 +399,20 @@ module.exports.processPDF = async (req, res) => {
     }
 
     // Log successful response
-    session.addLog(`Received response from GenShare service (${activeGenShareVersion})`);
-    session.addLog(`Status: ${response.status}`);
+    let responseGenShareVersion = response?.data?.version;
+
+    if (!responseGenShareVersion) {
+      session.addLog(`GenShare version returned not found`);
+    } else {
+      session.addLog(`GenShare version returned found: ${responseGenShareVersion}`);
+      if (activeGenShareVersion.indexOf(responseGenShareVersion) > -1) {
+        session.addLog(`GenShare versions match: (${activeGenShareVersion} - ${responseGenShareVersion})`);
+      } else {
+        session.addLog(`GenShare versions don't match (${activeGenShareVersion} - ${responseGenShareVersion})`);
+      }
+    }
+
+    session.addLog(`Received response from GenShare service with status: ${response.status}`);
 
     // Store complete response info before modification
     session.setResponse({
