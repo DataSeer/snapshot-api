@@ -19,15 +19,20 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 ## Features
 
 - PDF document processing via Genshare integration
+- Multiple GenShare version support with user-specific access control
+- Response filtering based on user permissions
 - JWT-based authentication system
 - Role-based access control
 - User-specific rate limiting
 - AWS S3 storage integration
-- Google Sheets logging integration
+- Version-specific Google Sheets logging
 - Health monitoring for all services
 - Comprehensive logging system
 - Version synchronization
 - Complete request traceability
+- Report generation with Google Sheets integration
+- SQLite database for article-request mapping
+- Endpoints for report retrieval by article ID or request ID
 
 ## Prerequisites
 
@@ -38,7 +43,7 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - Access to:
   - GROBID service
   - DataStet service
-  - GenShare service
+  - GenShare service (multiple versions supported)
 
 ## Installation
 
@@ -84,23 +89,103 @@ PORT=3000
 
 ### Required Configuration Files
 
-1. Service Configuration:
+1. GenShare Configuration:
 ```json
 // conf/genshare.json
 {
-  "processPDF": {
-    "url": "http://localhost:5000/process/pdf",
-    "method": "POST",
-    "apiKey": "your_genshare_api_key"
-  },
-  "health": {
-    "url": "http://localhost:5000/health",
-    "method": "GET"
+  "defaultVersion": "v1.0.0",
+  "versions": {
+    "v1.0.0": {
+      "processPDF": {
+        "url": "http://localhost:5000/snapshot",
+        "method": "POST",
+        "apiKey": "your_genshare_api_key_for_v1"
+      },
+      "health": {
+        "url": "http://localhost:5000/health",
+        "method": "GET"
+      },
+      "googleSheets": {
+        "spreadsheetId": "your-spreadsheet-id-for-v1",
+        "sheetName": "v1_Sheet"
+      },
+      "responseMapping": {
+        "getPath": ["A", "B", "C", /* ... */],
+        "getResponse": {
+          "article_id": 0,
+          "das_presence": 1,
+          /* ... other mappings */
+        }
+      }
+    }
   }
 }
 ```
 
-2. AWS S3 (`conf/aws.s3.json`):
+2. Users Configuration:
+```json
+// conf/users.json
+{
+  "admin": {
+    "token": "XXXX",
+    "rateLimit": {
+      "max": 200,
+      "windowMs": 0
+    },
+    "genshare": {
+      "authorizedVersions": ["v1.0.0", "v2.0.0"],
+      "defaultVersion": "v1.0.0",
+      "availableFields": [],
+      "restrictedFields": []
+    },
+    "reports": {
+      "authorizedVersions": ["Report (v0.1)"],
+      "defaultVersion": "Report (v0.1)"
+    }
+  }
+}
+```
+
+3. Reports Configuration:
+```json
+// conf/reports.json
+{
+  "defaultVersion": "",
+  "versions": {
+    "Report (v0.1)": {
+      "googleSheets": {
+        "folder": {
+          "default": "XXX"
+        },
+        "template": {
+          "default": "XXX"
+        },
+        "permissions": {
+          "default": "writer"
+        },
+        "sheets": {
+          "TEMPLATE": {
+            "cells": {
+              "A1": "key1",
+              "Z999": "key2"
+            }
+          }
+        }
+      },
+      "JSON": {
+        "availableFields": [
+          "key1",
+          "key2",
+          "key3"
+        ],
+        "restrictedFields": []
+      }
+    }
+  }
+}
+```
+
+4. AWS S3 (`conf/aws.s3.json`):
 ```json
 {
   "accessKeyId": "YOUR_ACCESS_KEY",
@@ -111,25 +196,25 @@ PORT=3000
 }
 ```
 
-3. Additional Configurations:
+5. Additional Configurations:
 - `conf/grobid.json`: GROBID service settings
 - `conf/datastet.json`: DataStet service settings
 - `conf/permissions.json`: Route permissions
-- `conf/users.json`: User management
-- `conf/googleSheets.json` & `conf/googleSheets.credentials.json`: Google Sheets integration
+- `conf/googleSheets.credentials.json`: Google Sheets API credentials
 
 ## API Architecture
 
 ### Available Endpoints
 
 ```
-GET    /                  - List available API routes
-GET    /versions         - Get version information
-POST   /processPDF       - Process a PDF file
-GET    /ping             - Health check all services
-GET    /genshare/health  - Check GenShare service health
-GET    /grobid/health    - Check GROBID service health
-GET    /datastet/health  - Check DataStet service health
+GET    /                       - List available API routes
+GET    /ping                   - Health check all services
+POST   /processPDF             - Process a PDF file (with optional genshareVersion and report parameters)
+GET    /genshare/health        - Check GenShare service health (all authorized versions)
+GET    /grobid/health          - Check GROBID service health
+GET    /datastet/health        - Check DataStet service health
+GET    /reports/search         - Get reports by article_id or request_id
+POST   /requests/refresh       - Refresh article-request ID mapping from S3
 ```
 
 ### Authentication Flow
@@ -144,6 +229,36 @@ npm run manage-users -- add user123
 ```bash
 curl -H "Authorization: Bearer <your-token>" http://localhost:3000/endpoint
 ```
+
+### Response Filtering
+
+Users can have specific response filters configured:
+
+```json
+"genshare": {
+  "availableFields": ["article_id", "das_presence"],
+  "restrictedFields": []
+}
+```
+
+If `availableFields` is set, only those fields will be included in the response.
+If `restrictedFields` is set, those fields will be excluded from the response.
+If both are empty, the full response is returned.
+
+### GenShare Version and Report Selection
+
+Users can specify which GenShare version and report to use:
+
+```bash
+curl -X POST http://localhost:3000/processPDF \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@document.pdf" \
+  -F 'options={"option1": "value1"}' \
+  -F 'genshareVersion=v2.0.0' \
+  -F 'report=Report (v0.1)'
+```
+
+If the requested version is not authorized for the user or not specified, the user's default version will be used.
 
 ### Rate Limiting
 
@@ -161,10 +276,24 @@ S3 Storage Structure:
 {s3Folder}/{userId}/{requestId}/
 ├── file.pdf              # Original PDF
 ├── file.metadata.json    # File metadata
-├── options.json         # Processing options
-├── process.json         # Process metadata
-├── process.log          # Process log
-└── response.json        # API response
+├── options.json          # Processing options
+├── process.json          # Process metadata
+├── process.log           # Process log
+├── response.json         # API response (full, unfiltered)
+└── report.json           # Report data (if a report was generated)
+```
+
+### SQLite Database
+
+The application uses SQLite to maintain a mapping between article IDs and request IDs:
+
+```
+article_requests
+├── id           # Primary key
+├── user_name    # User who made the request
+├── article_id   # Article ID from GenShare response
+├── request_id   # Request ID generated by the API
+└── created_at   # Timestamp when the record was created
 ```
 
 ### Error Handling
@@ -194,21 +323,54 @@ curl -X POST -H "Authorization: Bearer <token>" \
 # Response: HTTP 400 "Required 'options' missing"
 ```
 
+3. GenShare Version Errors:
+```bash
+# Unauthorized GenShare version
+curl -X POST -H "Authorization: Bearer <token>" \
+     -F "file=@document.pdf" \
+     -F 'options={"key":"value"}' \
+     -F 'genshareVersion=v3.0.0'
+# Response: Uses user's default version instead
+```
+
 ## Usage
 
 ### Processing PDFs
 
 ```bash
+# Process with default GenShare version
 curl -X POST http://localhost:3000/processPDF \
   -H "Authorization: Bearer <token>" \
   -F "file=@document.pdf" \
   -F 'options={"option1": "value1"}'
+
+# Process with specific GenShare version and report
+curl -X POST http://localhost:3000/processPDF \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@document.pdf" \
+  -F 'options={"option1": "value1"}' \
+  -F 'genshareVersion=v2.0.0' \
+  -F 'report=Report (v0.1)'
+```
+
+### Retrieving Reports
+
+```bash
+# Get report by article ID
+curl -G http://localhost:3000/reports/search \
+  -H "Authorization: Bearer <token>" \
+  --data-urlencode "article_id=ARTICLE123"
+
+# Get report by request ID
+curl -G http://localhost:3000/reports/search \
+  -H "Authorization: Bearer <token>" \
+  --data-urlencode "request_id=12345678901234567890123456789012"
 ```
 
 ### Managing Users
 
 ```bash
-# Add user with custom rate limit
+# Add user with custom rate limit and GenShare settings
 npm run manage-users -- add user123 '{"max": 200, "windowMs": 900000}'
 
 # List users
@@ -219,6 +381,25 @@ npm run manage-users -- update-limit user123 '{"max": 300}'
 
 # Refresh token
 npm run manage-users -- refresh-token user123
+```
+
+### Managing GenShare Versions
+
+```bash
+# List all GenShare versions
+npm run manage-genshare -- list
+
+# Add a new GenShare version
+npm run manage-genshare -- add v2.0.0 "http://localhost:5001/snapshot" "http://localhost:5001/health" "spreadsheet-id" "Sheet1" "api-key"
+
+# Update a GenShare version
+npm run manage-genshare -- update v2.0.0 --processPdfUrl "http://localhost:5002/snapshot"
+
+# Set default GenShare version
+npm run manage-genshare -- set-default v2.0.0
+
+# Remove a GenShare version
+npm run manage-genshare -- remove v2.0.0
 ```
 
 ### Managing Permissions
@@ -234,12 +415,28 @@ npm run manage-permissions -- allow /processPDF POST user4
 npm run manage-permissions -- list
 ```
 
+### Database Management
+
+```bash
+# Initialize database
+npm run db:init
+
+# Refresh requests from S3
+npm run db:refresh
+
+# Check request IDs for an article
+npm run db:check <userName> <articleId>
+```
+
 ## Scripts
 
 ### Server Management
 ```bash
 # Start the server
 npm run start
+
+# Start the server in development mode (no DB refresh)
+npm run start:dev
 ```
 
 ### User Management
@@ -267,6 +464,48 @@ npm run manage-users -- update-limit user123 '{"max": 300}'
 # Remove user
 npm run manage-users -- remove user123
 # Output: User user123 removed
+```
+
+### Database Management
+```bash
+# Initialize the SQLite database (creates tables)
+npm run db:init
+# Output: Database initialized successfully
+
+# Refresh requests from S3 to update database
+npm run db:refresh
+# Output: Requests refreshed successfully
+
+# Check request IDs for a specific article
+npm run db:check user123 ARTICLE456
+# Output: Found X request IDs: [requestId1, requestId2, ...]
+```
+
+### GenShare Version Management
+```bash
+# List all GenShare versions
+npm run manage-genshare -- list
+# Output: Lists all configured GenShare versions
+
+# Add new GenShare version
+npm run manage-genshare -- add v2.0.0 "http://localhost:5001/snapshot" "http://localhost:5001/health" "spreadsheet-id" "Sheet1" "api-key"
+# Output: Added GenShare version v2.0.0
+
+# Update a GenShare version
+npm run manage-genshare -- update v2.0.0 --processPdfUrl "http://localhost:5002/snapshot" --apiKey "new-key"
+# Output: Updated GenShare version v2.0.0
+
+# Set default GenShare version
+npm run manage-genshare -- set-default v2.0.0
+# Output: Default GenShare version set to v2.0.0
+
+# Update response mapping
+npm run manage-genshare -- update-mapping v2.0.0 getResponse '{"new_field": 28}'
+# Output: Updated getResponse mapping for version v2.0.0
+
+# Remove a GenShare version
+npm run manage-genshare -- remove v2.0.0
+# Output: Removed GenShare version v2.0.0
 ```
 
 ### Permission Management
@@ -314,10 +553,6 @@ npm run lint
 # Fix auto-fixable ESLint issues
 npm run lint:fix
 # Output: Fixes and shows remaining issues
-
-# Install Git hooks (automatic on npm install)
-npm run prepare
-# Output: Husky hooks installed
 ```
 
 ### Version Management
@@ -325,16 +560,6 @@ npm run prepare
 # Sync version with git tags
 npm run sync-version
 # Output: Updates package.json version to match latest git tag
-
-# Update changelog
-npm run version
-# Effect: Updates CHANGELOG.md with recent changes
-# Note: Part of npm version lifecycle, rarely used directly
-
-# Push version changes
-npm run post-version
-# Effect: Pushes commits and tags to repository
-# Note: Usually part of release process
 
 # Create new release
 npm run release
@@ -346,13 +571,6 @@ npm run release
 # 5. Pushes changes and tags
 ```
 
-Notes:
-- All user and permission management commands require appropriate permissions
-- Log analysis can be memory-intensive for large log files
-- Version management commands affect git repository state
-- Always run lint before committing changes
-- The release process is automated but can be done manually if needed
-
 ## Development
 
 ### Project Structure
@@ -362,12 +580,14 @@ Notes:
 │   ├── server.js           # Entry point
 │   ├── config.js           # Configuration
 │   ├── middleware/         # Custom middleware
-│   ├── routes/            # API routes
-│   ├── controllers/       # Request handlers
-│   └── utils/            # Utility functions
-├── scripts/               # Management scripts
-├── conf/                 # Configuration files
-└── tmp/                  # Temporary files
+│   ├── routes/             # API routes
+│   ├── controllers/        # Request handlers
+│   └── utils/              # Utility functions
+├── scripts/                # Management scripts
+│   └── maintenance/        # Database maintenance scripts
+├── conf/                   # Configuration files
+├── sqlite/                 # SQLite database files
+└── tmp/                    # Temporary files
 ```
 
 ### Setting Up Development Environment
@@ -385,6 +605,11 @@ cp .env.default .env
 cp conf/*.default conf/*
 ```
 
+3. Initialize database:
+```bash
+npm run db:init
+```
+
 ### Commit Guidelines
 
 Follow Conventional Commits specification:
@@ -398,18 +623,6 @@ fix: resolve rate limiting issue
 docs: update API documentation
 refactor: improve error handling
 ```
-
-Supported types (from .versionrc.json):
-- feat: Features
-- fix: Bug Fixes
-- docs: Documentation
-- style: Styling
-- refactor: Code Refactoring
-- perf: Performance Improvements
-- test: Tests
-- build: Build System
-- ci: CI Implementation
-- chore: Maintenance
 
 ### Version Management
 
@@ -427,6 +640,8 @@ git push origin v1.1.0
 - JWT-based authentication required for all routes
 - Route-specific access control
 - User-specific rate limiting
+- User-specific GenShare version access
+- Response filtering based on user permissions
 - Secure token storage and management
 - Request logging and monitoring
 - S3 storage for complete request traceability
@@ -441,11 +656,13 @@ git push origin v1.1.0
 ```json
 {
   "aws-sdk": "^2.1692.0",
-  "axios": "^1.7.7",
+  "axios": "^1.9.0",
   "express": "^4.17.1",
   "express-rate-limit": "^5.2.6",
+  "form-data": "^4.0.0",
   "googleapis": "^144.0.0",
   "jsonwebtoken": "^9.0.2",
+  "sqlite3": "^5.1.6",
   "winston": "^3.15.0"
 }
 ```
