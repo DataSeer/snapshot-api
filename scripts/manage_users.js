@@ -39,6 +39,10 @@ function addUser(userId, rateLimit, genshareSettings = {}) {
       defaultVersion: genshareSettings.defaultVersion || 'default',
       availableFields: genshareSettings.availableFields || [],
       restrictedFields: genshareSettings.restrictedFields || []
+    },
+    reports: {
+      authorizedVersions: [],
+      defaultVersion: ''
     }
   };
   saveUsers(users);

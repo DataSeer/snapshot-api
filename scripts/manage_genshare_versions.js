@@ -1,7 +1,7 @@
 // File: scripts/manage_genshare_versions.js
 const fs = require('fs');
 const path = require('path');
-const { isValidVersion } = require('../src/utils/version');
+const { isValidVersion } = require('../src/utils/versions');
 
 const configPath = path.join(__dirname, '../src/config.js');
 const config = require(configPath);

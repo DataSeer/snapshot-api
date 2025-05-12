@@ -8,5 +8,6 @@ module.exports = {
   genshareConfigPath: path.join(__dirname, '../conf/genshare.json'),
   grobidConfigPath: path.join(__dirname, '../conf/grobid.json'),
   datastetConfigPath: path.join(__dirname, '../conf/datastet.json'),
+  reportsConfigPath: path.join(__dirname, '../conf/reports.json'),
   usersPath: path.join(__dirname, '../conf/users.json')
 };

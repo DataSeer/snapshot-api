@@ -7,6 +7,8 @@ const config = require('../config');
 const { ProcessingSession } = require('../utils/s3Storage');
 const { appendToSheet, convertToGoogleSheetsDate, convertToGoogleSheetsTime, convertToGoogleSheetsDuration } = require('../utils/googleSheets');
 const { getUserById } = require('../utils/userManager');
+const { createGoogleSheets, buildJSON } = require('../utils/reportsManager');
+const { addOrUpdateRequest } = require('../utils/requestsManager');
 
 // Load the genshare configuration
 const genshareConfig = require(config.genshareConfigPath);
@@ -85,18 +87,18 @@ const getResponse = (response = [], version) => {
 };
 
 /**
- * Filter response data based on user's permissions
- * @param {Object} responseData - Full response from GenShare
+ * Filter GenShare response based on user's permissions
+ * @param {Object} responseData - Response property of the full GenShare response
  * @param {Object} user - User object with filter settings
  * @returns {Object} - Filtered response
  */
 const filterResponseForUser = (responseData, user) => {
   // If no response data or no filter settings, return as is
-  if (!responseData || !responseData.response || !user.genshare || !user.genshare.responseFilter) {
+  if (!responseData || !user.genshare) {
     return responseData;
   }
 
-  const { availableFields, restrictedFields } = user.genshare.responseFilter;
+  const { availableFields, restrictedFields } = user.genshare;
 
   // If no filter restrictions, return full response
   if ((!availableFields || availableFields.length === 0) && 
@@ -105,18 +107,18 @@ const filterResponseForUser = (responseData, user) => {
   }
 
   // Create a deep copy to avoid modifying original
-  const filteredResponse = JSON.parse(JSON.stringify(responseData));
+  let filteredResponse = JSON.parse(JSON.stringify(responseData));
 
   // Filter the response array
-  if (Array.isArray(filteredResponse.response)) {
+  if (Array.isArray(filteredResponse)) {
     if (availableFields && availableFields.length > 0) {
       // Include only available fields
-      filteredResponse.response = filteredResponse.response.filter(item => 
+      filteredResponse = filteredResponse.filter(item => 
         availableFields.includes(item.name)
       );
     } else if (restrictedFields && restrictedFields.length > 0) {
       // Exclude restricted fields
-      filteredResponse.response = filteredResponse.response.filter(item => 
+      filteredResponse = filteredResponse.filter(item => 
         !restrictedFields.includes(item.name)
       );
     }
@@ -130,16 +132,16 @@ const filterResponseForUser = (responseData, user) => {
  * @param {Object} options - Options containing session, error status, and request
  * @returns {Promise<void>}
  */
-const appendToSummary = async ({ session, errorStatus, req, version }) => {
+const appendToSummary = async ({ session, errorStatus, req, genshareVersion, reportURL }) => {
     try {
       // Safely get the filename, defaulting to "No file" if not available
       const filename = req.file?.originalname || "N/A";
       
       // Get the response info
-      let response = getResponse(session.response?.data?.response, version);
+      let response = getResponse(session.response?.data?.response, genshareVersion);
       
       // Get the Path info
-      let path = getPath(session.response?.data?.path, version);
+      let path = getPath(session.response?.data?.path, genshareVersion);
       
       // Current date
       const now = new Date();
@@ -154,13 +156,14 @@ const appendToSummary = async ({ session, errorStatus, req, version }) => {
         convertToGoogleSheetsTime(now),                        // Time
         convertToGoogleSheetsDuration(session.duration),       // Session duration
         req.user.id,                                           // User ID
-        filename                                               // PDF filename or "No file"
-      ].concat(response).concat(path), version);
+        filename,                                              // PDF filename or "No file"
+        reportURL                                              // Report URL
+      ].concat(response).concat(path), genshareVersion);
       
       session.addLog('Logged to Google Sheets successfully');
     } catch (sheetsError) {
       session.addLog(`Error logging to Google Sheets: ${sheetsError.message}`);
-      console.error('Error logging to Google Sheets:', sheetsError);
+      console.error(`[${session.requestId}] Error logging to Google Sheets:`, sheetsError);
     }
 };
 
@@ -237,35 +240,61 @@ module.exports.getGenShareHealth = async (req, res) => {
 module.exports.processPDF = async (req, res) => {
   // Get the user's full information
   const user = getUserById(req.user.id);
+
+  let reportURL = "";
   
   // Determine which GenShare version to use
-  let requestedVersion = req.body.genshareVersion;
-  let activeVersion;
+  let requestedGenShareVersion = req.body.genshareVersion;
+  let activeGenShareVersion;
   
   // Check if the requested version is authorized for this user
-  if (requestedVersion && 
+  if (requestedGenShareVersion && 
       user.genshare && 
       user.genshare.authorizedVersions && 
-      user.genshare.authorizedVersions.includes(requestedVersion)) {
-    activeVersion = requestedVersion;
+      user.genshare.authorizedVersions.includes(requestedGenShareVersion)) {
+    activeGenShareVersion = requestedGenShareVersion;
   } else {
     // First try user's default version if specified
     if (user.genshare?.defaultVersion) {
-      activeVersion = user.genshare.defaultVersion;
+      activeGenShareVersion = user.genshare.defaultVersion;
     } 
     // If no user default is specified, use the global default from genshare config
     else {
       if (!user.genshare || !Array.isArray(user.genshare.authorizedVersions) || user.genshare.authorizedVersions.length <= 0) {
-        activeVersion = genshareConfig.defaultVersion;
+        activeGenShareVersion = genshareConfig.defaultVersion;
       } else {
-        activeVersion = user.genshare.authorizedVersions[0];
+        activeGenShareVersion = user.genshare.authorizedVersions[0];
       }
     }
   }
-  
+
   // Check if version exists in configuration
-  if (!genshareConfig.versions[activeVersion]) {
-    return res.status(400).send(`Requested GenShare version '${activeVersion}' is not configured.`);
+  if (!genshareConfig.versions[activeGenShareVersion]) {
+    return res.status(400).send(`Requested GenShare version '${activeGenShareVersion}' is not configured.`);
+  }
+
+  // Determine which report to use
+  let requestedReportVersion = req.body.report;
+  let activeReportVersion;
+
+  // Check if the client sent a reportVersion
+  if (requestedReportVersion) {
+    // Check if the requested report is authorized for this user
+    if (user.reports && 
+        user.reports.authorizedVersions && 
+        Array.isArray(user.reports.authorizedVersions) &&
+        user.reports.authorizedVersions.includes(requestedReportVersion)) {
+      // Case 1: Client sent a reportVersion and it's authorized
+      activeReportVersion = requestedReportVersion;
+    } else {
+      // Case 1: Client sent a reportVersion but it's NOT authorized
+      // Use the user's defaultVersion (which can be empty)
+      activeReportVersion = user.reports?.defaultVersion || "";
+    }
+  } else {
+    // Case 2: Client didn't send a reportVersion
+    // Use the user's defaultVersion (which can be empty)
+    activeReportVersion = user.reports?.defaultVersion || "";
   }
   
   // Initialize processing session
@@ -279,7 +308,7 @@ module.exports.processPDF = async (req, res) => {
       errorStatus = 'Input request error: Required "file" missing';
       session.addLog('Error: Required "file" missing');
       await session.saveToS3();
-      await appendToSummary({ session, errorStatus, req, version: activeVersion });
+      await appendToSummary({ session, errorStatus, req, version: activeGenShareVersion });
       return res.status(400).send('Required "file" missing.');
     }
 
@@ -287,7 +316,7 @@ module.exports.processPDF = async (req, res) => {
       errorStatus = 'Input request error: Invalid file type';
       session.addLog('Error: Invalid file type ' + req.file.mimetype);
       await session.saveToS3();
-      await appendToSummary({ session, errorStatus, req, version: activeVersion });
+      await appendToSummary({ session, errorStatus, req, version: activeGenShareVersion });
       return res.status(400).send('Required "file" invalid. Must have mimetype "application/pdf"');
     }
 
@@ -298,13 +327,13 @@ module.exports.processPDF = async (req, res) => {
         errorStatus = 'Input request error: Required "options" missing';
         session.addLog('Error: Required "options" missing');
         await session.saveToS3();
-        await appendToSummary({ session, errorStatus, req, version: activeVersion });
+        await appendToSummary({ session, errorStatus, req, version: activeGenShareVersion });
         return res.status(400).send('Required "options" missing. Must be a valid JSON object.');
       } else if (typeof options !== 'object' || Array.isArray(options)) {
         errorStatus = 'Input request error: Invalid options format';
         session.addLog('Error: Invalid options format');
         await session.saveToS3();
-        await appendToSummary({ session, errorStatus, req, version: activeVersion });
+        await appendToSummary({ session, errorStatus, req, version: activeGenShareVersion });
         return res.status(400).send('Required "options" invalid. Must be a JSON object.');
       }
       session.options = options;
@@ -312,16 +341,16 @@ module.exports.processPDF = async (req, res) => {
       errorStatus = "Input request error: Error parsing options";
       session.addLog('Error parsing options: ' + error.message);
       await session.saveToS3();
-      await appendToSummary({ session, errorStatus, req, version: activeVersion });
+      await appendToSummary({ session, errorStatus, req, version: activeGenShareVersion });
       return res.status(400).send('Required "options" invalid. Must be a valid JSON object.');
     }
 
     // Log initial request details
     session.addLog(`Request received from ${req.user.id}`);
-    session.addLog(`Using GenShare version: ${activeVersion}`);
+    session.addLog(`Using GenShare version: ${activeGenShareVersion}`);
 
     // Get the configuration for the active version
-    const versionConfig = genshareConfig.versions[activeVersion];
+    const versionConfig = genshareConfig.versions[activeGenShareVersion];
     const processPDFConfig = versionConfig.processPDF;
 
     const formData = new FormData();
@@ -349,7 +378,7 @@ module.exports.processPDF = async (req, res) => {
     });
 
     // Log third-party service request
-    session.addLog(`Sending request to GenShare service (${activeVersion})`);
+    session.addLog(`Sending request to GenShare service (${activeGenShareVersion})`);
     session.addLog(`URL: ${processPDFConfig.url}`);
 
     const response = await axios({
@@ -370,8 +399,20 @@ module.exports.processPDF = async (req, res) => {
     }
 
     // Log successful response
-    session.addLog(`Received response from GenShare service (${activeVersion})`);
-    session.addLog(`Status: ${response.status}`);
+    let responseGenShareVersion = response?.data?.version;
+
+    if (!responseGenShareVersion) {
+      session.addLog(`GenShare version returned not found`);
+    } else {
+      session.addLog(`GenShare version returned found: ${responseGenShareVersion}`);
+      if (activeGenShareVersion.indexOf(responseGenShareVersion) > -1) {
+        session.addLog(`GenShare versions match: (${activeGenShareVersion} - ${responseGenShareVersion})`);
+      } else {
+        session.addLog(`GenShare versions don't match (${activeGenShareVersion} - ${responseGenShareVersion})`);
+      }
+    }
+
+    session.addLog(`Received response from GenShare service with status: ${response.status}`);
 
     // Store complete response info before modification
     session.setResponse({
@@ -381,29 +422,75 @@ module.exports.processPDF = async (req, res) => {
     });
 
     // Set GenShare version in the processing session
-    session.setGenshareVersion(`${activeVersion}`);
+    session.setGenshareVersion(`${activeGenShareVersion}`);
+
+    // If everything is fine (no error, activeReportVersion not empty and data available)
+    // - create a the Google Sheets file
+    // - create the JSON data
+    if (errorStatus === "No" && !!activeReportVersion && response.data.response) {
+      session.addLog(`Using report: ${activeReportVersion}`);
+      try {
+        // Create GoogleSheets Report
+        const googleSheetsReport = await createGoogleSheets(activeReportVersion, response.data.response, session);
+        reportURL = googleSheetsReport.url;
+
+        // Build JSON Report
+        const jsonReport = buildJSON(activeReportVersion, response.data.response, reportURL);
+
+        // Store JSON Report
+        session.setReport(jsonReport);
+
+      } catch (sheetsCreationError) {
+        session.addLog(`Error creating Google Sheets file: ${sheetsCreationError.message}`);
+        console.error(`[${session.requestId}] Error creating Google Sheets file:`, sheetsCreationError);
+        // Don't fail the request if sheets creation fails, just log it
+      }
+    }
+
+    // Get the "article_id" value
+    const articleId = response.data.response.filter((item) => {
+      return item.name === "article_id";
+    })[0]?.value;
+
+    if (!articleId) {
+      session.addLog('Error: "article_id" not found. Link "article_id <-> request_id" not created.');
+      console.error(`[${session.requestId}] Error: "article_id" not found. Link "article_id <-> request_id" not created.`);
+    } else {
+      // Add the link between the "article_id" and the "request_id"
+      session.addLog('Link "article_id <-> request_id" created');
+      await addOrUpdateRequest(user.id, articleId, session.requestId);
+    }
 
     // Save session data and clean up
     session.addLog('Response processing completed');
     await session.saveToS3();
     
     // Log to summary sheet before sending response
-    await appendToSummary({ session, errorStatus, req, version: activeVersion });
+    await appendToSummary({ session, errorStatus, req, version: activeGenShareVersion, reportURL });
 
     // Clean up temporary file
     await fs.promises.unlink(req.file.path).catch(err => {
-      console.error('Error deleting temporary file:', err);
+      console.error(`[${session.requestId}] Error deleting temporary file:`, err);
     });
 
     // Apply user-specific filtering to the response
-    const filteredData = filterResponseForUser({ response: response.data.response }, user);
+    const filteredData = filterResponseForUser(response.data.response, user);
+
+    // Add report_url if possible
+    if (!!reportURL && Array.isArray(filteredData)) {
+      filteredData.push([{
+        "name": "report_link",
+        "description": "Report link",
+        "value": reportURL
+      }]);
+    }
 
     // Forward modified response to client
     res.status(response.status);
     Object.entries(response.headers).forEach(([key, value]) => {
       res.set(key, value);
     });
-    res.json(filteredData);
+    res.json({ response: filteredData });
 
   } catch (error) {
     // Set error status based on the type of error
@@ -421,15 +508,15 @@ module.exports.processPDF = async (req, res) => {
       // Save session data with error information
       await session.saveToS3();
       // Log to summary sheet before sending error response
-      await appendToSummary({ session, errorStatus, req, version: activeVersion });
+      await appendToSummary({ session, errorStatus, req, version: activeGenShareVersion });
     } catch (s3Error) {
-      console.error('Error saving session data:', s3Error);
+      console.error(`[${session.requestId}] Error saving session data:`, s3Error);
     }
 
     // Clean up temporary file if it exists
     if (req.file && req.file.path) {
       await fs.promises.unlink(req.file.path).catch(err => {
-        console.error('Error deleting temporary file:', err);
+        console.error(`[${session.requestId}] Error deleting temporary file:`, err);
       });
     }
     

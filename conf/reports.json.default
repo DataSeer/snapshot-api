@@ -1,0 +1,34 @@
+{
+  "defaultVersion": "",
+  "versions": {
+    "Report (v0.1)": {
+      "googleSheets": {
+        "folder": {
+          "default": "XXX"
+        },
+        "template": {
+          "default": "XXX"
+        },
+        "permissions": {
+          "default": "writer"
+        },
+        "sheets": {
+          "TEMPLATE": {
+            "cells": {
+              "A1": "key1",
+              "Z999": "key2"
+            }
+          }
+        }
+      },
+      "JSON": {
+        "availableFields": [
+          "key1",
+          "key2",
+          "key3"
+        ],
+        "restrictedFields": []
+      }
+    }
+  }
+}

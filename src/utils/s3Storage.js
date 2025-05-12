@@ -1,18 +1,26 @@
 // File: src/utils/s3Storage.js
-const AWS = require('aws-sdk');
+const { 
+  S3Client, 
+  PutObjectCommand, 
+  ListObjectsV2Command, 
+  GetObjectCommand
+} = require('@aws-sdk/client-s3');
+const { createReadStream } = require('fs');
 const crypto = require('crypto');
 const fs = require('fs');
 
-const { isValidVersion } = require('./version');
+const { isValidVersion } = require('./versions');
 
 // Load S3 configuration from JSON file
 // eslint-disable-next-line node/no-unpublished-require
 const s3Config = require('../../conf/aws.s3.json');
 
 // Initialize S3 client
-const s3 = new AWS.S3({
-  accessKeyId: s3Config.accessKeyId,
-  secretAccessKey: s3Config.secretAccessKey,
+const s3Client = new S3Client({
+  credentials: {
+    accessKeyId: s3Config.accessKeyId,
+    secretAccessKey: s3Config.secretAccessKey,
+  },
   region: s3Config.region
 });
 
@@ -46,17 +54,140 @@ const calculateMD5 = (filePath) => {
 // Store multiple files in S3 with a single batch
 const uploadBatchToS3 = async (files) => {
   try {
-    await Promise.all(files.map(({ key, data, contentType }) => {
+    await Promise.all(files.map(async ({ key, data, contentType }) => {
       const params = {
         Bucket: s3Config.bucketName,
         Key: key,
         Body: data,
         ContentType: contentType
       };
-      return s3.upload(params).promise();
+      const command = new PutObjectCommand(params);
+      return s3Client.send(command);
     }));
   } catch (error) {
     console.error('Error in batch upload:', error);
+    throw error;
+  }
+};
+
+// List all objects in a prefix with pagination
+const listObjects = async (prefix) => {
+  let allObjects = [];
+  let continuationToken = undefined;
+  
+  do {
+    const params = {
+      Bucket: s3Config.bucketName,
+      Prefix: prefix,
+      ContinuationToken: continuationToken
+    };
+    
+    const command = new ListObjectsV2Command(params);
+    const response = await s3Client.send(command);
+    allObjects = [...allObjects, ...(response.Contents || [])];
+    continuationToken = response.NextContinuationToken;
+    
+    console.log(`Retrieved ${response.Contents?.length || 0} objects, ${allObjects.length} total so far.`);
+    
+  } while (continuationToken);
+  
+  return allObjects;
+};
+
+// Get file from S3
+const getFile = async (key) => {
+  try {
+    const params = {
+      Bucket: s3Config.bucketName,
+      Key: key
+    };
+    
+    const command = new GetObjectCommand(params);
+    const response = await s3Client.send(command);
+    
+    // In v3, Body is a readable stream
+    return await streamToString(response.Body);
+  } catch (error) {
+    console.error(`Error getting file ${key}:`, error);
+    throw error;
+  }
+};
+
+// Helper function to convert stream to string
+const streamToString = async (stream) => {
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString('utf-8');
+};
+
+// Get all options.json files from S3
+const getAllOptionsFiles = async () => {
+  try {
+    console.log("Starting to fetch options files from S3...");
+    const prefix = `${s3Config.s3Folder}/`;
+    console.log(`Using prefix: ${prefix}`);
+    
+    const objects = await listObjects(prefix);
+    console.log(`Total objects retrieved from S3: ${objects.length}`);
+    
+    const optionsFiles = objects.filter(obj => obj.Key.endsWith('/options.json'));
+    console.log(`Total options.json files found: ${optionsFiles.length}`);
+    
+    const fileData = await Promise.all(optionsFiles.map(async (file) => {
+      try {
+        const content = await getFile(file.Key);
+        const pathParts = file.Key.split('/');
+        
+        // Extract userId and requestId from the path
+        // Path format: snapshot-api-dev/userId/requestId/options.json
+        const userId = pathParts[pathParts.length - 3];
+        const requestId = pathParts[pathParts.length - 2];
+        
+        let parsedContent;
+        try {
+          parsedContent = JSON.parse(content);
+        } catch (e) {
+          console.error(`JSON parse error for ${file.Key}:`, e);
+          parsedContent = null;
+        }
+        
+        return {
+          userId,
+          requestId,
+          content: parsedContent,
+          lastModified: file.LastModified
+        };
+      } catch (error) {
+        console.error(`Error processing file ${file.Key}:`, error);
+        return null;
+      }
+    }));
+    
+    // Filter out any null entries from errors
+    const validFileData = fileData.filter(file => file !== null);
+    console.log(`Processed ${validFileData.length} valid files out of ${optionsFiles.length}`);
+    
+    return validFileData;
+  } catch (error) {
+    console.error('Error getting options files:', error);
+    throw error;
+  }
+};
+
+
+// Get report file from S3
+const getReportFile = async (userId, requestId) => {
+  try {
+    const key = `${s3Config.s3Folder}/${userId}/${requestId}/report.json`;
+    const content = await getFile(key);
+    return JSON.parse(content);
+  } catch (error) {
+    if (error.$metadata?.httpStatusCode === 404 || error.name === 'NoSuchKey') {
+      return null;
+    }
+    console.error('Error getting report file:', error);
     throw error;
   }
 };
@@ -70,6 +201,8 @@ class ProcessingSession {
     this.file = file;
     this.logs = [];
     this.response = null;
+    this.report = null;
+    this.options = null;
     this.startTime = new Date();
     this.endTime = null;
     this.duration = -1;
@@ -125,6 +258,16 @@ class ProcessingSession {
     this.addLog(`Response status: ${response.status}`, 'INFO');
   }
 
+  setReport(report) {
+    this.report = report;
+    this.addLog(`report JSON data setup`, 'INFO');
+  }
+
+  setOptions(options) {
+    this.options = options;
+    this.addLog(`options JSON data setup`, 'INFO');
+  }
+
   async saveToS3() {
     try {
       // Add session end time to logs
@@ -152,7 +295,7 @@ class ProcessingSession {
         filesToUpload.push(
           {
             key: `${this.getBasePath()}/file.pdf`,
-            data: fs.createReadStream(this.file.path),
+            data: createReadStream(this.file.path),
             contentType: 'application/pdf'
           },
           {
@@ -205,6 +348,15 @@ class ProcessingSession {
         });
       }
 
+      // Add report if it exists
+      if (this.report) {
+        filesToUpload.push({
+          key: `${this.getBasePath()}/report.json`,
+          data: JSON.stringify(this.report, null, 2),
+          contentType: 'application/json'
+        });
+      }
+
       // Upload everything in a single batch
       await uploadBatchToS3(filesToUpload);
 
@@ -216,4 +368,8 @@ class ProcessingSession {
   }
 }
 
-module.exports = { ProcessingSession };
+module.exports = { 
+  ProcessingSession,
+  getAllOptionsFiles,
+  getReportFile
+};
