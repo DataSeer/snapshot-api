@@ -2,8 +2,12 @@ node_modules/
 uploads/
 .env
 conf/*.json
+
+sqlite/*.db
+
 tmp/
 
 log/*.log
+
 
 .idea

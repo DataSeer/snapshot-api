@@ -6,7 +6,9 @@ const { getGrobidHealth } = require('../controllers/grobidController');
 const { getDatastetHealth } = require('../controllers/datastetController');
 const { getPing } = require('../controllers/healthController');
 const { getApiRoutes } = require('../controllers/apiController');
-const { getVersions } = require('../controllers/versionController');
+const { getVersions } = require('../controllers/versionsController');
+const { refreshRequests } = require('../controllers/requestsController');
+const { getReport } = require('../controllers/reportsController');
 const rateLimiter = require('../utils/rateLimiter');
 
 const router = express.Router();
@@ -23,5 +25,11 @@ router.get('/ping', rateLimiter, getPing);
 router.get('/genshare/health', rateLimiter, getGenShareHealth);
 router.get('/grobid/health', rateLimiter, getGrobidHealth);
 router.get('/datastet/health', rateLimiter, getDatastetHealth);
+
+// Reports endpoints
+router.get('/reports/search', rateLimiter, getReport);
+
+// Requests endpoints
+router.post('/requests/refresh', rateLimiter, refreshRequests);
 
 module.exports = router;
