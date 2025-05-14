@@ -2,35 +2,44 @@
 const express = require('express');
 const morgan = require('morgan');
 const routes = require('./routes');
-const { authenticateToken } = require('./middleware/auth');
-const { checkPermissions } = require('./middleware/permissions');
 const { httpLogger, trackDuration } = require('./utils/logger');
 const config = require('./config');
 const { initDatabase, refreshRequestsFromS3 } = require('./utils/requestsManager');
+const jwtManager = require('./utils/jwtManager');
 
 const app = express();
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(morgan('combined'));
 
 // Use the HTTP logger middleware
 app.use(trackDuration);
 app.use(httpLogger);
 
-// Apply authentication to all routes
-app.use(authenticateToken);
-
-// Apply permissions to all routes
-app.use(checkPermissions);
-
+// Routes are handled in the routes file, including authentication and permissions
 app.use('/', routes);
 
 // Initialize the database and start the server
 const startServer = async () => {
   try {
-    console.log('Initializing database...');
+    console.log('Initializing databases...');
+    
+    // Initialize main database
     await initDatabase();
-    console.log('Database initialized successfully');
+    console.log('Main database initialized successfully');
+    
+    // Setup periodic token cleanup (every hour)
+    setInterval(async () => {
+      try {
+        const deleted = await jwtManager.cleanupExpiredTokens();
+        if (deleted > 0) {
+          console.log(`Cleaned up ${deleted} expired tokens`);
+        }
+      } catch (error) {
+        console.error('Error cleaning up tokens:', error);
+      }
+    }, 3600000); // 1 hour
     
     // Only refresh from S3 if NO_DB_REFRESH is not set to true
     if (process.env.NO_DB_REFRESH !== 'true') {
