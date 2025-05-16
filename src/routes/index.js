@@ -13,6 +13,12 @@ const {
   authenticateEditorialManager, 
   revokeTokenEditorialManager
 } = require('../controllers/authController');
+const { 
+  postSubmissions,
+  postCancelUpload,
+  postReport,
+  postReportLink
+} = require('../controllers/emController.fake');
 const { authenticateToken } = require('../middleware/auth');
 const { checkPermissions } = require('../middleware/permissions');
 const rateLimiter = require('../utils/rateLimiter');
@@ -55,6 +61,12 @@ authenticatedRouter.get('/reports/search', getReport);
 
 // Requests endpoints
 authenticatedRouter.post('/requests/refresh', refreshRequests);
+
+// Editorial Manager endpoints
+authenticatedRouter.post('/editorial-manager/submissions', upload.any(), postSubmissions);
+authenticatedRouter.post('/editorial-manager/cancel', postCancelUpload); // return true
+authenticatedRouter.post('/editorial-manager/reports', postReport); // return { "report_token": "", "scores": "", "flag": true }
+authenticatedRouter.post('/editorial-manager/reportLink', postReportLink); // return { "report_url": "..." }
 
 // Mount the authenticated router
 unauthenticatedRouter.use('/', authenticatedRouter);

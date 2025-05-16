@@ -1,4 +1,4 @@
-// File: src/utils/dbManager.js
+// File: src/utils/dbManager.js with editorial-manager-submissions table support
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
@@ -67,6 +67,26 @@ const initDatabase = async () => {
       )`, (err) => {
         if (err) {
           console.error('Error creating temporary_tokens table:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+    
+    // Create the editorial-manager-submissions table if it doesn't exist
+    await new Promise((resolve, reject) => {
+      db.run(`CREATE TABLE IF NOT EXISTS "editorial-manager-submissions" (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        request_id TEXT NOT NULL UNIQUE,
+        service_id TEXT NOT NULL,
+        publication_code TEXT NOT NULL,
+        document_id TEXT NOT NULL,
+        canceled_at DATETIME DEFAULT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`, (err) => {
+        if (err) {
+          console.error('Error creating editorial-manager-submissions table:', err);
           reject(err);
         } else {
           resolve();
@@ -479,6 +499,119 @@ const getRequestIdsByArticleId = async (userName, articleId) => {
   }
 };
 
+/*
+ * EDITORIAL MANAGER SUBMISSIONS METHODS
+ */
+
+/**
+ * Store a new Editorial Manager submission
+ * @param {string} requestId - The request ID
+ * @param {string} serviceId - The service ID
+ * @param {string} publicationCode - The publication code
+ * @param {string} documentId - The document ID
+ * @returns {Promise<number>} - ID of the inserted record
+ */
+const storeEmSubmission = async (requestId, serviceId, publicationCode, documentId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        `INSERT INTO "editorial-manager-submissions" (request_id, service_id, publication_code, document_id)
+         VALUES (?, ?, ?, ?)`,
+        [requestId, serviceId, publicationCode, documentId],
+        function(err) {
+          if (err) reject(err);
+          else resolve(this.lastID);
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error storing EM submission:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get submission by request ID
+ * @param {string} requestId - The request ID
+ * @returns {Promise<Object|null>} - Submission record or null if not found
+ */
+const getEmSubmissionByRequestId = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT * FROM "editorial-manager-submissions" WHERE request_id = ?`,
+        [requestId],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row || null);
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting EM submission by request ID:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update canceled_at timestamp for a submission
+ * @param {string} requestId - The request ID
+ * @returns {Promise<boolean>} - True if submission was found and updated
+ */
+const cancelEmSubmission = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+    const now = new Date().toISOString();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE "editorial-manager-submissions"
+         SET canceled_at = ?
+         WHERE request_id = ?`,
+        [now, requestId],
+        function(err) {
+          if (err) reject(err);
+          else resolve(this.changes > 0);
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error canceling EM submission:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   initDatabase,
   
@@ -494,5 +627,10 @@ module.exports = {
   deleteRequest,
   getRequestIdByArticleId,
   getArticleIdByRequestId,
-  getRequestIdsByArticleId
+  getRequestIdsByArticleId,
+  
+  // Editorial Manager submissions methods
+  storeEmSubmission,
+  getEmSubmissionByRequestId,
+  cancelEmSubmission
 };

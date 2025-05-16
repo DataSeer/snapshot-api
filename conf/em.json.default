@@ -1,0 +1,17 @@
+{
+  "reportCompleteNotificationUrl": "https://api.editorialmanager.com/ManuscriptAnalysisTools/{publication_code}/ReportComplete",
+  "defaultServiceId": "editorial-manager-service",
+  "auth": {
+    "clientId": "your-client-id",
+    "clientSecret": "your-client-secret"
+  },
+  "das_triggers": [
+    "data availability",
+    "data and code availability statement",
+    "data availability statement",
+    "code availability",
+    "data access",
+    "data sharing",
+    "availability of data and materials"
+  ]
+}
