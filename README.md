@@ -9,6 +9,7 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [API Architecture](#api-architecture)
+- [Authentication Flow](#authentication-flow)
 - [Usage](#usage)
 - [Scripts](#scripts)
 - [Development](#development)
@@ -22,6 +23,8 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - Multiple GenShare version support with user-specific access control
 - Response filtering based on user permissions
 - JWT-based authentication system
+  - Permanent tokens for long-term API access
+  - Temporary tokens for external integrations (OAuth 2.0 Password Grant)
 - Role-based access control
 - User-specific rate limiting
 - AWS S3 storage integration
@@ -84,6 +87,7 @@ cp conf/*.default conf/*
 ### Environment Variables (.env)
 ```env
 JWT_SECRET=your_jwt_secret_key
+TOKEN_EXPIRATION=3600  # Temporary token expiration in seconds (default: 1 hour)
 PORT=3000
 ```
 
@@ -128,6 +132,7 @@ PORT=3000
 {
   "admin": {
     "token": "XXXX",
+    "client_secret": "your_client_secret_here", // For temporary token authentication
     "rateLimit": {
       "max": 200,
       "windowMs": 0
@@ -185,7 +190,37 @@ PORT=3000
 }
 ```
 
-4. AWS S3 (`conf/aws.s3.json`):
+4. Permissions Configuration:
+```json
+// conf/permissions.json
+{
+  "routes": {
+    "/": {
+      "GET": {
+        "description": "Get all available API routes",
+        "allowed": [],
+        "blocked": []
+      }
+    },
+    "/processPDF": {
+      "POST": {
+        "description": "Process a PDF file",
+        "allowed": [],
+        "blocked": []
+      }
+    },
+    "/reports/search": {
+      "GET": {
+        "description": "Get reports by request ID",
+        "allowed": ["admin"],
+        "blocked": []
+      }
+    }
+  }
+}
+```
+
+5. AWS S3 (`conf/aws.s3.json`):
 ```json
 {
   "accessKeyId": "YOUR_ACCESS_KEY",
@@ -196,10 +231,9 @@ PORT=3000
 }
 ```
 
-5. Additional Configurations:
+6. Additional Configurations:
 - `conf/grobid.json`: GROBID service settings
 - `conf/datastet.json`: DataStet service settings
-- `conf/permissions.json`: Route permissions
 - `conf/googleSheets.credentials.json`: Google Sheets API credentials
 
 ## API Architecture
@@ -207,6 +241,11 @@ PORT=3000
 ### Available Endpoints
 
 ```
+# Authentication
+POST   /editorial-manager/authenticate - Get temporary token using client credentials
+POST   /editorial-manager/revokeToken       - Revoke a temporary token
+
+# API routes
 GET    /                       - List available API routes
 GET    /ping                   - Health check all services
 POST   /processPDF             - Process a PDF file (with optional genshareVersion and report parameters)
@@ -217,17 +256,52 @@ GET    /reports/search         - Get reports by article_id or request_id
 POST   /requests/refresh       - Refresh article-request ID mapping from S3
 ```
 
-### Authentication Flow
+## Authentication Flow
+
+### Permanent Token Authentication (for direct API users)
 
 1. Token Generation:
 ```bash
 npm run manage-users -- add user123
-# Output: User user123 added with token: eyJhbGciOiJ...
+# Output: User user123 added with token: eyJhbGciOiJ... and client_secret: a1b2c3d4...
 ```
 
 2. Request Authentication:
 ```bash
 curl -H "Authorization: Bearer <your-token>" http://localhost:3000/endpoint
+```
+
+### Temporary Token Authentication (for external systems)
+
+1. Obtain a temporary token:
+```bash
+curl -X POST http://localhost:3000/editorial-manager/authenticate \
+  -d "client_id=user123" \
+  -d "client_secret=a1b2c3d4..." \
+  -d "grant_type=password"
+
+# Response:
+# {
+#   "access_token": "eyJhbGciOiJ...",
+#   "token_type": "bearer",
+#   "expires_in": 3600
+# }
+```
+
+2. Use the temporary token:
+```bash
+curl -H "Authorization: Bearer <access_token>" http://localhost:3000/endpoint
+```
+
+3. Revoke a temporary token (optional):
+```bash
+curl -X POST http://localhost:3000/editorial-manager/revokeToken \
+  -d "token=eyJhbGciOiJ..."
+
+# Response:
+# {
+#   "message": "Token revoked successfully"
+# }
 ```
 
 ### Response Filtering
@@ -285,10 +359,11 @@ S3 Storage Structure:
 
 ### SQLite Database
 
-The application uses SQLite to maintain a mapping between article IDs and request IDs:
+The application uses SQLite to maintain two main tables:
 
+1. Article-Request Mapping:
 ```
-article_requests
+requests
 ├── id           # Primary key
 ├── user_name    # User who made the request
 ├── article_id   # Article ID from GenShare response
@@ -296,9 +371,35 @@ article_requests
 └── created_at   # Timestamp when the record was created
 ```
 
+2. Temporary Tokens:
+```
+temporary_tokens
+├── id           # Primary key
+├── client_id    # Client ID (user ID)
+├── token        # JWT token
+├── created_at   # Creation timestamp
+├── expires_at   # Expiration timestamp
+└── revoked      # Revocation flag (0/1)
+```
+
 ### Error Handling
 
-1. File Errors:
+1. Authentication Errors:
+```bash
+# Invalid client credentials
+curl -X POST http://localhost:3000/editorial-manager/authenticate \
+     -d "client_id=invalid" \
+     -d "client_secret=invalid" \
+     -d "grant_type=password"
+# Response: HTTP 401 {"error": "invalid_client", "error_description": "Invalid client credentials"}
+
+# Missing parameters
+curl -X POST http://localhost:3000/editorial-manager/authenticate \
+     -d "client_id=user123"
+# Response: HTTP 400 {"error": "invalid_request", "error_description": "Missing required parameters"}
+```
+
+2. File Errors:
 ```bash
 # Missing file
 curl -X POST -H "Authorization: Bearer <token>" \
@@ -314,7 +415,7 @@ curl -X POST -H "Authorization: Bearer <token>" \
 # Response: HTTP 400 "Required 'file' invalid"
 ```
 
-2. Options Errors:
+3. Options Errors:
 ```bash
 # Missing options
 curl -X POST -H "Authorization: Bearer <token>" \
@@ -323,7 +424,7 @@ curl -X POST -H "Authorization: Bearer <token>" \
 # Response: HTTP 400 "Required 'options' missing"
 ```
 
-3. GenShare Version Errors:
+4. GenShare Version Errors:
 ```bash
 # Unauthorized GenShare version
 curl -X POST -H "Authorization: Bearer <token>" \
@@ -381,6 +482,12 @@ npm run manage-users -- update-limit user123 '{"max": 300}'
 
 # Refresh token
 npm run manage-users -- refresh-token user123
+
+# Refresh client secret (for temporary token authentication)
+npm run manage-users -- refresh-client-secret user123
+
+# Update GenShare settings
+npm run manage-users -- update-genshare user123 '{"authorizedVersions": ["v1.0.0", "v2.0.0"], "defaultVersion": "v2.0.0"}'
 ```
 
 ### Managing GenShare Versions
@@ -398,6 +505,9 @@ npm run manage-genshare -- update v2.0.0 --processPdfUrl "http://localhost:5002/
 # Set default GenShare version
 npm run manage-genshare -- set-default v2.0.0
 
+# Update response mapping
+npm run manage-genshare -- update-mapping v2.0.0 getResponse '{"new_field": 28}'
+
 # Remove a GenShare version
 npm run manage-genshare -- remove v2.0.0
 ```
@@ -410,6 +520,9 @@ npm run manage-permissions -- add /processPDF POST '["user1","user2"]' '["user3"
 
 # Allow user
 npm run manage-permissions -- allow /processPDF POST user4
+
+# Block user
+npm run manage-permissions -- block /processPDF POST user5
 
 # List permissions
 npm run manage-permissions -- list
@@ -444,6 +557,7 @@ npm run start:dev
 # Add new user with default rate limit
 npm run manage-users -- add user123
 # Output: User user123 added with token: eyJhbGciOiJ...
+# Output: Client Secret: a1b2c3d4...
 
 # Add user with custom rate limit
 npm run manage-users -- add user123 '{"max": 200, "windowMs": 900000}'
@@ -457,9 +571,17 @@ npm run manage-users -- list
 npm run manage-users -- refresh-token user123
 # Output: Token refreshed for user user123. New token: eyJhbGciOiJ...
 
+# Refresh user client secret
+npm run manage-users -- refresh-client-secret user123
+# Output: Client secret refreshed for user user123. New client secret: a1b2c3d4...
+
 # Update user rate limit
 npm run manage-users -- update-limit user123 '{"max": 300}'
 # Output: Rate limit updated for user user123: {"max":300,"windowMs":900000}
+
+# Update user GenShare settings
+npm run manage-users -- update-genshare user123 '{"authorizedVersions": ["v1.0.0", "v2.0.0"]}'
+# Output: GenShare settings updated for user user123
 
 # Remove user
 npm run manage-users -- remove user123
@@ -580,12 +702,49 @@ npm run release
 │   ├── server.js           # Entry point
 │   ├── config.js           # Configuration
 │   ├── middleware/         # Custom middleware
+│   │   ├── auth.js         # Authentication middleware
+│   │   └── permissions.js  # Permission middleware
 │   ├── routes/             # API routes
+│   │   └── index.js        # Main router
 │   ├── controllers/        # Request handlers
+│   │   ├── apiController.js       # API routes controller
+│   │   ├── authController.js      # Authentication controller
+│   │   ├── datastetController.js  # DataStet service controller
+│   │   ├── genshareController.js  # GenShare service controller
+│   │   ├── grobidController.js    # GROBID service controller
+│   │   ├── healthController.js    # Health checks controller
+│   │   ├── reportsController.js   # Reports controller
+│   │   ├── requestsController.js  # Requests management controller
+│   │   └── versionsController.js  # Versions controller
 │   └── utils/              # Utility functions
+│       ├── dbManager.js           # Database operations
+│       ├── googleSheets.js        # Google Sheets integration
+│       ├── jwtManager.js          # JWT token management
+│       ├── logger.js              # Logging functionality
+│       ├── permissionsManager.js  # Permission management
+│       ├── rateLimiter.js         # Rate limiting
+│       ├── reportsManager.js      # Report generation
+│       ├── requestsManager.js     # Request tracking
+│       ├── s3Storage.js           # AWS S3 integration
+│       ├── userManager.js         # User management
+│       └── versions.js            # Version utilities
 ├── scripts/                # Management scripts
-│   └── maintenance/        # Database maintenance scripts
+│   ├── analyze_logs.js           # Log analysis
+│   ├── manage_genshare_versions.js # GenShare version management
+│   ├── manage_permissions.js     # Permission management
+│   ├── manage_users.js           # User management
+│   ├── sync_version.js           # Version synchronization
+│   └── maintenance/              # Database maintenance scripts
+│       └── initDB.js             # Database initialization
 ├── conf/                   # Configuration files
+│   ├── aws.s3.json               # AWS S3 configuration
+│   ├── datastet.json             # DataStet configuration
+│   ├── genshare.json             # GenShare configuration
+│   ├── googleSheets.credentials.json # Google Sheets credentials
+│   ├── grobid.json               # GROBID configuration 
+│   ├── permissions.json          # API permissions
+│   ├── reports.json              # Reports configuration
+│   └── users.json                # User configuration
 ├── sqlite/                 # SQLite database files
 └── tmp/                    # Temporary files
 ```
@@ -635,9 +794,82 @@ git tag v1.1.0
 git push origin v1.1.0
 ```
 
+## Deployment
+
+### Docker Deployment
+
+The application can be easily deployed using Docker:
+
+```bash
+# Build the Docker image
+docker build -t snapshot-api:latest .
+
+# Run the container
+docker run -d \
+  -p 3000:3000 \
+  -v $(pwd)/conf:/usr/src/app/conf \
+  -v $(pwd)/sqlite:/usr/src/app/sqlite \
+  -v $(pwd)/log:/usr/src/app/log \
+  --name snapshot-api \
+  snapshot-api:latest
+```
+
+### AWS Deployment
+
+For AWS deployment, the application can be containerized and deployed on:
+
+1. Amazon ECS (Elastic Container Service)
+2. Amazon EKS (Elastic Kubernetes Service)
+3. AWS Fargate (Serverless)
+
+Example ECS deployment configuration:
+
+```yaml
+# task-definition.json
+{
+  "family": "snapshot-api",
+  "networkMode": "awsvpc",
+  "executionRoleArn": "arn:aws:iam::123456789012:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "snapshot-api",
+      "image": "123456789012.dkr.ecr.us-west-2.amazonaws.com/snapshot-api:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "hostPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/snapshot-api",
+          "awslogs-region": "us-west-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "secrets": [
+        {
+          "name": "JWT_SECRET",
+          "valueFrom": "arn:aws:ssm:us-west-2:123456789012:parameter/snapshot-api/jwt-secret"
+        }
+      ]
+    }
+  ],
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512"
+}
+```
+
 ## Security
 
 - JWT-based authentication required for all routes
+  - Permanent tokens for direct API access
+  - Temporary tokens with expiration for external integrations
+  - Token revocation capability for temporary tokens
 - Route-specific access control
 - User-specific rate limiting
 - User-specific GenShare version access
@@ -649,6 +881,105 @@ git push origin v1.1.0
 - Regular token rotation recommended
 - Access logs monitoring for suspicious activity
 - Principle of least privilege for AWS IAM
+
+### Temporary JWT
+
+Here is an example of how to add a custom authentication (temporary JWT)
+
+```js
+/**
+ * Example of another authentication method with different fields and additional validation
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+const authenticateCustomSystem = async (req, res) => {
+  // Configuration for a custom system authentication
+  const options = {
+    clientIdField: 'api_key',               // Different field name
+    clientSecretField: 'api_secret',        // Different field name
+    grantTypeField: 'auth_type',            // Different field name
+    grantTypeValue: 'client_credentials',   // Different grant type
+    additionalFields: {                     // Additional fields to extract
+      scope: 'requested_scope',
+      system: 'system_id'
+    },
+    tokenExpirationOverride: 7200,          // 2 hours instead of default
+    additionalValidation: async (clientId, extraFields, req) => {
+      // Example validation: Check if the requested scope is valid for this client
+      if (extraFields.scope && !['read', 'write', 'admin'].includes(extraFields.scope)) {
+        return {
+          isValid: false,
+          status: 400,
+          error: 'invalid_scope',
+          message: 'Requested scope is not supported'
+        };
+      }
+      
+      // Example: Check system ID
+      if (extraFields.system !== 'system1' && extraFields.system !== 'system2') {
+        return {
+          isValid: false,
+          status: 400,
+          error: 'invalid_system',
+          message: 'System ID is not recognized'
+        };
+      }
+      
+      return { isValid: true };
+    },
+    responseTransform: (response, tokenData, extraFields) => {
+      // Add additional fields to the response
+      return {
+        ...response,
+        scope: extraFields.scope || 'read', // Default to 'read' if not specified
+        system: extraFields.system
+      };
+    }
+  };
+  
+  return authenticate(options, req, res);
+};
+
+/**
+ * Example of a custom token revocation method
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+const revokeTokenCustomSystem = async (req, res) => {
+  // Configuration for Custom System token revocation
+  const options = {
+    tokenField: 'access_token',            // Different field name
+    clientIdField: 'api_key',              // Different field name
+    clientSecretField: 'api_secret',       // Different field name
+    additionalValidation: async (clientId, token, extraFields, req, isTokenAuth) => {
+      // Example: Add additional validation logic
+      // isTokenAuth is true if authentication was done using the token itself
+      if (extraFields.system && extraFields.system !== 'system1' && extraFields.system !== 'system2') {
+        return {
+          isValid: false,
+          status: 400,
+          error: 'invalid_system',
+          message: 'System ID is not recognized'
+        };
+      }
+      
+      return { isValid: true };
+    },
+    responseTransform: (response, success, extraFields) => {
+      // Customize the response
+      return {
+        ...response,
+        system: extraFields.system || 'unknown',
+        timestamp: new Date().toISOString()
+      };
+    }
+  };
+  
+  return revokeToken(options, req, res);
+};
+```
 
 ## Dependencies
 

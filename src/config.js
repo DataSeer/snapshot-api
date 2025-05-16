@@ -4,6 +4,7 @@ const path = require('path');
 module.exports = {
   port: process.env.PORT || 3000,
   jwtSecret: process.env.JWT_SECRET || 'your_jwt_secret_key',
+  tokenExpiration: process.env.TOKEN_EXPIRATION || 3600, // Default: 1 hour in seconds
   permissionsConfigPath: path.join(__dirname, '../conf/permissions.json'),
   genshareConfigPath: path.join(__dirname, '../conf/genshare.json'),
   grobidConfigPath: path.join(__dirname, '../conf/grobid.json'),
