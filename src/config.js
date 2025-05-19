@@ -10,5 +10,6 @@ module.exports = {
   grobidConfigPath: path.join(__dirname, '../conf/grobid.json'),
   datastetConfigPath: path.join(__dirname, '../conf/datastet.json'),
   reportsConfigPath: path.join(__dirname, '../conf/reports.json'),
-  usersPath: path.join(__dirname, '../conf/users.json')
+  usersPath: path.join(__dirname, '../conf/users.json'),
+  emConfigPath: path.join(__dirname, '../conf/em.json')
 };

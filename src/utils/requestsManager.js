@@ -1,6 +1,6 @@
 // File: src/utils/requestsManager.js
 const dbManager = require('./dbManager');
-const { getAllOptionsFiles } = require('./s3Storage');
+const { getAllRequestsFiles } = require('./s3Storage');
 
 /**
  * Initialize database
@@ -19,11 +19,11 @@ const refreshRequestsFromS3 = async () => {
     console.log("Starting refreshRequestsFromS3...");
     
     // Get all options files from S3
-    const optionsFiles = await getAllOptionsFiles();
-    console.log(`Total S3 options files retrieved: ${optionsFiles.length}`);
+    const requestsFiles = await getAllRequestsFiles();
+    console.log(`Total S3 options files retrieved: ${requestsFiles.length}`);
     
     // Count how many have valid article_id
-    const validFiles = optionsFiles.filter(file => file.content && file.content.article_id);
+    const validFiles = requestsFiles.filter(file => file.content && file.content.article_id);
     console.log(`Files with valid article_id: ${validFiles.length}`);
     
     // Check for duplicate request_ids
@@ -43,7 +43,7 @@ const refreshRequestsFromS3 = async () => {
     let insertedCount = 0;
     let errorCount = 0;
     
-    for (const file of optionsFiles) {
+    for (const file of requestsFiles) {
       if (file.content && file.content.article_id) {
         try {
           // Format the date for record

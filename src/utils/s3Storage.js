@@ -1,4 +1,4 @@
-// File: src/utils/s3Storage.js with Editorial Manager extensions
+// File: src/utils/s3Storage.js
 const { 
   S3Client, 
   PutObjectCommand, 
@@ -123,7 +123,7 @@ const streamToString = async (stream) => {
 };
 
 // Get all options.json files from S3
-const getAllOptionsFiles = async () => {
+const getAllRequestsFiles = async () => {
   try {
     console.log("Starting to fetch options files from S3...");
     const prefix = `${s3Config.s3Folder}/`;
@@ -132,8 +132,8 @@ const getAllOptionsFiles = async () => {
     const objects = await listObjects(prefix);
     console.log(`Total objects retrieved from S3: ${objects.length}`);
     
-    const optionsFiles = objects.filter(obj => obj.Key.endsWith('/options.json'));
-    console.log(`Total options.json files found: ${optionsFiles.length}`);
+    const optionsFiles = objects.filter(obj => obj.Key.endsWith('/request.json'));
+    console.log(`Total request.json files found: ${optionsFiles.length}`);
     
     const fileData = await Promise.all(optionsFiles.map(async (file) => {
       try {
@@ -141,7 +141,7 @@ const getAllOptionsFiles = async () => {
         const pathParts = file.Key.split('/');
         
         // Extract userId and requestId from the path
-        // Path format: snapshot-api-dev/userId/requestId/options.json
+        // Path format: snapshot-api-dev/userId/requestId/request.json
         const userId = pathParts[pathParts.length - 3];
         const requestId = pathParts[pathParts.length - 2];
         
@@ -176,11 +176,10 @@ const getAllOptionsFiles = async () => {
   }
 };
 
-
 // Get report file from S3
 const getReportFile = async (userId, requestId) => {
   try {
-    const key = `${s3Config.s3Folder}/${userId}/${requestId}/report.json`;
+    const key = `${s3Config.s3Folder}/${userId}/${requestId}/report/report.json`;
     const content = await getFile(key);
     return JSON.parse(content);
   } catch (error) {
@@ -198,21 +197,48 @@ class ProcessingSession {
     this.userId = userId;
     this.requestId = generateRequestId();
     this.url = generateS3Url(this.userId, this.requestId);
-    this.file = null;
     this.files = []; // Internal files tracking
     this.logs = [];
-    this.response = null;
+    
+    // Origin information
+    this.origin = {
+      type: 'direct', // 'direct' or 'external'
+      service: null   // External service name if applicable
+    };
+    
+    // API request/response
+    this.apiRequest = null;
+    this.apiResponse = null;
+    
+    // Services data
+    this.genshare = {
+      isActive: false,
+      version: null,
+      request: null,
+      response: null
+    };
+    
+    // Report data
     this.report = null;
-    this.options = null;
+    
     this.startTime = new Date();
     this.endTime = null;
     this.duration = -1;
     this.snapshotAPIVersion = "";
     this.genshareVersion = "";
-    this.externalService = null; // Will store external service data (e.g., Editorial Manager)
     
     // Add initial log with session start
     this.addLog('[S3] Session started', 'INFO');
+  }
+
+  // Set request origin
+  setOrigin(type, serviceName = null) {
+    this.origin = {
+      type: type,           // 'direct' or 'external'
+      service: serviceName  // Service name if external
+    };
+    this.addLog(`[S3] Origin set: ${type}${serviceName ? ` (${serviceName})` : ''}`);
+    return this;
   }
 
   // Version management methods
@@ -222,14 +248,6 @@ class ProcessingSession {
 
   getGenshareVersion() {
     return this.genshareVersion;
-  }
-
-  getExternalServiceType() {
-    return this.externalService ? this.externalService.type : null;
-  }
-
-  getExternalServiceVersion() {
-    return this.externalService ? this.externalService.version : null;
   }
 
   setSnapshotAPIVersion(version) {
@@ -252,36 +270,31 @@ class ProcessingSession {
     this.addLog(`[S3] Genshare Version set to: ${version}`, 'INFO');
   }
   
-  setExternalService(type, version = null) {
-    this.externalService = { 
-      type,
-      version: version || null,
-      data: {},
-      files: [] // Track external service files separately
-    };
-    this.addLog(`[S3] External service set to: ${type}${version ? ` (version ${version})` : ''}`, 'INFO');
+  // Store API request (from client)
+  setAPIRequest(request) {
+    this.apiRequest = request;
+    this.addLog('[S3] API request stored', 'INFO');
+    return this;
   }
-
-  // Set external service data
-  setExternalServiceData(key, value) {
-    if (!this.externalService) {
-      this.addLog('[S3] Warning: No external service set, cannot store data', 'WARN');
-      return;
-    }
-    this.externalService.data[key] = value;
-    this.addLog(`[S3] External service data set: ${key}`, 'INFO');
+  
+  // Store API response (to client)
+  setAPIResponse(response) {
+    this.apiResponse = response;
+    this.addLog('[S3] API response stored', 'INFO');
+    return this;
+  }
+  
+  // Initialize GenShare service
+  initGenShare(version = null) {
+    this.genshare.isActive = true;
+    this.genshare.version = version;
+    this.addLog(`[S3] GenShare service activated${version ? ` (version ${version})` : ''}`, 'INFO');
+    return this;
   }
 
   // Path management
   getBasePath() {
     return `${s3Config.s3Folder}/${this.userId}/${this.requestId}`;
-  }
-  
-  getExternalServicePath() {
-    if (!this.externalService) {
-      return null;
-    }
-    return `${this.getBasePath()}/${this.externalService.type}`;
   }
 
   // Logging
@@ -290,26 +303,63 @@ class ProcessingSession {
     this.logs.push(`[${timestamp}] [${level}] ${entry}`);
   }
 
-  // Response handling
-  setResponse(response) {
-    this.response = response;
-    this.addLog(`[S3] Response status: ${response.status}`, 'INFO');
+  // Set Genshare request
+  setGenshareRequest(request) {
+    if (!this.genshare.isActive) {
+      this.initGenShare();
+    }
+    this.genshare.request = request;
+    this.addLog(`[S3] Genshare request setup`, 'INFO');
+    return this;
   }
 
-  setReport(report) {
-    this.report = report;
-    this.addLog(`[S3] report JSON data setup`, 'INFO');
+  // Set Genshare response
+  setGenshareResponse(response) {
+    if (!this.genshare.isActive) {
+      this.initGenShare();
+    }
+    this.genshare.response = response;
+    this.addLog(`[S3] Genshare response setup`, 'INFO');
+    return this;
+  }
+  
+  // Set report data
+  setReport(reportData) {
+    this.report = reportData;
+    this.addLog(`[S3] Report data setup`, 'INFO');
+    return this;
+  }
+  
+  setServiceResponse(serviceName, response) {
+    if (serviceName === 'genshare') {
+      return this.setGenshareResponse(response);
+    } else if (serviceName === 'editorial-manager') {
+      this.setAPIResponse(response);
+    }
+    this.addLog(`[S3] ${serviceName} response setup`, 'INFO');
+    return this;
+  }
+  
+  // Add a file to the session
+  addFile(file, origin = 'api') {
+    if (!file) return this;
+    
+    // Add file with metadata
+    this.files.push({
+      path: file.path,
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      origin: origin
+    });
+    
+    this.addLog(`[S3] Added file: ${file.originalname} (${file.size} bytes, origin: ${origin})`, 'INFO');
+    return this;
   }
 
-  setFile(file) {
-    this.file = file;
-    this.files.push(file);
-    this.addLog(`[S3] file setup`, 'INFO');
-  }
-
-  setOptions(options) {
-    this.options = options;
-    this.addLog(`[S3] options JSON data setup`, 'INFO');
+  getDuration() {
+    if (this.duration > 0) return this.duration;
+    return new Date() - this.startTime;
   }
 
   async saveToS3() {
@@ -327,16 +377,15 @@ class ProcessingSession {
         startDate: formatLogDate(this.startTime),
         endDate: formatLogDate(this.endTime),
         duration: `${this.duration}ms`,
-        hasFile: !!this.file,
         snapshotAPIVersion: this.snapshotAPIVersion,
         genshareVersion: this.genshareVersion,
-        externalService: this.externalService ? {
-          type: this.externalService.type,
-          version: this.externalService.version
-        } : null
+        origin: this.origin,
+        services: {
+          genshare: this.genshare.isActive
+        }
       };
 
-      // Add process metadata
+      // Add process files
       filesToUpload.push(
         {
           key: `${this.getBasePath()}/process.json`,
@@ -350,123 +399,111 @@ class ProcessingSession {
         }
       );
 
-      // Add options if they exist
-      if (this.options) {
+      // Add API request/response
+      if (this.apiRequest) {
         filesToUpload.push({
-          key: `${this.getBasePath()}/options.json`,
-          data: JSON.stringify(this.options, null, 2),
+          key: `${this.getBasePath()}/request.json`,
+          data: JSON.stringify(this.apiRequest, null, 2),
           contentType: 'application/json'
         });
-        
-        // For external service, also store the request body in the appropriate path
-        if (this.externalService) {
-          // Store options in external service path
-          filesToUpload.push({
-            key: `${this.getExternalServicePath()}/request.json`,
-            data: JSON.stringify(this.options, null, 2),
-            contentType: 'application/json'
-          });
-          
-          // Store any external service specific data
-          if (Object.keys(this.externalService.data).length > 0) {
-            for (const [key, value] of Object.entries(this.externalService.data)) {
-              filesToUpload.push({
-                key: `${this.getExternalServicePath()}/${key}/response.json`,
-                data: JSON.stringify(value, null, 2),
-                contentType: 'application/json'
-              });
-            }
-          }
-        }
       }
-
-      // Add response if it exists
-      if (this.response) {
+      
+      if (this.apiResponse) {
         filesToUpload.push({
           key: `${this.getBasePath()}/response.json`,
-          data: JSON.stringify(this.response, null, 2),
+          data: JSON.stringify(this.apiResponse, null, 2),
           contentType: 'application/json'
         });
-        
-        // For external service, also store the response in the appropriate path
-        if (this.externalService) {
-          filesToUpload.push({
-            key: `${this.getExternalServicePath()}/response.json`,
-            data: JSON.stringify(this.response, null, 2),
-            contentType: 'application/json'
-          });
-        }
       }
 
-      // Add report if it exists
+      // Add report data if it exists
       if (this.report) {
         filesToUpload.push({
-          key: `${this.getBasePath()}/report.json`,
+          key: `${this.getBasePath()}/report/report.json`,
           data: JSON.stringify(this.report, null, 2),
           contentType: 'application/json'
         });
       }
-      
-      // Handle internal files (GenShare files)
-      for (let i = 0; i < this.files.length; i++) {
-        const currentFile = this.files[i];
-        if (currentFile) {
-          // Calculate MD5 hash
-          const md5Hash = await calculateMD5(currentFile.path);
-          
-          // Prepare file metadata
-          const fileMetadata = {
-            originalName: currentFile.originalname,
-            size: currentFile.size,
-            md5: md5Hash,
-            mimeType: currentFile.mimetype
-          };
-  
-          // Add file and its metadata at the root
-          const fileKey = i === 0 ? 'file' : `file_${i}`;
-          
-          filesToUpload.push(
-            {
-              key: `${this.getBasePath()}/${fileKey}.${currentFile.originalname.split('.').pop()}`,
-              data: createReadStream(currentFile.path),
-              contentType: currentFile.mimetype
-            },
-            {
-              key: `${this.getBasePath()}/${fileKey}.metadata.json`,
-              data: JSON.stringify(fileMetadata, null, 2),
-              contentType: 'application/json'
-            }
-          );
-        }
-      }
-      
-      // Handle external service files if any exist
-      if (this.externalService && this.externalService.files.length > 0) {
-        // Create a files.json with metadata for all external files
-        const externalFilesMetadata = this.externalService.files.map((file, index) => ({
+
+      // Process files
+      if (this.files.length > 0) {
+        const filesMetadata = this.files.map((file, index) => ({
           id: index + 1,
           originalName: file.originalname,
           size: file.size,
           mimeType: file.mimetype,
-          fieldname: file.fieldname || null
+          origin: file.origin
         }));
         
         filesToUpload.push({
-          key: `${this.getExternalServicePath()}/files.json`,
-          data: JSON.stringify(externalFilesMetadata, null, 2),
+          key: `${this.getBasePath()}/files.json`,
+          data: JSON.stringify(filesMetadata, null, 2),
           contentType: 'application/json'
         });
         
-        // Upload each external file with numeric naming convention
-        for (let i = 0; i < this.externalService.files.length; i++) {
-          const externalFile = this.externalService.files[i];
+        // Upload each file
+        for (let i = 0; i < this.files.length; i++) {
+          const file = this.files[i];
           const fileIndex = i + 1; // Start from 1
-          const fileExtension = externalFile.originalname.split('.').pop();
+          const fileExtension = file.originalname.split('.').pop();
           
+          // Calculate MD5 hash for the file
+          const md5Hash = await calculateMD5(file.path);
+          
+          // Prepare file metadata
+          const fileMetadata = {
+            originalName: file.originalname,
+            size: file.size,
+            md5: md5Hash,
+            mimeType: file.mimetype,
+            origin: file.origin
+          };
+          
+          // Add file metadata
           filesToUpload.push({
-            key: `${this.getExternalServicePath()}/${fileIndex}.${fileExtension}`,
-            data: createReadStream(externalFile.path),
-            contentType: externalFile.mimetype
+            key: `${this.getBasePath()}/files/file_${fileIndex}.metadata.json`,
+            data: JSON.stringify(fileMetadata, null, 2),
+            contentType: 'application/json'
+          });
+          
+          // Add the actual file
+          filesToUpload.push({
+            key: `${this.getBasePath()}/files/file_${fileIndex}.${fileExtension}`,
+            data: createReadStream(file.path),
+            contentType: file.mimetype
+          });
+        }
+      }
+
+      // Process GenShare service
+      if (this.genshare.isActive) {
+        // Store GenShare metadata
+        const genshareMetadata = {
+          version: this.genshare.version,
+          isActive: true
+        };
+        
+        filesToUpload.push({
+          key: `${this.getBasePath()}/genshare/metadata.json`,
+          data: JSON.stringify(genshareMetadata, null, 2),
+          contentType: 'application/json'
+        });
+        
+        // Store request data if it exists
+        if (this.genshare.request) {
+          filesToUpload.push({
+            key: `${this.getBasePath()}/genshare/request.json`,
+            data: JSON.stringify(this.genshare.request, null, 2),
+            contentType: 'application/json'
+          });
+        }
+        
+        // Store response data if it exists
+        if (this.genshare.response) {
+          filesToUpload.push({
+            key: `${this.getBasePath()}/genshare/response.json`,
+            data: JSON.stringify(this.genshare.response, null, 2),
+            contentType: 'application/json'
           });
         }
       }
@@ -480,34 +517,11 @@ class ProcessingSession {
       throw error;
     }
   }
-  
-  // Add an internal file to the session (GenShare files)
-  addFile(file) {
-    if (file) {
-      this.files.push(file);
-      this.addLog(`[S3] Added internal file: ${file.originalname} (${file.size} bytes)`, 'INFO');
-    }
-    return this;
-  }
-  
-  // Add an external file to the session (External Service files)
-  addExternalFile(file) {
-    if (!this.externalService) {
-      this.addLog('[S3] Warning: No external service set, cannot add external file', 'WARN');
-      return this;
-    }
-    
-    if (file) {
-      this.externalService.files.push(file);
-      this.addLog(`[S3] Added external file for ${this.externalService.type}: ${file.originalname} (${file.size} bytes)`, 'INFO');
-    }
-    return this;
-  }
 }
 
 module.exports = { 
   ProcessingSession,
-  getAllOptionsFiles,
+  getAllRequestsFiles,
   getReportFile,
   generateRequestId,
   uploadBatchToS3

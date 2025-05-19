@@ -1,4 +1,5 @@
 // File: src/utils/genshareManager.js
+const packageJson = require('../../package.json');
 const fs = require('fs');
 const axios = require('axios');
 const FormData = require('form-data');
@@ -135,11 +136,12 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersion, re
     // Safely get the filename, defaulting to "No file" if not available
     const filename = data.file?.originalname || "N/A";
     
-    // Get the response info
-    let response = getResponse(session.response?.data?.response, genshareVersion);
+    // Get the response info from the genshare response in the session
+    const genshareResponse = session.genshare?.response;
+    let response = getResponse(genshareResponse?.data?.response, genshareVersion);
     
     // Get the Path info
-    let path = getPath(session.response?.data?.path, genshareVersion);
+    let path = getPath(genshareResponse?.data?.path, genshareVersion);
     
     // Current date
     const now = new Date();
@@ -152,7 +154,7 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersion, re
       errorStatus,                                           // Error status
       convertToGoogleSheetsDate(now),                        // Date
       convertToGoogleSheetsTime(now),                        // Time
-      convertToGoogleSheetsDuration(session.duration),       // Session duration
+      convertToGoogleSheetsDuration(session.getDuration()),  // Session duration
       data.user.id,                                          // User ID
       filename,                                              // PDF filename or "No file"
       reportURL                                              // Report URL
@@ -234,7 +236,9 @@ const getGenShareHealth = async (user, requestedVersion) => {
 const processPDF = async (data, session) => {
   // Get the user's full information
   const user = getUserById(data.user.id);
-
+  
+  session.setSnapshotAPIVersion(`v${packageJson.version}`);
+  
   let reportURL = "";
   let errorStatus = "No"; // Initialize error status
   
@@ -305,12 +309,11 @@ const processPDF = async (data, session) => {
     throw new Error('Required "file" invalid. Must have mimetype "application/pdf"');
   }
 
-  // Set PDF file
-  session.setFile(data.file);
+  // Initialize GenShare with the active version
+  session.initGenShare(activeGenShareVersion);
 
   // Ensure options exist
   let options = data.options || {};
-  session.setOptions(options);
 
   // Log initial request details
   session.addLog(`Request received from ${data.user.id}`);
@@ -341,112 +344,166 @@ const processPDF = async (data, session) => {
   session.addLog(`Sending request to GenShare service (${activeGenShareVersion})`);
   session.addLog(`URL: ${processPDFConfig.url}`);
 
-  const response = await axios({
-    method: processPDFConfig.method,
-    url: processPDFConfig.url,
-    data: formData,
-    headers: {
-      ...formData.getHeaders(),
-      ...(processPDFConfig.apiKey ? { 'X-API-Key': processPDFConfig.apiKey } : {})
-    },
-    responseType: 'json',
-    maxBodyLength: Infinity
+  // Store GenShare request data
+  session.setGenshareRequest({
+    ...requestOptions,
+    file: {
+      filename: data.file.originalname,
+      contentType: data.file.mimetype
+    }
   });
 
-  // Check if response status is not 2xx or 3xx
-  if (response.status >= 400) {
-    errorStatus = `GenShare Error (HTTP ${response.status})`;
-  }
-
-  // Log successful response
-  let responseGenShareVersion = response?.data?.version;
-
-  if (!responseGenShareVersion) {
-    session.addLog(`GenShare version returned not found`);
-  } else {
-    session.addLog(`GenShare version returned found: ${responseGenShareVersion}`);
-    if (activeGenShareVersion.indexOf(responseGenShareVersion) > -1) {
-      session.addLog(`GenShare versions match: (${activeGenShareVersion} - ${responseGenShareVersion})`);
-    } else {
-      session.addLog(`GenShare versions don't match (${activeGenShareVersion} - ${responseGenShareVersion})`);
-    }
-  }
-
-  session.addLog(`Received response from GenShare service with status: ${response.status}`);
-
-  // Store complete response info before modification
-  session.setResponse({
-    status: response.status,
-    headers: response.headers,
-    data: { ...response.data }
-  });
-
-  // Set GenShare version in the processing session
-  session.setGenshareVersion(`${activeGenShareVersion}`);
-
-  // If everything is fine (no error, activeReportVersion not empty and data available)
-  // - create a the Google Sheets file
-  // - create the JSON data
-  if (errorStatus === "No" && !!activeReportVersion && response.data.response) {
-    session.addLog(`Using report: ${activeReportVersion}`);
-    try {
-      // Create GoogleSheets Report
-      const googleSheetsReport = await createGoogleSheets(activeReportVersion, response.data.response, session);
-      reportURL = googleSheetsReport.url;
-
-      // Build JSON Report
-      const jsonReport = buildJSON(activeReportVersion, response.data.response, reportURL);
-
-      // Store JSON Report
-      session.setReport(jsonReport);
-
-    } catch (sheetsCreationError) {
-      session.addLog(`Error creating Google Sheets file: ${sheetsCreationError.message}`);
-      console.error(`[${session.requestId}] Error creating Google Sheets file:`, sheetsCreationError);
-      // Don't fail the request if sheets creation fails, just log it
-    }
-  }
-
-  // Get the "article_id" value
-  const articleId = response.data.response.filter((item) => {
-    return item.name === "article_id";
-  })[0]?.value;
-
-  if (!articleId) {
-    session.addLog('[DB] Error: "article_id" not found. Link "article_id <-> request_id" not created.');
-    console.error(`[${session.requestId}] Error: "article_id" not found. Link "article_id <-> request_id" not created.`);
-  } else {
-    // Add the link between the "article_id" and the "request_id"
-    session.addLog('[DB] Link "article_id <-> request_id" created');
-    await addOrUpdateRequest(user.id, articleId, session.requestId);
-  }
-
-  // Session data preparation is complete
-  session.addLog('Response processing completed');
-
-  // Apply user-specific filtering to the response
-  const filteredData = filterResponseForUser(response.data.response, user);
-
-  // Add report_url if possible
-  let finalData = filteredData;
-  if (reportURL && Array.isArray(filteredData)) {
-    finalData = [...filteredData];
-    finalData.push({
-      "name": "report_link",
-      "description": "Report link",
-      "value": reportURL
+  try {
+    const response = await axios({
+      method: processPDFConfig.method,
+      url: processPDFConfig.url,
+      data: formData,
+      headers: {
+        ...formData.getHeaders(),
+        ...(processPDFConfig.apiKey ? { 'X-API-Key': processPDFConfig.apiKey } : {})
+      },
+      responseType: 'json',
+      maxBodyLength: Infinity
     });
-  }
 
-  // Return the processing result
-  return {
-    status: response.status,
-    headers: response.headers,
-    data: finalData,
-    errorStatus,
-    activeGenShareVersion,
-    reportURL
-  };
+    // Check if response status is not 2xx or 3xx
+    if (response.status >= 400) {
+      errorStatus = `GenShare Error (HTTP ${response.status})`;
+    }
+
+    // Log successful response
+    let responseGenShareVersion = response?.data?.version;
+
+    if (!responseGenShareVersion) {
+      session.addLog(`GenShare version returned not found`);
+    } else {
+      session.addLog(`GenShare version returned found: ${responseGenShareVersion}`);
+      if (activeGenShareVersion.indexOf(responseGenShareVersion) > -1) {
+        session.addLog(`GenShare versions match: (${activeGenShareVersion} - ${responseGenShareVersion})`);
+      } else {
+        session.addLog(`GenShare versions don't match (${activeGenShareVersion} - ${responseGenShareVersion})`);
+      }
+    }
+
+    session.addLog(`Received response from GenShare service with status: ${response.status}`);
+
+    // Store complete response in the session
+    session.setGenshareResponse({
+      status: response.status,
+      headers: response.headers,
+      data: { ...response.data }
+    });
+
+    // Set GenShare version in the processing session
+    session.setGenshareVersion(`${activeGenShareVersion}`);
+
+    // If everything is fine (no error, activeReportVersion not empty and data available)
+    // - create a the Google Sheets file
+    // - create the JSON data
+    if (errorStatus === "No" && !!activeReportVersion && response.data.response) {
+      session.addLog(`Using report: ${activeReportVersion}`);
+      try {
+        // Create GoogleSheets Report
+        const googleSheetsReport = await createGoogleSheets(activeReportVersion, response.data.response, session);
+        reportURL = googleSheetsReport.url;
+
+        // Build JSON Report
+        const jsonReport = buildJSON(activeReportVersion, response.data.response, reportURL);
+
+        // Store JSON Report
+        session.setReport(jsonReport);
+
+      } catch (sheetsCreationError) {
+        session.addLog(`Error creating Google Sheets file: ${sheetsCreationError.message}`);
+        console.error(`[${session.requestId}] Error creating Google Sheets file:`, sheetsCreationError);
+        // Don't fail the request if sheets creation fails, just log it
+      }
+    }
+
+    // Get the "article_id" value
+    const articleId = response.data.response.filter((item) => {
+      return item.name === "article_id";
+    })[0]?.value;
+
+    if (!articleId) {
+      session.addLog('[DB] Error: "article_id" not found. Link "article_id <-> request_id" not created.');
+      console.error(`[${session.requestId}] Error: "article_id" not found. Link "article_id <-> request_id" not created.`);
+    } else {
+      // Add the link between the "article_id" and the "request_id"
+      session.addLog('[DB] Link "article_id <-> request_id" created');
+      await addOrUpdateRequest(user.id, articleId, session.requestId);
+    }
+
+    // Session data preparation is complete
+    session.addLog('Response processing completed');
+
+    // Apply user-specific filtering to the response
+    const filteredData = filterResponseForUser(response.data.response, user);
+
+    // Add report_url if possible
+    let finalData = filteredData;
+    if (reportURL && Array.isArray(filteredData)) {
+      finalData = [...filteredData];
+      finalData.push({
+        "name": "report_link",
+        "description": "Report link",
+        "value": reportURL
+      });
+    }
+
+    // Log to summary sheet before returning the result
+    try {
+      await appendToSummary({
+        session,
+        errorStatus,
+        data,
+        genshareVersion: activeGenShareVersion,
+        reportURL
+      });
+    } catch (summaryError) {
+      session.addLog(`Error logging to summary: ${summaryError.message}`);
+      console.error(`[${session.requestId}] Error logging to summary:`, summaryError);
+      // Don't fail the process if summary logging fails
+    }
+
+    // Return the processing result
+    return {
+      status: response.status,
+      headers: response.headers,
+      data: finalData,
+      errorStatus,
+      activeGenShareVersion,
+      reportURL
+    };
+  } catch (error) {
+    // Set error status based on the type of error
+    if (error.response) {
+      errorStatus = `GenShare Error (HTTP ${error.response.status})`;
+    } else {
+      errorStatus = `${error.message}`;
+    }
+
+    // Log error
+    session.addLog(`Error processing request: ${error.message}`);
+    session.addLog(`Stack: ${error.stack}`);
+
+    // Try to log to summary sheet even in case of error
+    try {
+      await appendToSummary({
+        session,
+        errorStatus,
+        data,
+        genshareVersion: activeGenShareVersion || genshareConfig.defaultVersion,
+        reportURL: ""
+      });
+    } catch (summaryError) {
+      session.addLog(`Error logging error to summary: ${summaryError.message}`);
+      console.error(`[${session.requestId}] Error logging error to summary:`, summaryError);
+    }
+
+    // Re-throw the original error
+    throw error;
+  }
 };
 
 module.exports = {

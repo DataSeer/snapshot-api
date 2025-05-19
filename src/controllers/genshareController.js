@@ -1,13 +1,8 @@
 // File: src/controllers/genshareController.js
-const packageJson = require('../../package.json');
 const fs = require('fs').promises;
 const genshareManager = require('../utils/genshareManager');
-const config = require('../config');
 const { ProcessingSession } = require('../utils/s3Storage');
 const { getUserById } = require('../utils/userManager');
-
-// Load the genshare configuration
-const genshareConfig = require(config.genshareConfigPath);
 
 /**
  * Check health of all GenShare versions or a specific version
@@ -36,18 +31,38 @@ module.exports.getGenShareHealth = async (req, res) => {
 module.exports.processPDF = async (req, res) => {
   // Initialize processing session
   const session = new ProcessingSession(req.user.id);
-  session.setSnapshotAPIVersion(`v${packageJson.version}`);
-  let errorStatus = "No"; // Initialize error status
+  
+  // Set origin as direct API request
+  session.setOrigin('direct');
   
   try {
-    // Prepare data object from request instead of passing req directly
-    let parsedOptions = {};
+    // Store API request
+    session.setAPIRequest({
+      method: req.method,
+      path: req.path,
+      query: req.query,
+      body: req.body,
+      file: req.file ? {
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size
+      } : null
+    });
+    
+    // Add file if present
+    if (req.file) {
+      session.addFile(req.file, 'api');
+    }
     
     // Parse options if they exist
+    let parsedOptions = {};
+    
     if (req.body.options) {
       try {
         // This parsing is necessary when client sends multipart/form-data
-        parsedOptions = JSON.parse(req.body.options);
+        parsedOptions = typeof req.body.options === 'string' 
+          ? JSON.parse(req.body.options) 
+          : req.body.options;
       } catch (parseError) {
         // If parsing fails, check if options is already an object (could happen with application/json content type)
         parsedOptions = typeof req.body.options === 'object' && req.body.options !== null 
@@ -75,20 +90,16 @@ module.exports.processPDF = async (req, res) => {
     
     // Process the PDF using the manager
     const result = await genshareManager.processPDF(processingData, session);
-    errorStatus = result.errorStatus;
+    
+    // Store API response
+    session.setAPIResponse({
+      status: result.status,
+      data: result.data
+    });
     
     // Save session data to S3
     await session.saveToS3();
     
-    // Log to summary sheet before sending response
-    await genshareManager.appendToSummary({ 
-      session, 
-      errorStatus, 
-      data: processingData, 
-      genshareVersion: result.activeGenShareVersion, 
-      reportURL: result.reportURL
-    });
-
     // Clean up temporary file
     await fs.unlink(req.file.path).catch(err => {
       console.error(`[${session.requestId}] Error deleting temporary file:`, err);
@@ -102,34 +113,20 @@ module.exports.processPDF = async (req, res) => {
     res.json({ response: result.data });
 
   } catch (error) {
-    // Set error status based on the type of error
-    if (error.response) {
-      errorStatus = `GenShare Error (HTTP ${error.response.status})`;
-    } else {
-      errorStatus = `${error.message}`;
-    }
-
     // Log error
     session.addLog(`Error processing request: ${error.message}`);
     session.addLog(`Stack: ${error.stack}`);
 
     try {
+      // Store error response
+      session.setAPIResponse({
+        status: 'error',
+        error: error.message
+      });
+      
       // Save session data with error information
       await session.saveToS3();
-      
-      // Create minimal data object for logging
-      const errorData = {
-        file: req.file,
-        user: { id: req.user.id }
-      };
-      
-      // Log to summary sheet before sending error response
-      await genshareManager.appendToSummary({ 
-        session, 
-        errorStatus, 
-        data: errorData, 
-        genshareVersion: genshareConfig.defaultVersion
-      });
+
     } catch (s3Error) {
       console.error(`[${session.requestId}] Error saving session data:`, s3Error);
     }

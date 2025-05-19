@@ -18,7 +18,7 @@ const {
   postCancelUpload,
   postReport,
   postReportLink
-} = require('../controllers/emController.fake');
+} = require('../controllers/emController');
 const { authenticateToken } = require('../middleware/auth');
 const { checkPermissions } = require('../middleware/permissions');
 const rateLimiter = require('../utils/rateLimiter');
@@ -48,7 +48,7 @@ authenticatedRouter.use(rateLimiter);
 // Define authenticated routes
 authenticatedRouter.get('/', getApiRoutes);
 authenticatedRouter.get('/versions', getVersions);
-authenticatedRouter.post('/processPDF', upload.single('file'), processPDF);
+authenticatedRouter.post('/processPDF', upload.single('file'), processPDF); 
 
 // Health check endpoints
 authenticatedRouter.get('/ping', getPing);
