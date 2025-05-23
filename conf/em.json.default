@@ -1,5 +1,8 @@
 {
-  "reportCompleteNotificationUrl": "https://api.editorialmanager.com/ManuscriptAnalysisTools/{publication_code}/ReportComplete",
+  "reportCompleteNotification": {
+    "disabled": false,
+    "url": "https://api.editorialmanager.com/ManuscriptAnalysisTools/{publication_code}/ReportComplete"
+  },
   "defaultServiceId": "editorial-manager-service",
   "auth": {
     "clientId": "your-client-id",

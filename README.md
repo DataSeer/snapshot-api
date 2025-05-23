@@ -257,7 +257,10 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 ```json
 // conf/em.json
 {
-  "reportCompleteNotificationUrl": "https://editorial-manager-service/api/{publication_code}/report-complete",
+  "reportCompleteNotification": {
+    "disabled": false,
+    "url": "https://editorial-manager-service/api/{publication_code}/report-complete"
+  },
   "das_triggers": ["data availability", "data sharing", "data access"]
 }
 ```

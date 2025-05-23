@@ -24,7 +24,7 @@ const processSubmission = async (data, session) => {
   try {
     const { service_id, publication_code, document_id, article_title, article_type, user_id, files, file_data, custom_questions } = data;
 
-    let document_type = article_type === "Original Article" ? "original_article" : "";
+    let document_type = article_type;
     
     if (!service_id || !publication_code || !document_id) {
       throw new Error('Missing required fields: service_id, publication_code, or document_id');
@@ -651,8 +651,18 @@ const sendReportCompleteNotification = async (notificationData) => {
       throw new Error('Missing required notification fields');
     }
 
+    if (emConfig.reportCompleteNotification.disabled) {
+      return {
+        status: 200,
+        data: {
+          err: false,
+          res: "reportCompleteNotification process skipped"
+        }
+      };
+    }
+
     // Construct the notification URL with the publication code
-    const notificationUrl = emConfig.reportCompleteNotificationUrl.replace(
+    const notificationUrl = emConfig.reportCompleteNotification.url.replace(
       '{publication_code}',
       publication_code
     );
