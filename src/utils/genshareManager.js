@@ -302,12 +302,6 @@ const processPDF = async (data, session) => {
     throw new Error('Required "file" missing.');
   }
 
-  if (data.file.mimetype !== "application/pdf") {
-    errorStatus = 'Input error: Invalid file type';
-    session.addLog('Error: Invalid file type ' + data.file.mimetype);
-    throw new Error('Required "file" invalid. Must have mimetype "application/pdf"');
-  }
-
   // Initialize GenShare with the active version
   session.initGenShare(activeGenShareVersion);
 
