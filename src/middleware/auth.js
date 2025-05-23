@@ -1,19 +1,43 @@
 // File: src/middleware/auth.js
-const jwt = require('jsonwebtoken');
-const config = require('../config');
-const { getUserById } = require('../utils/userManager');
+const jwtManager = require('../utils/jwtManager');
 
-module.exports.authenticateToken = (req, res, next) => {
+/**
+ * Authenticate users based on JWT token
+ * Supports both permanent tokens from users.json and temporary tokens from the database
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
+module.exports.authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
-  if (token == null) return res.sendStatus(401);
+  if (!token) {
+    return res.status(401).json({
+      error: 'unauthorized',
+      error_description: 'Authorization header missing'
+    });
+  }
 
-  jwt.verify(token, config.jwtSecret, (err, user) => {
-    if (err) return res.sendStatus(403);
-    const _user = getUserById(user.id);
-    if (_user.token !== token) return res.sendStatus(403);
-    req.user = user;
+  try {
+    // Use JWT manager to verify the token (handles both permanent and temporary)
+    const decoded = await jwtManager.verifyToken(token);
+    
+    // Set user info in request
+    req.user = decoded;
     next();
-  });
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        error: 'invalid_token',
+        error_description: 'Token has expired'
+      });
+    }
+    
+    console.error('Authentication error:', err);
+    return res.status(403).json({
+      error: 'invalid_token',
+      error_description: 'Invalid token'
+    });
+  }
 };
