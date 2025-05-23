@@ -76,7 +76,7 @@ const processSubmission = async (data, session) => {
     
     // Look for any custom question containing a DAS trigger
     for (const question of customQuestions) {
-      const questionName = question.custom_question_name.toLowerCase();
+      const questionName = question.custom_question_text.toLowerCase();
       for (const trigger of dasTriggers) {
         if (questionName.includes(trigger.toLowerCase())) {
           dasValue = question.custom_question_value;
