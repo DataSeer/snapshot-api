@@ -6,6 +6,7 @@ const { httpLogger, trackDuration } = require('./utils/logger');
 const config = require('./config');
 const { initDatabase, refreshRequestsFromS3 } = require('./utils/requestsManager');
 const jwtManager = require('./utils/jwtManager');
+const queueManager = require('./utils/queueManager');
 
 const app = express();
 
@@ -28,6 +29,11 @@ const startServer = async () => {
     // Initialize main database
     await initDatabase();
     console.log('Main database initialized successfully');
+    
+    // Initialize queue manager
+    console.log('Initializing queue manager...');
+    await queueManager.startJobProcessor();
+    console.log('Queue manager initialized successfully');
     
     // Setup periodic token cleanup (every hour)
     setInterval(async () => {

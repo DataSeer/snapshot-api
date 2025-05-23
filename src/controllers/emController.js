@@ -35,17 +35,28 @@ module.exports.postSubmissions = async (req, res) => {
         session.addFile(file, 'editorial-manager');
       }
     }
-
+    
+    let body = {};
+    
+    // Try to parse data from EM
+    if (typeof req.body["application/json"] === "object") {
+      body = req.body["application/json"];
+    } else if (typeof req.body["application/json"] === "string") {
+      body = JSON.parse(req.body["application/json"]);
+    } else if (typeof req.body === "object") {
+      body = req.body;
+    }
+    
     // Prepare data for emManager instead of passing entire req object
     const submissionData = {
-      service_id: req.body.service_id,
-      publication_code: req.body.publication_code,
-      document_id: req.body.document_id,
-      article_title: req.body.article_title,
-      article_type: req.body.article_type,
+      service_id: body.service_id,
+      publication_code: body.publication_code,
+      document_id: body.document_id,
+      article_title: body.article_title,
+      article_type: body.article_type,
       user_id: req.user.id,
-      file_data: req.body.file_data,
-      custom_questions: req.body.custom_questions,
+      file_data: body.file_data,
+      custom_questions: body.custom_questions,
       files: req.files || []
     };
 
@@ -58,14 +69,8 @@ module.exports.postSubmissions = async (req, res) => {
     // Save all data to S3
     await session.saveToS3();
     
-    // Clean up any temporary files
-    if (req.files) {
-      for (const file of req.files) {
-        await fs.unlink(file.path).catch(err => {
-          console.error(`[${session.requestId}] Error deleting temporary file:`, err);
-        });
-      }
-    }
+    // IMPORTANT: DO NOT delete the temporary files here, as they will be
+    // needed by the background job. The files will be handled by the job processor.
     
     // Return the response
     if (result.status === "Success") {
@@ -97,7 +102,8 @@ module.exports.postSubmissions = async (req, res) => {
       console.error(`[${session.requestId}] Error saving session data:`, s3Error);
     }
     
-    // Clean up any temporary files
+    // In case of error during submission handling (before job is queued),
+    // we can clean up the files as they won't be needed
     if (req.files) {
       for (const file of req.files) {
         await fs.unlink(file.path).catch(err => {
@@ -120,53 +126,18 @@ module.exports.postSubmissions = async (req, res) => {
  * @param {Object} res - Express response
  */
 module.exports.postCancelUpload = async (req, res) => {
-  // Initialize processing session
-  const session = new ProcessingSession(req.user.id);
-  
   try {
-    // Set origin as external service (Editorial Manager)
-    session.setOrigin('external', 'editorial-manager');
-    
-    const reportId = req.query.report_id;
-    
-    if (!reportId) {
-      session.addLog('Missing required parameter: report_id', 'ERROR');
-      
-      // Store error request and response
-      session.setAPIRequest({ 
-        action: 'cancel',
-        error: 'Missing required parameter: report_id'
-      });
-      
-      session.setAPIResponse({
-        error: 'Missing required parameter: report_id'
-      });
-      
-      await session.saveToS3();
-      
+    const report_id = req.query.report_id || req.body.report_id;
+
+    if (!report_id) {
       return res.status(400).json({
         error: 'Missing required parameter: report_id'
       });
     }
-    
-    // Store the request
-    session.setAPIRequest({ 
-      report_id: reportId,
-      action: 'cancel'
-    });
-    
-    // Cancel the upload
-    const success = await emManager.cancelUpload(reportId);
-    
-    // Store the result
-    session.setAPIResponse({
-      report_id: reportId,
-      success: success
-    });
-    
-    // Save the session to S3
-    await session.saveToS3();
-    
+
+    // Cancel the upload - manager handles all queue interactions
+    const success = await emManager.cancelUpload(report_id);
+
     if (success) {
       // Return success with an empty response (just HTTP code per EM spec)
       return res.status(200).end();
@@ -175,23 +146,7 @@ module.exports.postCancelUpload = async (req, res) => {
       return res.status(404).end();
     }
   } catch (error) {
-    // Log error
-    session.addLog(`Error canceling upload: ${error.message}`);
-    session.addLog(`Stack: ${error.stack}`);
-    
-    // Store error response
-    session.setAPIResponse({
-      status: "Error",
-      error: error.message
-    });
-    
-    try {
-      // Save session data with error information
-      await session.saveToS3();
-    } catch (s3Error) {
-      console.error(`[${session.requestId}] Error saving session data:`, s3Error);
-    }
-    
+    console.error(`[${req.body.report_id}] Failed to cancel upload`);
     return res.status(500).json({
       error: 'Failed to cancel upload'
     });
@@ -205,72 +160,26 @@ module.exports.postCancelUpload = async (req, res) => {
  * @param {Object} res - Express response
  */
 module.exports.postReport = async (req, res) => {
-  // Initialize processing session
-  const session = new ProcessingSession(req.user.id);
-  
   try {
-    // Set origin as external service (Editorial Manager)
-    session.setOrigin('external', 'editorial-manager');
-    
-    const { report_id } = req.body;
-    
+    const report_id = req.query.report_id || req.body.report_id;
+
     if (!report_id) {
-      // Store error request and response
-      session.setAPIRequest({
-        action: 'get_report',
-        error: 'Missing required parameter: report_id'
-      });
-      
-      session.setAPIResponse({
-        error: 'Missing required parameter: report_id'
-      });
-      
-      await session.saveToS3();
-      
       return res.status(400).json({
         error: 'Missing required parameter: report_id'
       });
     }
-    
-    // Store report request
-    session.setAPIRequest({
-      action: 'get_report',
-      report_id: report_id
-    });
-    
-    // Get the report
-    const reportData = await emManager.getReport(report_id, session);
-    
-    // Store API response
-    session.setAPIResponse(reportData);
-    
-    // Save session to S3
-    await session.saveToS3();
-    
+
+    // Get the report through manager
+    const reportData = await emManager.getReport(report_id);
+
     if (reportData.status === "Error") {
       return res.status(400).json(reportData);
     }
-    
+
     // Return the report data
     return res.json(reportData);
   } catch (error) {
-    // Log error
-    session.addLog(`Error getting report: ${error.message}`);
-    session.addLog(`Stack: ${error.stack}`);
-    
-    // Store error response
-    session.setAPIResponse({
-      status: "Error",
-      error: error.message
-    });
-    
-    try {
-      // Save session data with error information
-      await session.saveToS3();
-    } catch (s3Error) {
-      console.error(`[${session.requestId}] Error saving session data:`, s3Error);
-    }
-    
+    console.error(`[${req.body.report_id}] Failed to retrieve report`);
     return res.status(500).json({
       error: 'Failed to retrieve report'
     });
@@ -283,74 +192,28 @@ module.exports.postReport = async (req, res) => {
  * @param {Object} req - Express request
  * @param {Object} res - Express response
  */
-module.exports.postReportLink = async (req, res) => {
-  // Initialize processing session
-  const session = new ProcessingSession(req.user.id);
-  
+module.exports.postReportLink = async (req, res) => {  
   try {
-    // Set origin as external service (Editorial Manager)
-    session.setOrigin('external', 'editorial-manager');
-    
-    const { report_id, report_token } = req.body;
-    
+    const report_id = req.query.report_id || req.body.report_id;
+    const report_token = req.query.report_token || req.body.report_token;
+
     if (!report_id || !report_token) {
-      // Store error request and response
-      session.setAPIRequest({
-        action: 'get_report_link',
-        error: 'Missing required parameters: report_id or report_token'
-      });
-      
-      session.setAPIResponse({
-        error: 'Missing required parameters: report_id or report_token'
-      });
-      
-      await session.saveToS3();
-      
-      return res.status(400).json({
+        return res.status(400).json({
         error: 'Missing required parameters: report_id or report_token'
       });
     }
     
-    // Store request
-    session.setAPIRequest({
-      action: 'get_report_link',
-      report_id,
-      report_token
-    });
-    
-    // Get the report URL
-    const urlData = await emManager.getReportUrl(report_id, report_token, session);
-    
-    // Store API response
-    session.setAPIResponse(urlData);
-    
-    // Save session to S3
-    await session.saveToS3();
+    // Get the report URL through manager
+    const urlData = await emManager.getReportUrl(report_id, report_token);
     
     if (urlData.status === "Error") {
       return res.status(400).json(urlData);
     }
-    
+
     // Return the URL
     return res.json(urlData);
   } catch (error) {
-    // Log error
-    session.addLog(`Error getting report URL: ${error.message}`);
-    session.addLog(`Stack: ${error.stack}`);
-    
-    // Store error response
-    session.setAPIResponse({
-      status: "Error",
-      error: error.message
-    });
-    
-    try {
-      // Save session data with error information
-      await session.saveToS3();
-    } catch (s3Error) {
-      console.error(`[${session.requestId}] Error saving session data:`, s3Error);
-    }
-    
+    console.error(`[${req.body.report_id}] Failed to retrieve report URL`);
     return res.status(500).json({
       error: 'Failed to retrieve report URL'
     });
@@ -364,82 +227,96 @@ module.exports.postReportLink = async (req, res) => {
  * @param {Object} res - Express response
  */
 module.exports.postReportCompleteNotification = async (req, res) => {
-  // Initialize processing session
-  const session = new ProcessingSession(req.user.id);
-  
   try {
-    // Set origin as external service (Editorial Manager)
-    session.setOrigin('external', 'editorial-manager');
-    
     const { publication_code, service_id, report_id, status, error_message } = req.body;
-    
-    // Store request
-    session.setAPIRequest({
-      action: 'report_complete_notification',
-      ...req.body
-    });
-    
+
     // Validate required fields
     if (!publication_code || !service_id || !report_id || !status) {
-      session.addLog('Missing required parameters', 'ERROR');
-      
-      // Store error response
-      session.setAPIResponse({
-        error: 'Missing required parameters'
-      });
-      
-      // Save session to S3
-      await session.saveToS3();
-      
       return res.status(400).json({
         error: 'Missing required parameters'
       });
     }
     
-    // Send notification to Editorial Manager
+    // Send notification through manager
     const result = await emManager.sendReportCompleteNotification({
       publication_code,
       service_id,
       report_id,
       status,
       error_message
-    }, session);
-    
-    // Store API response
-    session.setAPIResponse({
-      status: 'success',
-      message: 'Notification sent successfully',
-      result
     });
-    
-    // Save session to S3
-    await session.saveToS3();
-    
+
     return res.json({
       status: 'success',
       message: 'Notification sent successfully',
       result
     });
   } catch (error) {
-    // Log error
-    session.addLog(`Error sending notification: ${error.message}`);
-    session.addLog(`Stack: ${error.stack}`);
-    
-    // Store error response
-    session.setAPIResponse({
-      status: "Error",
-      error: error.message
-    });
-    
-    try {
-      // Save session data with error information
-      await session.saveToS3();
-    } catch (s3Error) {
-      console.error(`[${session.requestId}] Error saving session data:`, s3Error);
-    }
-    
+    console.error(`[${req.body.report_id}] Failed to send notification`);
     return res.status(500).json({
       error: 'Failed to send notification'
+    });
+  }
+};
+
+/**
+ * Handle GET /editorial-manager/jobs/:reportId
+ * This endpoint allows checking the status of a background job
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
+ */
+module.exports.getJobStatus = async (req, res) => {
+  try {
+    const { reportId } = req.params;
+
+    if (!reportId) {
+      return res.status(400).json({
+        status: "Error",
+        error: "Missing required parameter: reportId"
+      });
+    }
+
+    // Get job status through the manager
+    const jobStatus = await emManager.getJobStatus(reportId);
+
+    if (jobStatus.status === "Error") {
+      return res.status(404).json(jobStatus);
+    }
+
+    return res.json(jobStatus);
+  } catch (error) {
+    console.error(`[${req.params.reportId}] Failed to retrieve job status`);
+    return res.status(500).json({
+      error: 'Failed to retrieve job status'
+    });
+  }
+};
+
+/**
+ * Handle POST /editorial-manager/retry/:reportId
+ * This endpoint allows retrying a failed job
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
+ */
+module.exports.retryJob = async (req, res) => {
+  try {
+    const { reportId } = req.params;
+
+    if (!reportId) {
+      return res.status(400).json({
+        status: "Error",
+        error: "Missing required parameter: reportId"
+      });
+    }
+
+    // Call the manager to handle the retry logic
+    const result = await emManager.retryJob(reportId);
+    
+    return res.json(result);
+  } catch (error) {
+    console.error(`[${req.params.reportId}] Failed to retry job`);
+    return res.status(500).json({
+      error: 'Failed to retry job'
     });
   }
 };

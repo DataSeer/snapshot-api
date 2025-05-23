@@ -6,8 +6,7 @@ const FormData = require('form-data');
 const config = require('../config');
 const { appendToSheet, convertToGoogleSheetsDate, convertToGoogleSheetsTime, convertToGoogleSheetsDuration } = require('./googleSheets');
 const { getUserById } = require('./userManager');
-const { createGoogleSheets, buildJSON } = require('./reportsManager');
-const { addOrUpdateRequest } = require('./requestsManager');
+const requestsManager = require('./requestsManager');
 
 // Load the genshare configuration
 const genshareConfig = require(config.genshareConfigPath);
@@ -403,12 +402,12 @@ const processPDF = async (data, session) => {
     if (errorStatus === "No" && !!activeReportVersion && response.data.response) {
       session.addLog(`Using report: ${activeReportVersion}`);
       try {
-        // Create GoogleSheets Report
-        const googleSheetsReport = await createGoogleSheets(activeReportVersion, response.data.response, session);
+        // Create GoogleSheets Report using requestsManager (moved from reportsManager)
+        const googleSheetsReport = await requestsManager.createGoogleSheets(activeReportVersion, response.data.response, session);
         reportURL = googleSheetsReport.url;
 
         // Build JSON Report
-        const jsonReport = buildJSON(activeReportVersion, response.data.response, reportURL);
+        const jsonReport = requestsManager.buildJSON(activeReportVersion, response.data.response, reportURL);
 
         // Store JSON Report
         session.setReport(jsonReport);
@@ -429,9 +428,16 @@ const processPDF = async (data, session) => {
       session.addLog('[DB] Error: "article_id" not found. Link "article_id <-> request_id" not created.');
       console.error(`[${session.requestId}] Error: "article_id" not found. Link "article_id <-> request_id" not created.`);
     } else {
-      // Add the link between the "article_id" and the "request_id"
+      // Add the link between the "article_id" and the "request_id" with report data if available
       session.addLog('[DB] Link "article_id <-> request_id" created');
-      await addOrUpdateRequest(user.id, articleId, session.requestId);
+      if (session.report) {
+        // Add request with report data
+        await requestsManager.addOrUpdateRequestWithReport(user.id, articleId, session.requestId, session.report);
+        session.addLog('[DB] Report data saved to database');
+      } else {
+        // Add request without report data (will be updated later if needed)
+        await requestsManager.addOrUpdateRequest(user.id, articleId, session.requestId);
+      }
     }
 
     // Session data preparation is complete

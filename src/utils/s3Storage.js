@@ -122,28 +122,28 @@ const streamToString = async (stream) => {
   return Buffer.concat(chunks).toString('utf-8');
 };
 
-// Get all options.json files from S3
-const getAllRequestsFiles = async () => {
+// Get all genshare request files from S3
+const getAllGenshareRequestsFiles = async () => {
   try {
-    console.log("Starting to fetch options files from S3...");
+    console.log("Starting to fetch /genshare/request.json files from S3...");
     const prefix = `${s3Config.s3Folder}/`;
     console.log(`Using prefix: ${prefix}`);
     
     const objects = await listObjects(prefix);
     console.log(`Total objects retrieved from S3: ${objects.length}`);
     
-    const optionsFiles = objects.filter(obj => obj.Key.endsWith('/request.json'));
-    console.log(`Total request.json files found: ${optionsFiles.length}`);
+    const requestFiles = objects.filter(obj => obj.Key.endsWith('/genshare/request.json'));
+    console.log(`Total /genshare/request.json files found: ${requestFiles.length}`);
     
-    const fileData = await Promise.all(optionsFiles.map(async (file) => {
+    const fileData = await Promise.all(requestFiles.map(async (file) => {
       try {
         const content = await getFile(file.Key);
         const pathParts = file.Key.split('/');
         
         // Extract userId and requestId from the path
-        // Path format: snapshot-api-dev/userId/requestId/request.json
-        const userId = pathParts[pathParts.length - 3];
-        const requestId = pathParts[pathParts.length - 2];
+        // Path format: snapshot-api-dev/userId/requestId/genshare/request.json
+        const userId = pathParts[pathParts.length - 4];
+        const requestId = pathParts[pathParts.length - 3];
         
         let parsedContent;
         try {
@@ -167,11 +167,11 @@ const getAllRequestsFiles = async () => {
     
     // Filter out any null entries from errors
     const validFileData = fileData.filter(file => file !== null);
-    console.log(`Processed ${validFileData.length} valid files out of ${optionsFiles.length}`);
+    console.log(`Processed ${validFileData.length} valid files out of ${requestFiles.length}`);
     
     return validFileData;
   } catch (error) {
-    console.error('Error getting options files:', error);
+    console.error('Error getting genshare request files:', error);
     throw error;
   }
 };
@@ -193,9 +193,9 @@ const getReportFile = async (userId, requestId) => {
 
 // Create a ProcessingSession class to handle the accumulation of data
 class ProcessingSession {
-  constructor(userId) {
+  constructor(userId, requestId = null) {
     this.userId = userId;
-    this.requestId = generateRequestId();
+    this.requestId = requestId ? requestId : generateRequestId();
     this.url = generateS3Url(this.userId, this.requestId);
     this.files = []; // Internal files tracking
     this.logs = [];
@@ -521,7 +521,7 @@ class ProcessingSession {
 
 module.exports = { 
   ProcessingSession,
-  getAllRequestsFiles,
+  getAllGenshareRequestsFiles,
   getReportFile,
   generateRequestId,
   uploadBatchToS3

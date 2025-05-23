@@ -7,8 +7,12 @@ const { getDatastetHealth } = require('../controllers/datastetController');
 const { getPing } = require('../controllers/healthController');
 const { getApiRoutes } = require('../controllers/apiController');
 const { getVersions } = require('../controllers/versionsController');
-const { refreshRequests } = require('../controllers/requestsController');
-const { getReport } = require('../controllers/reportsController');
+const {
+  refreshRequests,
+  searchRequest,
+  getReportOfRequest,
+  getReportUrlOfRequest,
+} = require('../controllers/requestsController');
 const { 
   authenticateEditorialManager, 
   revokeTokenEditorialManager
@@ -56,13 +60,13 @@ authenticatedRouter.get('/genshare/health', getGenShareHealth);
 authenticatedRouter.get('/grobid/health', getGrobidHealth);
 authenticatedRouter.get('/datastet/health', getDatastetHealth);
 
-// Reports endpoints
-authenticatedRouter.get('/reports/search', getReport);
-
-// Requests endpoints
+// Requests & Reports endpoints (new functionality under /requests/reports)
 authenticatedRouter.post('/requests/refresh', refreshRequests);
+authenticatedRouter.get('/requests/search', searchRequest); // Available params: article_id & request_id
+authenticatedRouter.get('/requests/:requestId/report', getReportOfRequest);
+authenticatedRouter.get('/requests/:requestId/report/url', getReportUrlOfRequest);
 
-// Editorial Manager endpoints
+// Editorial Manager endpoints (keep unchanged as requested)
 authenticatedRouter.post('/editorial-manager/submissions', upload.any(), postSubmissions);
 authenticatedRouter.post('/editorial-manager/cancel', postCancelUpload); // return true
 authenticatedRouter.post('/editorial-manager/reports', postReport); // return { "report_token": "", "scores": "", "flag": true }

@@ -1,4 +1,4 @@
-// File: src/utils/dbManager.js with editorial-manager-submissions table support
+// File: src/utils/dbManager.js
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
@@ -36,17 +36,32 @@ const initDatabase = async () => {
   try {
     const db = await getDBConnection();
     
-    // Create the requests table if it doesn't exist
+    // Create the updated requests table with report data
     await new Promise((resolve, reject) => {
       db.run(`CREATE TABLE IF NOT EXISTS requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_name TEXT NOT NULL,
         article_id TEXT NOT NULL,
         request_id TEXT NOT NULL UNIQUE,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        report_data TEXT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )`, (err) => {
         if (err) {
           console.error('Error creating requests table:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+    
+    // Create index for better performance
+    await new Promise((resolve, reject) => {
+      db.run(`CREATE INDEX IF NOT EXISTS idx_requests_user_article 
+              ON requests(user_name, article_id)`, (err) => {
+        if (err) {
+          console.error('Error creating index:', err);
           reject(err);
         } else {
           resolve();
@@ -87,6 +102,31 @@ const initDatabase = async () => {
       )`, (err) => {
         if (err) {
           console.error('Error creating editorial-manager-submissions table:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+    
+    // Create the processing_jobs table if it doesn't exist
+    await new Promise((resolve, reject) => {
+      db.run(`CREATE TABLE IF NOT EXISTS processing_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        request_id TEXT NOT NULL UNIQUE,
+        job_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        priority INTEGER DEFAULT 5,
+        data TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        retries INTEGER DEFAULT 0,
+        max_retries INTEGER DEFAULT 3,
+        error_message TEXT,
+        completion_data TEXT
+      )`, (err) => {
+        if (err) {
+          console.error('Error creating processing_jobs table:', err);
           reject(err);
         } else {
           resolve();
@@ -300,31 +340,73 @@ const cleanupExpiredTokens = async () => {
 };
 
 /*
- * ARTICLE REQUEST MANAGEMENT METHODS
+ * REQUEST AND REPORT MANAGEMENT METHODS
  */
 
 /**
- * Add or update a request
+ * Add or update a request with optional report data
  * @param {string} userName - The user name
  * @param {string} articleId - The article ID
  * @param {string} requestId - The request ID
+ * @param {Object|null} reportData - The report data (optional)
  * @param {string|null} lastModified - Last modification date (optional)
  * @returns {Promise<Object>} - Result with changes count
  */
-const addOrUpdateRequest = async (userName, articleId, requestId, lastModified = null) => {
+const addOrUpdateRequest = async (userName, articleId, requestId, reportData = null, lastModified = null) => {
   try {
     const db = await getDBConnection();
     
     let sql, params;
+    const now = new Date().toISOString();
     
-    if (lastModified) {
-      // If lastModified is provided, update the created_at field as well
-      sql = 'INSERT OR REPLACE INTO requests (user_name, article_id, request_id, created_at) VALUES (?, ?, ?, ?)';
-      params = [userName, articleId, requestId, lastModified];
+    // Check if record exists
+    const existingRecord = await new Promise((resolve, reject) => {
+      db.get(
+        'SELECT * FROM requests WHERE request_id = ?',
+        [requestId],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        }
+      );
+    });
+    
+    if (existingRecord) {
+      // Update existing record
+      if (reportData !== null) {
+        // Update with report data
+        sql = `UPDATE requests 
+               SET user_name = ?, article_id = ?, report_data = ?, updated_at = ?
+               WHERE request_id = ?`;
+        params = [userName, articleId, JSON.stringify(reportData), now, requestId];
+      } else if (lastModified) {
+        // Update with lastModified date
+        sql = `UPDATE requests 
+               SET user_name = ?, article_id = ?, created_at = ?, updated_at = ?
+               WHERE request_id = ?`;
+        params = [userName, articleId, lastModified, now, requestId];
+      } else {
+        // Simple update
+        sql = `UPDATE requests 
+               SET user_name = ?, article_id = ?, updated_at = ?
+               WHERE request_id = ?`;
+        params = [userName, articleId, now, requestId];
+      }
     } else {
-      // Original implementation without specifying the date
-      sql = 'INSERT OR REPLACE INTO requests (user_name, article_id, request_id) VALUES (?, ?, ?)';
-      params = [userName, articleId, requestId];
+      // Insert new record
+      if (reportData !== null) {
+        sql = `INSERT INTO requests (user_name, article_id, request_id, report_data, created_at, updated_at) 
+               VALUES (?, ?, ?, ?, ?, ?)`;
+        params = [userName, articleId, requestId, JSON.stringify(reportData), lastModified || now, now];
+      } else if (lastModified) {
+        sql = `INSERT INTO requests (user_name, article_id, request_id, created_at, updated_at) 
+               VALUES (?, ?, ?, ?, ?)`;
+        params = [userName, articleId, requestId, lastModified, now];
+      } else {
+        sql = `INSERT INTO requests (user_name, article_id, request_id, created_at, updated_at) 
+               VALUES (?, ?, ?, ?, ?)`;
+        params = [userName, articleId, requestId, now, now];
+      }
     }
     
     const result = await new Promise((resolve, reject) => {
@@ -344,6 +426,141 @@ const addOrUpdateRequest = async (userName, articleId, requestId, lastModified =
     return result;
   } catch (error) {
     console.error('Error adding/updating request:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update report data for a request
+ * @param {string} requestId - The request ID
+ * @param {Object} reportData - The report data
+ * @returns {Promise<boolean>} - True if update was successful
+ */
+const updateRequestReportData = async (requestId, reportData) => {
+  try {
+    const db = await getDBConnection();
+    const now = new Date().toISOString();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE requests 
+         SET report_data = ?, updated_at = ?
+         WHERE request_id = ?`,
+        [JSON.stringify(reportData), now, requestId],
+        function(err) {
+          if (err) reject(err);
+          else resolve(this.changes > 0);
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error updating request report data:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get request with report data by request ID
+ * @param {string} userName - The user name
+ * @param {string} requestId - The request ID
+ * @returns {Promise<Object|null>} - Request record with report data or null
+ */
+const getRequestWithReportData = async (userName, requestId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT * FROM requests 
+         WHERE user_name = ? AND request_id = ?`,
+        [userName, requestId],
+        (err, row) => {
+          if (err) reject(err);
+          else {
+            if (row && row.report_data) {
+              try {
+                row.report_data = JSON.parse(row.report_data);
+              } catch (parseError) {
+                console.error('Error parsing report data:', parseError);
+                row.report_data = null;
+              }
+            }
+            resolve(row || null);
+          }
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting request with report data:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get all requests with report data for a user and article
+ * @param {string} userName - The user name
+ * @param {string} articleId - The article ID
+ * @returns {Promise<Array>} - Array of request records
+ */
+const getRequestsWithReportDataByArticleId = async (userName, articleId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.all(
+        `SELECT * FROM requests 
+         WHERE user_name = ? AND article_id = ? 
+         ORDER BY created_at DESC`,
+        [userName, articleId],
+        (err, rows) => {
+          if (err) reject(err);
+          else {
+            // Parse report_data for each row
+            const parsedRows = rows.map(row => {
+              if (row.report_data) {
+                try {
+                  row.report_data = JSON.parse(row.report_data);
+                } catch (parseError) {
+                  console.error('Error parsing report data:', parseError);
+                  row.report_data = null;
+                }
+              }
+              return row;
+            });
+            resolve(parsedRows || []);
+          }
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting requests with report data by article ID:', error);
     throw error;
   }
 };
@@ -402,7 +619,6 @@ const getRequestIdByArticleId = async (userName, articleId) => {
   try {
     const db = await getDBConnection();
     
-    // Added ORDER BY created_at DESC to get the newest request
     const result = await new Promise((resolve, reject) => {
       db.get(
         'SELECT request_id FROM requests WHERE user_name = ? AND article_id = ? ORDER BY created_at DESC LIMIT 1',
@@ -473,7 +689,6 @@ const getRequestIdsByArticleId = async (userName, articleId) => {
   try {
     const db = await getDBConnection();
     
-    // Added ORDER BY created_at DESC to get newest requests first
     const result = await new Promise((resolve, reject) => {
       db.all(
         'SELECT request_id FROM requests WHERE user_name = ? AND article_id = ? ORDER BY created_at DESC',
@@ -612,8 +827,205 @@ const cancelEmSubmission = async (requestId) => {
   }
 };
 
+/*
+ * QUEUE MANAGEMENT METHODS
+ */
+
+/**
+ * Add a job to the processing queue
+ * @param {string} requestId - Unique request ID for the job
+ * @param {string} jobType - Type of job
+ * @param {Object} data - Job data (will be stored as JSON)
+ * @param {number} maxRetries - Maximum number of retries
+ * @param {number} priority - Job priority
+ * @returns {Promise<Object>} - Created job record
+ */
+const addJobToQueue = async (requestId, jobType, data, maxRetries = 3, priority = 5) => {
+  try {
+    const db = await getDBConnection();
+    
+    // Convert data to JSON string
+    const dataJson = JSON.stringify(data);
+    
+    // Insert job record
+    await new Promise((resolve, reject) => {
+      db.run(
+        `INSERT INTO processing_jobs 
+         (request_id, job_type, status, priority, data, max_retries) 
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [requestId, jobType, 'pending', priority, dataJson, maxRetries],
+        function(err) {
+          if (err) reject(err);
+          else resolve(this.lastID);
+        }
+      );
+    });
+    
+    // Get the inserted job
+    const job = await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT * FROM processing_jobs WHERE request_id = ?`,
+        [requestId],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        }
+      );
+    });
+    
+    // Close database connection
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return job;
+  } catch (error) {
+    console.error(`Error adding job to queue (${requestId}):`, error);
+    throw error;
+  }
+};
+
+/**
+ * Update job status in the database
+ * @param {string} requestId - Request ID of the job
+ * @param {string} status - New status
+ * @param {string} errorMessage - Error message if status is 'failed'
+ * @param {Object} completionData - Data to store when job is completed
+ * @returns {Promise<boolean>} - True if job was updated
+ */
+const updateJobStatus = async (requestId, status, errorMessage = null, completionData = null) => {
+  try {
+    const db = await getDBConnection();
+    
+    let sql, params;
+    
+    if (status === 'failed') {
+      // Update status and increment retry count for failed jobs
+      sql = `UPDATE processing_jobs 
+             SET status = ?, 
+                 error_message = ?, 
+                 retries = retries + 1,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE request_id = ?`;
+      params = [status, errorMessage, requestId];
+    } else if (status === 'completed' && completionData) {
+      // Update status and store completion data for completed jobs
+      sql = `UPDATE processing_jobs 
+             SET status = ?, 
+                 completion_data = ?,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE request_id = ?`;
+      params = [status, JSON.stringify(completionData), requestId];
+    } else {
+      // Simple status update
+      sql = `UPDATE processing_jobs 
+             SET status = ?, 
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE request_id = ?`;
+      params = [status, requestId];
+    }
+    
+    const result = await new Promise((resolve, reject) => {
+      db.run(sql, params, function(err) {
+        if (err) reject(err);
+        else resolve(this.changes > 0);
+      });
+    });
+    
+    // Close database connection
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error(`Error updating job status (${requestId}):`, error);
+    throw error;
+  }
+};
+
+/**
+ * Get the next pending job
+ * @returns {Promise<Object|null>} - Next job to process or null if none available
+ */
+const getNextPendingJob = async () => {
+  try {
+    const db = await getDBConnection();
+    
+    // Get oldest pending job or failed job that has retries remaining, sorted by priority (highest first)
+    const job = await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT * FROM processing_jobs 
+         WHERE (status = ? OR (status = ? AND retries < max_retries))
+         ORDER BY priority DESC, created_at ASC
+         LIMIT 1`,
+        ['pending', 'failed'],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row || null);
+        }
+      );
+    });
+    
+    // Close database connection
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return job;
+  } catch (error) {
+    console.error('Error getting next pending job:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get job by request ID
+ * @param {string} requestId - Request ID of the job
+ * @returns {Promise<Object|null>} - Job record or null if not found
+ */
+const getJobByRequestId = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const job = await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT * FROM processing_jobs WHERE request_id = ?`,
+        [requestId],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row || null);
+        }
+      );
+    });
+    
+    // Close database connection
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return job;
+  } catch (error) {
+    console.error(`Error getting job (${requestId}):`, error);
+    throw error;
+  }
+};
+
 module.exports = {
   initDatabase,
+  getDBConnection,
   
   // Token management methods
   getValidToken,
@@ -622,8 +1034,11 @@ module.exports = {
   isTokenValid,
   cleanupExpiredTokens,
   
-  // Article request management methods
+  // Request and report management methods
   addOrUpdateRequest,
+  updateRequestReportData,
+  getRequestWithReportData,
+  getRequestsWithReportDataByArticleId,
   deleteRequest,
   getRequestIdByArticleId,
   getArticleIdByRequestId,
@@ -632,5 +1047,11 @@ module.exports = {
   // Editorial Manager submissions methods
   storeEmSubmission,
   getEmSubmissionByRequestId,
-  cancelEmSubmission
+  cancelEmSubmission,
+  
+  // Queue management methods
+  addJobToQueue,
+  updateJobStatus,
+  getNextPendingJob,
+  getJobByRequestId
 };

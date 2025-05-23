@@ -88,7 +88,7 @@ module.exports.processPDF = async (req, res) => {
       }
     });
     
-    // Process the PDF using the manager
+    // Process the PDF using the manager - this is synchronous processing
     const result = await genshareManager.processPDF(processingData, session);
     
     // Store API response
@@ -100,10 +100,12 @@ module.exports.processPDF = async (req, res) => {
     // Save session data to S3
     await session.saveToS3();
     
-    // Clean up temporary file
-    await fs.unlink(req.file.path).catch(err => {
-      console.error(`[${session.requestId}] Error deleting temporary file:`, err);
-    });
+    // Now that ALL processing is complete, we can safely clean up the temporary file
+    if (req.file && req.file.path) {
+      await fs.unlink(req.file.path).catch(err => {
+        console.error(`[${session.requestId}] Error deleting temporary file:`, err);
+      });
+    }
 
     // Forward modified response to client
     res.status(result.status);
@@ -131,7 +133,7 @@ module.exports.processPDF = async (req, res) => {
       console.error(`[${session.requestId}] Error saving session data:`, s3Error);
     }
 
-    // Clean up temporary file if it exists
+    // Clean up temporary file if it exists, but only after all processing, including error handling, is complete
     if (req.file && req.file.path) {
       await fs.unlink(req.file.path).catch(err => {
         console.error(`[${session.requestId}] Error deleting temporary file:`, err);
