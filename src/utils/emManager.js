@@ -599,26 +599,7 @@ const getReport = async (reportId) => {
         }
         
         // Extract scores from report data
-        let scores = "Processing complete";
-
-        // TO DO : by default, we return the cumulated_score in the "scores" key
-        // Must be changed by the dedicated Genshare result key
-        
-        // Check if report has response data
-        if (reportData && typeof reportData === 'object') {
-          // Look for score-related fields in the report data
-          const scoreFields = Object.keys(reportData).filter(key => 
-            key.toLowerCase().includes('score')
-          );
-          
-          if (scoreFields.length > 0) {
-            scores = scoreFields.map(field => `${field}: ${reportData[field]}`).join("\n");
-          } else {
-            // If no specific score fields, provide a summary of available data
-            const dataFields = Object.keys(reportData).filter(key => key !== 'meta');
-            scores = `Report contains ${dataFields.length} data fields`;
-          }
-        }
+        let scores = "Report provided by DataSeer Snapshot";
         
         return {
           report_token: `token-${reportId.substring(0, 8)}`,
