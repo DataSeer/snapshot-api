@@ -70,7 +70,8 @@ authenticatedRouter.get('/requests/:requestId/report/url', getReportUrlOfRequest
 authenticatedRouter.post('/editorial-manager/submissions', upload.any(), postSubmissions);
 authenticatedRouter.post('/editorial-manager/cancel', postCancelUpload); // return true
 authenticatedRouter.post('/editorial-manager/reports', postReport); // return { "report_token": "", "scores": "", "flag": true }
-authenticatedRouter.post('/editorial-manager/reportLink', postReportLink); // return { "report_url": "..." }
+// use "upload.none()" to parse multipart form data requests
+authenticatedRouter.post('/editorial-manager/reportLink', upload.none(), postReportLink); // return { "report_url": "..." }
 
 // Mount the authenticated router
 unauthenticatedRouter.use('/', authenticatedRouter);
