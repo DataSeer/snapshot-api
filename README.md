@@ -1,6 +1,6 @@
 # Snapshot API
 
-A Node.js REST API for processing PDF documents through OSI (Open Science Indicators) verification system. This API integrates with GenShare (DataSeer AI), GROBID, and DataStet services to analyze scientific documents, detect data statements, and generate reports. It features JWT authentication, user-specific rate limiting, S3 storage for complete request traceability, SQLite database for request mapping, and Google Sheets integration for reporting.
+A Node.js REST API for processing PDF documents through OSI (Open Science Indicators) verification system. This API integrates with GenShare (DataSeer AI), GROBID, and DataStet services to analyze scientific documents, detect data statements, and generate reports. It features JWT authentication, user-specific rate limiting, S3 storage for complete request traceability, SQLite database for request mapping, Google Sheets integration for reporting, and an asynchronous job queue system for background processing.
 
 ## Table of Contents
 
@@ -9,6 +9,7 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [API Architecture](#api-architecture)
+- [Queue System](#queue-system)
 - [Authentication Flow](#authentication-flow)
 - [Usage](#usage)
 - [Scripts](#scripts)
@@ -21,6 +22,7 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 ## Features
 
 - PDF document processing via GenShare integration
+- **Asynchronous job queue system** for background processing with configurable concurrency
 - Multiple GenShare version support with user-specific access control
 - Response filtering based on user permissions
 - JWT-based authentication system
@@ -32,8 +34,10 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - Version-specific Google Sheets logging and reports
 - Health monitoring for all integrated services
 - Editorial Manager API integration for submissions handling
+- **Job status tracking and retry mechanism** with exponential backoff
+- **Event-driven job completion callbacks** for reliable external notifications
 - Comprehensive logging system
-- SQLite database for article-request mapping
+- SQLite database for article-request mapping and job queue management
 - Endpoints for report retrieval by article ID or request ID
 
 ## Prerequisites
@@ -96,7 +100,25 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 
 ### Required Configuration Files
 
-1. **GenShare Configuration:**
+1. **Queue Manager Configuration:**
+```json
+// conf/queueManager.json
+{
+  "maxConcurrentJobs": 3,           // Maximum number of jobs processed simultaneously
+  "maxRetries": 3,                  // Default maximum retries for failed jobs
+  "retryDelayBase": 2,              // Base for exponential backoff (seconds)
+  "retryDelayMultiplier": 1000,     // Multiplier for retry delay (milliseconds)
+  "processorInterval": 5000,        // Interval to check for new jobs (milliseconds)
+  "jobPriorities": {
+    "LOW": 1,
+    "NORMAL": 5,
+    "HIGH": 10,
+    "CRITICAL": 20
+  }
+}
+```
+
+2. **GenShare Configuration:**
 ```json
 // conf/genshare.json
 {
@@ -129,7 +151,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-2. **GROBID Configuration:**
+3. **GROBID Configuration:**
 ```json
 // conf/grobid.json
 {
@@ -140,7 +162,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-3. **DataStet Configuration:**
+4. **DataStet Configuration:**
 ```json
 // conf/datastet.json
 {
@@ -151,7 +173,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-4. **Users Configuration:**
+5. **Users Configuration:**
 ```json
 // conf/users.json
 {
@@ -176,7 +198,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-5. **Reports Configuration:**
+6. **Reports Configuration:**
 ```json
 // conf/reports.json
 {
@@ -211,7 +233,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-6. **Permissions Configuration:**
+7. **Permissions Configuration:**
 ```json
 // conf/permissions.json
 {
@@ -241,7 +263,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-7. **AWS S3 Configuration:**
+8. **AWS S3 Configuration:**
 ```json
 // conf/aws.s3.json
 {
@@ -253,7 +275,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-8. **Editorial Manager Configuration:**
+9. **Editorial Manager Configuration:**
 ```json
 // conf/em.json
 {
@@ -265,7 +287,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-9. **Google Sheets Credentials:**
+10. **Google Sheets Credentials:**
 ```json
 // conf/googleSheets.credentials.json
 {
@@ -297,7 +319,7 @@ GET    /versions                         - Get version information
 GET    /ping                             - Health check all services
 
 # Core functionality
-POST   /processPDF                       - Process a PDF file
+POST   /processPDF                       - Process a PDF file (asynchronous)
 GET    /reports/search                   - Search for reports by article_id or request_id
 POST   /requests/refresh                 - Refresh article-request ID mapping from S3
 
@@ -307,10 +329,68 @@ GET    /grobid/health                    - Check GROBID service health
 GET    /datastet/health                  - Check DataStet service health
 
 # Editorial Manager integration
-POST   /editorial-manager/submissions    - Handle submissions from Editorial Manager
+POST   /editorial-manager/submissions    - Handle submissions from Editorial Manager (asynchronous)
 POST   /editorial-manager/cancel         - Cancel an in-progress submission
 POST   /editorial-manager/reports        - Get report data
 POST   /editorial-manager/reportLink     - Get report URL from token
+GET    /editorial-manager/job-status     - Get job status by report ID
+POST   /editorial-manager/retry          - Retry a failed job
+```
+
+## Queue System
+
+The API includes a robust asynchronous job queue system for background processing:
+
+### Key Features
+
+- **Asynchronous Processing**: All PDF processing jobs run in the background, allowing immediate API responses
+- **Configurable Concurrency**: Control how many jobs process simultaneously via `maxConcurrentJobs`
+- **Automatic Retry Logic**: Failed jobs are automatically retried with exponential backoff
+- **Job Prioritization**: Support for LOW, NORMAL, HIGH, and CRITICAL priority levels
+- **Event-Driven Callbacks**: Execute functions when jobs complete or fail
+- **Database Persistence**: All jobs are stored in SQLite with full status tracking
+- **Race Condition Prevention**: Database updates occur before callback execution
+
+### Job Lifecycle
+
+1. **Submission**: Job is added to the queue and assigned a unique request ID
+2. **Pending**: Job waits in queue until a processing slot is available
+3. **Processing**: Job is actively being processed by a worker
+4. **Completed/Failed**: Job finishes successfully or fails after max retries
+5. **Cleanup**: Memory is cleaned up and callbacks are executed
+
+### Job Status Values
+
+- `pending`: Job is queued waiting for processing
+- `processing`: Job is currently being processed
+- `completed`: Job finished successfully
+- `failed`: Job failed permanently after all retries
+- `retrying`: Job failed but will be retried
+
+### Configuration Options
+
+```json
+{
+  "maxConcurrentJobs": 3,        // Process up to 3 jobs simultaneously
+  "maxRetries": 3,               // Retry failed jobs up to 3 times
+  "retryDelayBase": 2,           // Exponential backoff base (2^retry_count)
+  "retryDelayMultiplier": 1000,  // Multiply delay by this value (milliseconds)
+  "processorInterval": 5000      // Check for new jobs every 5 seconds
+}
+```
+
+### Monitoring Jobs
+
+```bash
+# Check job status
+curl -G http://localhost:3000/editorial-manager/job-status \
+  -H "Authorization: Bearer <your-token>" \
+  --data-urlencode "report_id=12345678901234567890123456789012"
+
+# Retry a failed job
+curl -X POST http://localhost:3000/editorial-manager/retry \
+  -H "Authorization: Bearer <your-token>" \
+  -d "report_id=12345678901234567890123456789012"
 ```
 
 ## Authentication Flow
@@ -363,28 +443,71 @@ curl -X POST http://localhost:3000/editorial-manager/revokeToken \
 
 ## Usage
 
-### Processing PDFs
+### Processing PDFs (Asynchronous)
+
+All PDF processing is now asynchronous and returns immediately with a request ID:
 
 ```bash
-# Basic usage
+# Basic usage - returns immediately with request_id
 curl -X POST http://localhost:3000/processPDF \
   -H "Authorization: Bearer <your-token>" \
   -F "file=@document.pdf" \
   -F 'options={"article_id": "ARTICLE123"}'
 
-# With specific GenShare version
-curl -X POST http://localhost:3000/processPDF \
-  -H "Authorization: Bearer <your-token>" \
-  -F "file=@document.pdf" \
-  -F 'options={"article_id": "ARTICLE123"}' \
-  -F 'genshareVersion=v2.0.0'
+# Response:
+# {
+#   "status": "Success",
+#   "request_id": "12345678901234567890123456789012",
+#   "message": "PDF processing started in background"
+# }
+```
 
-# With specific report version
-curl -X POST http://localhost:3000/processPDF \
+### Checking Job Status
+
+```bash
+# Check processing status
+curl -G http://localhost:3000/editorial-manager/job-status \
   -H "Authorization: Bearer <your-token>" \
-  -F "file=@document.pdf" \
-  -F 'options={"article_id": "ARTICLE123"}' \
-  -F 'report=Report v1'
+  --data-urlencode "report_id=12345678901234567890123456789012"
+
+# Response examples:
+# {
+#   "report_id": "12345678901234567890123456789012",
+#   "status": "processing",
+#   "created_at": "2025-01-01T10:00:00Z",
+#   "updated_at": "2025-01-01T10:01:00Z",
+#   "retries": 0,
+#   "max_retries": 3
+# }
+#
+# {
+#   "report_id": "12345678901234567890123456789012",
+#   "status": "completed",
+#   "created_at": "2025-01-01T10:00:00Z",
+#   "updated_at": "2025-01-01T10:05:00Z",
+#   "retries": 0,
+#   "max_retries": 3,
+#   "results": {
+#     "genshare_status": "success",
+#     "notification_status": "success"
+#   }
+# }
+```
+
+### Retrying Failed Jobs
+
+```bash
+# Retry a failed job
+curl -X POST http://localhost:3000/editorial-manager/retry \
+  -H "Authorization: Bearer <your-token>" \
+  -d "report_id=12345678901234567890123456789012"
+
+# Response:
+# {
+#   "status": "Success",
+#   "message": "Job 12345678901234567890123456789012 has been queued for retry",
+#   "report_id": "12345678901234567890123456789012"
+# }
 ```
 
 ### Searching for Reports
@@ -404,7 +527,7 @@ curl -G http://localhost:3000/reports/search \
 ### Editorial Manager Integration
 
 ```bash
-# Submit a document
+# Submit a document (asynchronous - returns immediately)
 curl -X POST http://localhost:3000/editorial-manager/submissions \
   -H "Authorization: Bearer <your-token>" \
   -F "service_id=service123" \
@@ -414,7 +537,18 @@ curl -X POST http://localhost:3000/editorial-manager/submissions \
   -F "article_type=Original Article" \
   -F "file=@document.pdf"
 
-# Get a report
+# Response:
+# {
+#   "status": "Success",
+#   "report_id": "12345678901234567890123456789012"
+# }
+
+# Check job status
+curl -G http://localhost:3000/editorial-manager/job-status \
+  -H "Authorization: Bearer <your-token>" \
+  --data-urlencode "report_id=12345678901234567890123456789012"
+
+# Get a report (only available when job is completed)
 curl -X POST http://localhost:3000/editorial-manager/reports \
   -H "Authorization: Bearer <your-token>" \
   -d "report_id=12345678901234567890123456789012"
@@ -504,7 +638,7 @@ npm run manage-permissions -- remove /endpoint METHOD
 ### Database Management
 
 ```bash
-# Initialize database
+# Initialize database (includes job queue tables)
 npm run db:init
 
 # Refresh requests from S3
@@ -512,6 +646,12 @@ npm run db:refresh
 
 # Check article requests
 npm run db:check user123 ARTICLE123
+
+# View job queue status
+npm run queue:status
+
+# Clean up old completed jobs
+npm run queue:cleanup
 ```
 
 ### Log Analysis
@@ -522,6 +662,9 @@ npm run analyze-logs
 
 # Analyze specific log file
 npm run analyze-logs -- path/to/logfile.log
+
+# Analyze queue performance
+npm run analyze-queue-logs
 ```
 
 ## Development
@@ -531,6 +674,8 @@ npm run analyze-logs -- path/to/logfile.log
 ```
 snapshot-api/
 ├── conf/                  # Configuration files
+│   ├── queueManager.json  # Queue system configuration
+│   └── ...               # Other config files
 ├── log/                   # Log files
 ├── scripts/               # Management scripts
 │   ├── maintenance/       # DB maintenance scripts
@@ -538,14 +683,15 @@ snapshot-api/
 │   ├── manage_genshare_versions.js
 │   ├── manage_permissions.js
 │   ├── manage_users.js
+│   ├── queue_status.js    # Queue monitoring script
 │   └── sync_version.js
-├── sqlite/                # SQLite database
+├── sqlite/                # SQLite database (includes job queue)
 ├── src/
 │   ├── controllers/       # Request handlers
 │   │   ├── apiController.js
 │   │   ├── authController.js
 │   │   ├── datastetController.js
-│   │   ├── emController.js
+│   │   ├── emController.js      # Updated with queue integration
 │   │   ├── genshareController.js
 │   │   ├── grobidController.js
 │   │   ├── healthController.js
@@ -556,15 +702,16 @@ snapshot-api/
 │   │   ├── auth.js
 │   │   └── permissions.js
 │   ├── routes/            # API routes
-│   │   └── index.js
+│   │   └── index.js       # Updated with queue endpoints
 │   ├── utils/             # Utility functions
-│   │   ├── dbManager.js
-│   │   ├── emManager.js
+│   │   ├── dbManager.js   # Updated with job queue tables
+│   │   ├── emManager.js   # Updated with asynchronous processing
 │   │   ├── genshareManager.js
 │   │   ├── googleSheets.js
 │   │   ├── jwtManager.js
 │   │   ├── logger.js
 │   │   ├── permissionsManager.js
+│   │   ├── queueManager.js      # NEW: Job queue system
 │   │   ├── rateLimiter.js
 │   │   ├── reportsManager.js
 │   │   ├── requestsManager.js
@@ -572,19 +719,29 @@ snapshot-api/
 │   │   ├── userManager.js
 │   │   └── versions.js
 │   ├── config.js          # Application configuration
-│   └── server.js          # Application entry point
+│   └── server.js          # Application entry point (starts queue processor)
 └── tmp/                   # Temporary file uploads
 ```
 
 ### Starting the Server
 
 ```bash
-# Start the server
+# Start the server (includes job queue processor)
 npm start
 
 # Start in development mode (no database refresh on startup)
 npm run start:dev
 ```
+
+### Queue System Development
+
+The queue system runs automatically when the server starts. Key development considerations:
+
+- Jobs are processed in the background with configurable concurrency
+- All job state is persisted in SQLite for reliability
+- Event callbacks ensure external notifications happen after database updates
+- Failed jobs are automatically retried with exponential backoff
+- Memory cleanup prevents resource leaks
 
 ## Deployment
 
@@ -614,6 +771,13 @@ JWT_SECRET=<strong-secret-key>
 PORT=3000
 ```
 
+### Queue System Considerations
+
+- Monitor the `maxConcurrentJobs` setting based on available resources
+- Adjust retry settings based on external service reliability
+- Consider job cleanup policies for long-running deployments
+- Monitor queue performance through logs and status endpoints
+
 ## Security
 
 - JWT-based authentication with permanent and temporary tokens
@@ -624,23 +788,36 @@ PORT=3000
 - Complete request traceability via S3 storage
 - Temporary token revocation capability
 - Token expiration for temporary tokens
+- **Job isolation**: Each job runs independently with proper error handling
+- **Database transaction safety**: Queue operations use proper database transactions
 
 ## Editorial Manager Integration
 
-The API includes special endpoints for integration with Editorial Manager:
+The API includes special endpoints for integration with Editorial Manager with full asynchronous processing:
 
 1. **Authentication**: Uses a simplified OAuth 2.0 Password Grant flow
-2. **Submission Processing**: Handles PDF submissions with metadata
-3. **Report Generation**: Creates and provides access to reports
-4. **Cancellation**: Allows canceling in-progress submissions
+2. **Submission Processing**: Handles PDF submissions with metadata asynchronously
+3. **Job Status Tracking**: Real-time status updates for submitted jobs
+4. **Report Generation**: Creates and provides access to reports when processing completes
+5. **Retry Mechanism**: Allows retrying failed jobs
+6. **Cancellation**: Allows canceling in-progress submissions
 
 ### Editorial Manager Workflow
 
 1. Editorial Manager authenticates with the API to get a temporary token
-2. EM submits a document with metadata for processing
-3. The API processes the document and generates a report
-4. EM can retrieve the report data or URL when needed
-5. EM can cancel processing if necessary
+2. EM submits a document with metadata for processing (gets immediate response with report_id)
+3. The API processes the document asynchronously in the background
+4. EM can check job status using the report_id
+5. When processing completes, EM receives a notification and can retrieve the report
+6. EM can retry failed jobs or cancel in-progress submissions
+
+### Asynchronous Benefits
+
+- **Immediate Response**: Editorial Manager gets instant confirmation of submission
+- **Reliable Processing**: Jobs continue even if client disconnects
+- **Better Resource Management**: Configurable concurrency prevents system overload
+- **Automatic Retry**: Failed jobs are retried automatically
+- **Status Tracking**: Full visibility into job progress and outcomes
 
 ## Dependencies
 
@@ -648,14 +825,23 @@ The API includes special endpoints for integration with Editorial Manager:
 
 - **express**: Web framework for API endpoints
 - **jsonwebtoken**: JWT token generation and verification
-- **sqlite3**: Database for article-request mapping and token storage
+- **sqlite3**: Database for article-request mapping, job queue, and token storage
 - **aws-sdk**: AWS S3 integration for file storage
 - **googleapis**: Google Sheets integration for reporting
 - **axios**: HTTP client for service calls
 - **multer**: File upload middleware for multipart/form-data parsing
 - **winston** and **morgan**: Logging utilities
 - **express-rate-limit**: Rate limiting middleware
+- **events**: Node.js EventEmitter for job status callbacks
 
 ### Development Dependencies
 
 - **eslint**: Code linting
+
+### Queue System Dependencies
+
+The queue system is built using native Node.js capabilities:
+- **SQLite3**: Job persistence and state management
+- **EventEmitter**: Job status change notifications
+- **setTimeout**: Retry scheduling with exponential backoff
+- **Promise**: Asynchronous job processing coordination

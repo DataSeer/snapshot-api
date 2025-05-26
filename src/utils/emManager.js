@@ -15,6 +15,93 @@ const emConfig = require(config.emConfigPath);
 const genshareConfig = require(config.genshareConfigPath);
 
 /**
+ * Handle job completion - called when a job is marked as completed in the database
+ * @param {string} requestId - Request ID of the completed job
+ */
+const handleProcessEmSubmissionJobCompletion = async (requestId) => {
+  try {
+    console.log(`[EM] Job ${requestId} completed, executing post-completion tasks`);
+    
+    // Get the original job data to extract notification parameters
+    const job = await queueManager.getJobByRequestId(requestId);
+    if (!job) {
+      console.error(`[EM] Could not find job data for ${requestId}`);
+      return;
+    }
+    
+    const jobData = JSON.parse(job.data);
+    
+    // Send notification to Editorial Manager about completion
+    try {
+      const notificationResult = await sendReportCompleteNotification({
+        publication_code: jobData.publication_code,
+        service_id: jobData.service_id,
+        report_id: requestId,
+        status: 'Success'
+      });
+      
+      console.log(`[EM] Report completion notification sent for job ${requestId}:`, notificationResult.status);
+    } catch (notificationError) {
+      console.error(`[EM] Error sending completion notification for job ${requestId}:`, notificationError);
+    }
+    
+    // You can add any other post-completion logic here, such as:
+    // - Updating external systems
+    // - Cleanup tasks
+    // - Analytics/logging
+    
+    console.log(`[EM] Job ${requestId} completion handled successfully`);
+    
+  } catch (error) {
+    console.error(`[EM] Error handling job completion for ${requestId}:`, error);
+  }
+};
+
+/**
+ * Handle job failure - called when a job fails permanently
+ * @param {string} requestId - Request ID of the failed job
+ * @param {Error} error - Error that caused the failure
+ */
+const handleProcessEmSubmissionJobFailure = async (requestId, error) => {
+  try {
+    console.log(`[EM] Job ${requestId} failed permanently, executing failure handling`);
+    
+    // Get the original job data to extract notification parameters
+    const job = await queueManager.getJobByRequestId(requestId);
+    if (!job) {
+      console.error(`[EM] Could not find job data for ${requestId}`);
+      return;
+    }
+    
+    const jobData = JSON.parse(job.data);
+    
+    // Send error notification to Editorial Manager
+    try {
+      const notificationResult = await sendReportCompleteNotification({
+        publication_code: jobData.publication_code,
+        service_id: jobData.service_id,
+        report_id: requestId,
+        status: 'Error',
+        error_message: error.message
+      });
+      
+      console.log(`[EM] Error notification sent for job ${requestId}:`, notificationResult.status);
+    } catch (notificationError) {
+      console.error(`[EM] Error sending failure notification for job ${requestId}:`, notificationError);
+    }
+    
+    // You can add other failure handling logic here, such as:
+    // - Alerting administrators
+    // - Additional cleanup tasks
+    
+    console.log(`[EM] Job ${requestId} failure handled`);
+    
+  } catch (handlingError) {
+    console.error(`[EM] Error handling job failure for ${requestId}:`, handlingError);
+  }
+};
+
+/**
  * Process a submission from Editorial Manager
  * @param {Object} data - Submission data and files
  * @param {ProcessingSession} session - Processing session for logging
@@ -101,18 +188,36 @@ const processSubmission = async (data, session) => {
       // Include any other data needed for processing
     };
     
+    // Define completion callback
+    const onJobComplete = async (error) => {
+      if (error) {
+        await handleProcessEmSubmissionJobFailure(reportId, error);
+      } else {
+        await handleProcessEmSubmissionJobCompletion(reportId);
+      }
+    };
+    
     // Enqueue the job for background processing
     session.addLog(`Queuing submission for background processing with request_id: ${reportId}`);
     
-    // Pass the processEmSubmissionJob as the processor function
+    // Pass the processEmSubmissionJob as the processor function and completion callback
     await queueManager.enqueueJob(
       reportId, 
       'em_submission', 
       queueData,
       undefined, // Use default max retries
       undefined, // Use default priority
-      processEmSubmissionJob // Pass the job processor function
+      processEmSubmissionJob, // Pass the job processor function
+      onJobComplete // Pass the completion callback
     );
+    
+    // queueManager.onJobStatusChange(reportId, 'processing', () => {
+    //   console.log(`[EM] Job ${reportId} started processing at ${new Date().toISOString()}`);
+    // });
+    
+    // queueManager.onJobStatusChange(reportId, 'completed', () => {
+    //   console.log(`[EM] Job ${reportId} completed at ${new Date().toISOString()}`);
+    // });
     
     // Create immediate result with report_id
     const result = {
@@ -225,13 +330,8 @@ const processEmSubmissionJob = async (job) => {
       }
     }
     
-    // Send notification to Editorial Manager about completion
-    const notificationResult = await sendReportCompleteNotification({
-      publication_code: data.publication_code,
-      service_id: data.service_id,
-      report_id: job.request_id,
-      status: 'Success'
-    }, session);
+    // NOTE: Notification will be sent in the completion callback
+    // after the job is marked as completed in the database
     
     // Clean up temporary files ONLY AFTER processing is complete
     if (tempFilePaths.length > 0) {
@@ -242,11 +342,10 @@ const processEmSubmissionJob = async (job) => {
       }
     }
     
-    // Return success result
+    // Return success result (notification result will be handled in callback)
     return {
       status: 'Success',
-      genshare_result: genshareResult,
-      notification_result: notificationResult
+      genshare_result: genshareResult
     };
   } catch (error) {
     // Log error
@@ -276,17 +375,8 @@ const processEmSubmissionJob = async (job) => {
     try {
       // Save session data with error information
       await session.saveToS3();
-      
-      // Try to send error notification to Editorial Manager
-      await sendReportCompleteNotification({
-        publication_code: data.publication_code,
-        service_id: data.service_id,
-        report_id: job.request_id,
-        status: 'Error',
-        error_message: error.message
-      }, session);
-    } catch (notifyError) {
-      console.error(`[${job.request_id}] Error sending notification:`, notifyError);
+    } catch (saveError) {
+      console.error(`[${job.request_id}] Error in error handling:`, saveError);
     }
     
     // Clean up temporary files even in case of error, but only after all processing is done
@@ -708,5 +798,7 @@ module.exports = {
   sendReportCompleteNotification,
   processEmSubmissionJob,
   getJobStatus,
-  retryJob
+  retryJob,
+  handleProcessEmSubmissionJobCompletion,
+  handleProcessEmSubmissionJobFailure
 };

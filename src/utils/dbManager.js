@@ -902,16 +902,7 @@ const updateJobStatus = async (requestId, status, errorMessage = null, completio
     
     let sql, params;
     
-    if (status === 'failed') {
-      // Update status and increment retry count for failed jobs
-      sql = `UPDATE processing_jobs 
-             SET status = ?, 
-                 error_message = ?, 
-                 retries = retries + 1,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE request_id = ?`;
-      params = [status, errorMessage, requestId];
-    } else if (status === 'completed' && completionData) {
+    if (status === 'completed' && completionData) {
       // Update status and store completion data for completed jobs
       sql = `UPDATE processing_jobs 
              SET status = ?, 
@@ -919,6 +910,22 @@ const updateJobStatus = async (requestId, status, errorMessage = null, completio
                  updated_at = CURRENT_TIMESTAMP
              WHERE request_id = ?`;
       params = [status, JSON.stringify(completionData), requestId];
+    } else if (status === 'failed' && errorMessage) {
+      // Update status and error message for failed jobs (but don't increment retries here)
+      sql = `UPDATE processing_jobs 
+             SET status = ?, 
+                 error_message = ?,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE request_id = ?`;
+      params = [status, errorMessage, requestId];
+    } else if (status === 'retrying' && errorMessage) {
+      // Update status and error message for retrying jobs (but don't increment retries here)
+      sql = `UPDATE processing_jobs 
+             SET status = ?, 
+                 error_message = ?,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE request_id = ?`;
+      params = [status, errorMessage, requestId];
     } else {
       // Simple status update
       sql = `UPDATE processing_jobs 
@@ -1023,6 +1030,263 @@ const getJobByRequestId = async (requestId) => {
   }
 };
 
+/**
+ * Increment the retry count for a job
+ * @param {string} requestId - Request ID of the job
+ * @returns {Promise<boolean>} - True if successful
+ */
+const incrementJobRetries = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE processing_jobs 
+         SET retries = retries + 1, 
+             updated_at = CURRENT_TIMESTAMP 
+         WHERE request_id = ?`,
+        [requestId],
+        function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(this.changes > 0);
+          }
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    console.log(`[DB] Incremented retry count for job ${requestId}`);
+    return result;
+  } catch (error) {
+    console.error(`Error incrementing retry count for job ${requestId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Reset a job to pending status for manual retry
+ * @param {string} requestId - Request ID of the job
+ * @returns {Promise<boolean>} - True if successful
+ */
+const resetJobForRetry = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE processing_jobs 
+         SET status = 'pending', 
+             error_message = NULL,
+             updated_at = CURRENT_TIMESTAMP 
+         WHERE request_id = ? AND status IN ('failed', 'processing')`,
+        [requestId],
+        function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(this.changes > 0);
+          }
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    console.log(`[DB] Reset job ${requestId} to pending status for retry`);
+    return result;
+  } catch (error) {
+    console.error(`Error resetting job ${requestId} for retry:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Get jobs that are stuck in processing state (for cleanup/recovery)
+ * @param {number} timeoutMinutes - Consider jobs stuck after this many minutes
+ * @returns {Promise<Array>} - Array of stuck jobs
+ */
+const getStuckJobs = async (timeoutMinutes = 30) => {
+  try {
+    const db = await getDBConnection();
+    
+    const jobs = await new Promise((resolve, reject) => {
+      db.all(
+        `SELECT * FROM processing_jobs 
+         WHERE status = 'processing' 
+         AND datetime(updated_at, '+${timeoutMinutes} minutes') < datetime('now')
+         ORDER BY created_at ASC`,
+        [],
+        (err, rows) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(rows || []);
+          }
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return jobs;
+  } catch (error) {
+    console.error('Error getting stuck jobs:', error);
+    return [];
+  }
+};
+
+/**
+ * Mark stuck jobs as failed for recovery
+ * @param {number} timeoutMinutes - Consider jobs stuck after this many minutes
+ * @returns {Promise<number>} - Number of jobs marked as failed
+ */
+const markStuckJobsAsFailed = async (timeoutMinutes = 30) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE processing_jobs 
+         SET status = 'failed', 
+             error_message = 'Job marked as failed due to timeout',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE status = 'processing' 
+         AND datetime(updated_at, '+${timeoutMinutes} minutes') < datetime('now')`,
+        [],
+        function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(this.changes);
+          }
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    if (result > 0) {
+      console.log(`[DB] Marked ${result} stuck jobs as failed`);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error marking stuck jobs as failed:', error);
+    return 0;
+  }
+};
+
+/**
+ * Get all jobs with optional status filter
+ * @param {string|null} status - Filter by status (optional)
+ * @param {number} limit - Maximum number of jobs to return (default: 100)
+ * @returns {Promise<Array>} - Array of jobs
+ */
+const getAllJobs = async (status = null, limit = 100) => {
+  try {
+    const db = await getDBConnection();
+    
+    let sql = `SELECT * FROM processing_jobs`;
+    let params = [];
+    
+    if (status) {
+      sql += ` WHERE status = ?`;
+      params.push(status);
+    }
+    
+    sql += ` ORDER BY created_at DESC LIMIT ?`;
+    params.push(limit);
+    
+    const jobs = await new Promise((resolve, reject) => {
+      db.all(sql, params, (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows || []);
+        }
+      });
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return jobs;
+  } catch (error) {
+    console.error('Error getting all jobs:', error);
+    return [];
+  }
+};
+
+/**
+ * Clean up old completed jobs
+ * @param {number} daysOld - Delete jobs older than this many days
+ * @returns {Promise<number>} - Number of jobs deleted
+ */
+const cleanupOldJobs = async (daysOld = 30) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        `DELETE FROM processing_jobs 
+         WHERE status = 'completed' 
+         AND datetime(created_at, '+${daysOld} days') < datetime('now')`,
+        [],
+        function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(this.changes);
+          }
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    if (result > 0) {
+      console.log(`[DB] Cleaned up ${result} old completed jobs`);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error cleaning up old jobs:', error);
+    return 0;
+  }
+};
+
 module.exports = {
   initDatabase,
   getDBConnection,
@@ -1053,5 +1317,13 @@ module.exports = {
   addJobToQueue,
   updateJobStatus,
   getNextPendingJob,
-  getJobByRequestId
+  getJobByRequestId,
+  
+  // NEW: Retry and cleanup methods
+  incrementJobRetries,
+  resetJobForRetry,
+  getStuckJobs,
+  markStuckJobsAsFailed,
+  getAllJobs,
+  cleanupOldJobs
 };
