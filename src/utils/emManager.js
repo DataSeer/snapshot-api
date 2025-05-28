@@ -599,12 +599,12 @@ const getReport = async (reportId) => {
         }
         
         // Extract scores from report data
-        let scores = "Report provided by DataSeer Snapshot";
+        let scores = emConfig.reportCompleteNotification.params.scores;
         
         return {
           report_token: `token-${reportId.substring(0, 8)}`,
           scores,
-          flag: false
+          flag: emConfig.reportCompleteNotification.params.flag
         };
         
       } catch (dbError) {

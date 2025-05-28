@@ -1,7 +1,11 @@
 {
   "reportCompleteNotification": {
     "disabled": false,
-    "url": "https://api.editorialmanager.com/ManuscriptAnalysisTools/{publication_code}/ReportComplete"
+    "url": "https://api.editorialmanager.com/ManuscriptAnalysisTools/{publication_code}/ReportComplete",
+    "params": {
+      "scores": "",
+      "flag": true
+    }
   },
   "das_triggers": [
     "data availability",
