@@ -1,11 +1,43 @@
 // File: scripts/manage_users.js
 const fs = require('fs');
 const path = require('path');
-const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 
+// Since this is a script, we need to require paths differently
 const configPath = path.join(__dirname, '../src/config.js');
 const config = require(configPath);
+
+// Import jwtManager from the correct relative path
+const jwtManagerPath = path.join(__dirname, '../src/utils/jwtManager.js');
+// We need to ensure the jwtManager can be loaded without database initialization
+// So we'll temporarily override the module resolution for dbManager
+const originalRequire = module.require;
+module.require = function(id) {
+  if (id === './dbManager') {
+    // Return a mock dbManager with empty functions
+    return {
+      getValidToken: async () => null,
+      storeToken: async () => null,
+      revokeToken: async () => true,
+      isTokenValid: async () => true,
+      cleanupExpiredTokens: async () => 0
+    };
+  }
+  return originalRequire.apply(this, arguments);
+};
+
+// Now load the jwtManager
+const jwtManager = require(jwtManagerPath);
+
+// Restore original require
+module.require = originalRequire;
+
+// Add a direct method to sign a token just for the scripts
+jwtManager.signPermanentToken = function(userId) {
+  const jwt = require('jsonwebtoken');
+  return jwt.sign({ id: userId }, config.jwtSecret);
+};
 
 function loadUsers() {
   try {
@@ -20,8 +52,8 @@ function saveUsers(users) {
   fs.writeFileSync(config.usersPath, JSON.stringify(users, null, 2));
 }
 
-function generateToken(userId) {
-  return jwt.sign({ id: userId }, config.jwtSecret);
+function generateClientSecret() {
+  return crypto.randomBytes(32).toString('hex');
 }
 
 function addUser(userId, rateLimit, genshareSettings = {}) {
@@ -30,9 +62,14 @@ function addUser(userId, rateLimit, genshareSettings = {}) {
     console.log(`User ${userId} already exists.`);
     return;
   }
-  const token = generateToken(userId);
+  
+  // Use jwtManager to generate a permanent token
+  const token = jwtManager.signPermanentToken(userId);
+  const clientSecret = generateClientSecret();
+  
   users[userId] = {
     token,
+    client_secret: clientSecret,
     rateLimit: rateLimit || { max: 100, windowMs: 15 * 60 * 1000 },
     genshare: {
       authorizedVersions: genshareSettings.authorizedVersions || ['default'],
@@ -47,6 +84,7 @@ function addUser(userId, rateLimit, genshareSettings = {}) {
   };
   saveUsers(users);
   console.log(`User ${userId} added with token: ${token}`);
+  console.log(`Client Secret: ${clientSecret}`);
   console.log(`Rate limit: ${JSON.stringify(users[userId].rateLimit)}`);
   console.log(`GenShare settings: ${JSON.stringify(users[userId].genshare)}`);
 }
@@ -68,10 +106,27 @@ function refreshToken(userId) {
     console.log(`User ${userId} does not exist.`);
     return;
   }
-  const newToken = generateToken(userId);
+  
+  // Use jwtManager to generate a new permanent token
+  const newToken = jwtManager.signPermanentToken(userId);
   users[userId].token = newToken;
   saveUsers(users);
   console.log(`Token refreshed for user ${userId}. New token: ${newToken}`);
+}
+
+function refreshClientSecret(userId) {
+  const users = loadUsers();
+  if (!users[userId]) {
+    console.log(`User ${userId} does not exist.`);
+    return;
+  }
+  const newClientSecret = generateClientSecret();
+  users[userId].client_secret = newClientSecret;
+  saveUsers(users);
+  console.log(`Client secret refreshed for user ${userId}. New client secret: ${newClientSecret}`);
+  
+  // Inform about updating the client in the external system that uses this credential
+  console.log(`IMPORTANT: Remember to update this client secret in any external system using it.`);
 }
 
 function updateUserRateLimit(userId, rateLimit) {
@@ -115,6 +170,7 @@ function listUsers() {
   Object.entries(users).forEach(([userId, userData]) => {
     console.log(`- User ID: ${userId}`);
     console.log(`  Token: ${userData.token}`);
+    console.log(`  Client Secret: ${userData.client_secret || 'Not set'}`);
     console.log(`  Rate Limit: ${JSON.stringify(userData.rateLimit)}`);
     if (userData.genshare) {
       console.log(`  GenShare Settings:`);
@@ -147,6 +203,10 @@ function main() {
       refreshToken(userId);
       break;
     }
+    case 'refresh-client-secret': {
+      refreshClientSecret(userId);
+      break;
+    }
     case 'update-limit': {
       const newRateLimit = JSON.parse(args[2]);
       updateUserRateLimit(userId, newRateLimit);
@@ -167,14 +227,16 @@ function main() {
       console.log('  add [userId] [rateLimit] [genshareSettings]   Add a new user');
       console.log('  remove <userId>                               Remove a user');
       console.log('  refresh-token <userId>                        Refresh a user\'s token');
-      console.log('  update-limit <userId> <rateLimit>            Update a user\'s rate limit');
-      console.log('  update-genshare <userId> <genshareSettings>  Update a user\'s GenShare settings');
-      console.log('  list                                         List all users');
+      console.log('  refresh-client-secret <userId>                Refresh a user\'s client secret');
+      console.log('  update-limit <userId> <rateLimit>             Update a user\'s rate limit');
+      console.log('  update-genshare <userId> <genshareSettings>   Update a user\'s GenShare settings');
+      console.log('  list                                          List all users');
       console.log('');
       console.log('Examples:');
       console.log('  node manage_users.js add user123 \'{"max": 200, "windowMs": 900000}\'');
       console.log('  node manage_users.js update-genshare user123 \'{"authorizedVersions": ["default", "v2"], "defaultVersion": "v2"}\'');
       console.log('  node manage_users.js update-genshare user123 \'{"availableFields": ["article_id", "das_presence", "data_url"]}\'');
+      console.log('  node manage_users.js refresh-client-secret user123');
     }
   }
 }
