@@ -191,6 +191,21 @@ const getReportFile = async (userId, requestId) => {
   }
 };
 
+// Get GenShare response file from S3
+const getGenshareResponseFile = async (userId, requestId) => {
+  try {
+    const key = `${s3Config.s3Folder}/${userId}/${requestId}/genshare/response.json`;
+    const content = await getFile(key);
+    return JSON.parse(content);
+  } catch (error) {
+    if (error.$metadata?.httpStatusCode === 404 || error.name === 'NoSuchKey') {
+      return null;
+    }
+    console.error('Error getting genshare response file:', error);
+    throw error;
+  }
+};
+
 // Create a ProcessingSession class to handle the accumulation of data
 class ProcessingSession {
   constructor(userId, requestId = null) {
@@ -523,6 +538,7 @@ module.exports = {
   ProcessingSession,
   getAllGenshareRequestsFiles,
   getReportFile,
+  getGenshareResponseFile,
   generateRequestId,
   uploadBatchToS3
 };

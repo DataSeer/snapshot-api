@@ -469,7 +469,7 @@ const updateRequestReportData = async (requestId, reportData) => {
 };
 
 /**
- * Get request with report data by request ID
+ * Get request with report data by request ID (user-specific)
  * @param {string} userName - The user name
  * @param {string} requestId - The request ID
  * @returns {Promise<Object|null>} - Request record with report data or null
@@ -510,6 +510,51 @@ const getRequestWithReportData = async (userName, requestId) => {
     return result;
   } catch (error) {
     console.error('Error getting request with report data:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get request with report data by request ID (cross-user search)
+ * @param {string} requestId - The request ID
+ * @returns {Promise<Object|null>} - Request record with report data or null
+ */
+const getRequestWithReportDataAnyUser = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT * FROM requests 
+         WHERE request_id = ?`,
+        [requestId],
+        (err, row) => {
+          if (err) reject(err);
+          else {
+            if (row && row.report_data) {
+              try {
+                row.report_data = JSON.parse(row.report_data);
+              } catch (parseError) {
+                console.error('Error parsing report data:', parseError);
+                row.report_data = null;
+              }
+            }
+            resolve(row || null);
+          }
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting request with report data (any user):', error);
     throw error;
   }
 };
@@ -561,6 +606,56 @@ const getRequestsWithReportDataByArticleId = async (userName, articleId) => {
     return result;
   } catch (error) {
     console.error('Error getting requests with report data by article ID:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get all requests with report data by article ID (cross-user search)
+ * @param {string} articleId - The article ID
+ * @returns {Promise<Array>} - Array of request records
+ */
+const getRequestsWithReportDataByArticleIdAnyUser = async (articleId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.all(
+        `SELECT * FROM requests 
+         WHERE article_id = ? 
+         ORDER BY created_at DESC`,
+        [articleId],
+        (err, rows) => {
+          if (err) reject(err);
+          else {
+            // Parse report_data for each row
+            const parsedRows = rows.map(row => {
+              if (row.report_data) {
+                try {
+                  row.report_data = JSON.parse(row.report_data);
+                } catch (parseError) {
+                  console.error('Error parsing report data:', parseError);
+                  row.report_data = null;
+                }
+              }
+              return row;
+            });
+            resolve(parsedRows || []);
+          }
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting requests with report data by article ID (any user):', error);
     throw error;
   }
 };
@@ -645,6 +740,40 @@ const getRequestIdByArticleId = async (userName, articleId) => {
 };
 
 /**
+ * Get request_id for a given article_id (return the newest one, cross-user search)
+ * @param {string} articleId - The article ID
+ * @returns {Promise<string|null>} - The request ID or null if not found
+ */
+const getRequestIdByArticleIdAnyUser = async (articleId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.get(
+        'SELECT request_id FROM requests WHERE article_id = ? ORDER BY created_at DESC LIMIT 1',
+        [articleId],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row ? row.request_id : null);
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting request_id by article_id (any user):', error);
+    throw error;
+  }
+};
+
+/**
  * Get article_id for a given request_id
  * @param {string} userName - The user name
  * @param {string} requestId - The request ID
@@ -680,6 +809,40 @@ const getArticleIdByRequestId = async (userName, requestId) => {
 };
 
 /**
+ * Get article_id for a given request_id (cross-user search)
+ * @param {string} requestId - The request ID
+ * @returns {Promise<string|null>} - The article ID or null if not found
+ */
+const getArticleIdByRequestIdAnyUser = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.get(
+        'SELECT article_id FROM requests WHERE request_id = ?',
+        [requestId],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row ? row.article_id : null);
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting article_id by request_id (any user):', error);
+    throw error;
+  }
+};
+
+/**
  * Get all request_ids for a given article_id (ordered by newest first)
  * @param {string} userName - The user name
  * @param {string} articleId - The article ID
@@ -710,6 +873,40 @@ const getRequestIdsByArticleId = async (userName, articleId) => {
     return result;
   } catch (error) {
     console.error('Error getting request_ids by article_id:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get all request_ids for a given article_id (ordered by newest first, cross-user search)
+ * @param {string} articleId - The article ID
+ * @returns {Promise<string[]>} - Array of request IDs
+ */
+const getRequestIdsByArticleIdAnyUser = async (articleId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.all(
+        'SELECT request_id FROM requests WHERE article_id = ? ORDER BY created_at DESC',
+        [articleId],
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows ? rows.map(row => row.request_id) : []);
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting request_ids by article_id (any user):', error);
     throw error;
   }
 };
@@ -1298,7 +1495,7 @@ module.exports = {
   isTokenValid,
   cleanupExpiredTokens,
   
-  // Request and report management methods
+  // Request and report management methods (existing user-specific)
   addOrUpdateRequest,
   updateRequestReportData,
   getRequestWithReportData,
@@ -1307,6 +1504,13 @@ module.exports = {
   getRequestIdByArticleId,
   getArticleIdByRequestId,
   getRequestIdsByArticleId,
+  
+  // NEW: Cross-user search methods
+  getRequestWithReportDataAnyUser,
+  getRequestsWithReportDataByArticleIdAnyUser,
+  getRequestIdByArticleIdAnyUser,
+  getArticleIdByRequestIdAnyUser,
+  getRequestIdsByArticleIdAnyUser,
   
   // Editorial Manager submissions methods
   storeEmSubmission,
@@ -1319,7 +1523,7 @@ module.exports = {
   getNextPendingJob,
   getJobByRequestId,
   
-  // NEW: Retry and cleanup methods
+  // Retry and cleanup methods
   incrementJobRetries,
   resetJobForRetry,
   getStuckJobs,

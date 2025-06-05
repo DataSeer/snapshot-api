@@ -9,9 +9,7 @@ const { getApiRoutes } = require('../controllers/apiController');
 const { getVersions } = require('../controllers/versionsController');
 const {
   refreshRequests,
-  searchRequest,
-  getReportOfRequest,
-  getReportUrlOfRequest,
+  searchRequest
 } = require('../controllers/requestsController');
 const { 
   authenticateEditorialManager, 
@@ -23,6 +21,7 @@ const {
   postReport,
   postReportLink
 } = require('../controllers/emController');
+const { getGenshareData } = require('../controllers/snapshotReportsController');
 const { authenticateToken } = require('../middleware/auth');
 const { checkPermissions } = require('../middleware/permissions');
 const rateLimiter = require('../utils/rateLimiter');
@@ -60,11 +59,9 @@ authenticatedRouter.get('/genshare/health', getGenShareHealth);
 authenticatedRouter.get('/grobid/health', getGrobidHealth);
 authenticatedRouter.get('/datastet/health', getDatastetHealth);
 
-// Requests & Reports endpoints (new functionality under /requests/reports)
+// Requests & Reports endpoints
 authenticatedRouter.post('/requests/refresh', refreshRequests);
 authenticatedRouter.get('/requests/search', searchRequest); // Available params: article_id & request_id
-authenticatedRouter.get('/requests/:requestId/report', getReportOfRequest);
-authenticatedRouter.get('/requests/:requestId/report/url', getReportUrlOfRequest);
 
 // Editorial Manager endpoints (keep unchanged as requested)
 authenticatedRouter.post('/editorial-manager/submissions', upload.any(), postSubmissions);
@@ -72,6 +69,9 @@ authenticatedRouter.post('/editorial-manager/cancel', postCancelUpload); // retu
 authenticatedRouter.post('/editorial-manager/reports', postReport); // return { "report_token": "", "scores": "", "flag": true }
 // use "upload.none()" to parse multipart form data requests
 authenticatedRouter.post('/editorial-manager/reportLink', upload.none(), postReportLink); // return { "report_url": "..." }
+
+// Snapshot Reports endpoints
+authenticatedRouter.get('/snapshot-reports/:requestId/genshare', getGenshareData);
 
 // Mount the authenticated router
 unauthenticatedRouter.use('/', authenticatedRouter);

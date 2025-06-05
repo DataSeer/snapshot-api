@@ -286,6 +286,7 @@ const processEmSubmissionJob = async (job) => {
           article_id: data.document_id,
           document_type: data.document_type,
           article_title: data.article_title,
+          editorial_policy: data.publication_code, // "publication_code" (from EM) is the "editorial_policy" parameter (in Snapshot) used for the DAS exemption process
           das: data.das_value,
         },
         user: {

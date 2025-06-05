@@ -7,6 +7,7 @@ const config = require('../config');
 const { appendToSheet, convertToGoogleSheetsDate, convertToGoogleSheetsTime, convertToGoogleSheetsDuration } = require('./googleSheets');
 const { getUserById } = require('./userManager');
 const requestsManager = require('./requestsManager');
+const snapshotReportsManager = require('./snapshotReportsManager');
 
 // Load the genshare configuration
 const genshareConfig = require(config.genshareConfigPath);
@@ -391,25 +392,25 @@ const processPDF = async (data, session) => {
     session.setGenshareVersion(`${activeGenShareVersion}`);
 
     // If everything is fine (no error, activeReportVersion not empty and data available)
-    // - create a the Google Sheets file
+    // - create a snapshot-reports report
     // - create the JSON data
     if (errorStatus === "No" && !!activeReportVersion && response.data.response) {
       session.addLog(`Using report: ${activeReportVersion}`);
       try {
-        // Create GoogleSheets Report using requestsManager (moved from reportsManager)
-        const googleSheetsReport = await requestsManager.createGoogleSheets(activeReportVersion, response.data.response, session);
-        reportURL = googleSheetsReport.url;
+        // Create snapshot-reports Report
+        const snapshotReport = await snapshotReportsManager.createReport(activeReportVersion, session.requestId, session);
+        reportURL = snapshotReport.url;
 
-        // Build JSON Report
+        // Build JSON Report using requestsManager
         const jsonReport = requestsManager.buildJSON(activeReportVersion, response.data.response, reportURL);
 
         // Store JSON Report
         session.setReport(jsonReport);
 
-      } catch (sheetsCreationError) {
-        session.addLog(`Error creating Google Sheets file: ${sheetsCreationError.message}`);
-        console.error(`[${session.requestId}] Error creating Google Sheets file:`, sheetsCreationError);
-        // Don't fail the request if sheets creation fails, just log it
+      } catch (reportCreationError) {
+        session.addLog(`Error creating snapshot-reports report: ${reportCreationError.message}`);
+        console.error(`[${session.requestId}] Error creating snapshot-reports report:`, reportCreationError);
+        // Don't fail the request if report creation fails, just log it
       }
     }
 
@@ -509,5 +510,6 @@ const processPDF = async (data, session) => {
 module.exports = {
   getGenShareHealth,
   processPDF,
-  appendToSummary
+  appendToSummary,
+  filterResponseForUser
 };

@@ -37,9 +37,10 @@ const searchRequest = async (req, res) => {
   try {
     const request_id = req.query.request_id || req.body.request_id;
     const article_id = req.query.article_id || req.body.article_id;
-    const userId = req.user?.id;
+    const targetUser = req.query.user || req.body.user; // Optional user parameter
+    const currentUserId = req.user?.id;
 
-    if (!userId) {
+    if (!currentUserId) {
       return res.status(401).json({ error: 'User authentication required' });
     }
 
@@ -57,13 +58,19 @@ const searchRequest = async (req, res) => {
       });
     }
 
+    // Determine which user to search for
+    // If targetUser is provided, search for that user's requests
+    // If not provided, search for current user's requests
+    const searchUserId = targetUser || currentUserId;
+
     // Search requests using requestsManager
-    const searchResult = await requestsManager.searchRequests(userId, article_id, request_id);
+    const searchResult = await requestsManager.searchRequests(searchUserId, article_id, request_id);
 
     if (!searchResult) {
       const searchCriteria = [];
       if (request_id) searchCriteria.push(`request_id: ${request_id}`);
       if (article_id) searchCriteria.push(`article_id: ${article_id}`);
+      if (targetUser) searchCriteria.push(`user: ${targetUser}`);
       
       return res.status(404).json({ 
         error: 'Request not found',
@@ -88,11 +95,15 @@ const searchRequest = async (req, res) => {
  */
 const getReportOfRequest = async (req, res) => {
   try {
-    const { requestId } = req.params;
-    const userId = req.user?.id;
+    const { user: targetUser, requestId } = req.params;
+    const currentUserId = req.user?.id;
 
-    if (!userId) {
+    if (!currentUserId) {
       return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    if (!targetUser) {
+      return res.status(400).json({ error: 'User parameter is required' });
     }
 
     // Validate request_id format
@@ -102,13 +113,14 @@ const getReportOfRequest = async (req, res) => {
       });
     }
 
-    // Get report using requestsManager
-    const reportData = await requestsManager.getRequestReport(userId, requestId);
+    // Get report using requestsManager with the target user
+    const reportData = await requestsManager.getRequestReport(targetUser, requestId);
 
     if (!reportData) {
       return res.status(404).json({ 
         error: 'Report not found',
         request_id: requestId,
+        user: targetUser,
         note: 'Report may not exist or user may not have access'
       });
     }
@@ -129,11 +141,15 @@ const getReportOfRequest = async (req, res) => {
  */
 const getReportUrlOfRequest = async (req, res) => {
   try {
-    const { requestId } = req.params;
-    const userId = req.user?.id;
+    const { user: targetUser, requestId } = req.params;
+    const currentUserId = req.user?.id;
 
-    if (!userId) {
+    if (!currentUserId) {
       return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    if (!targetUser) {
+      return res.status(400).json({ error: 'User parameter is required' });
     }
 
     // Validate request_id format
@@ -143,13 +159,14 @@ const getReportUrlOfRequest = async (req, res) => {
       });
     }
 
-    // Get report URL using requestsManager
-    const reportUrl = await requestsManager.getRequestReportUrl(userId, requestId);
+    // Get report URL using requestsManager with the target user
+    const reportUrl = await requestsManager.getRequestReportUrl(targetUser, requestId);
 
     if (!reportUrl) {
       return res.status(404).json({ 
         error: 'Report URL not found',
         request_id: requestId,
+        user: targetUser,
         note: 'Report may not exist, may not have a URL, or user may not have access'
       });
     }
@@ -157,7 +174,8 @@ const getReportUrlOfRequest = async (req, res) => {
     // Return only the URL part
     res.json({ 
       report_url: reportUrl,
-      request_id: requestId
+      request_id: requestId,
+      user: targetUser
     });
 
   } catch (error) {

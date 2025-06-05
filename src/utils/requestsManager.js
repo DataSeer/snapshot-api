@@ -1,7 +1,6 @@
 // File: src/utils/requestsManager.js
 const dbManager = require('./dbManager');
 const { getAllGenshareRequestsFiles, getReportFile } = require('./s3Storage');
-const { createReport } = require('./googleSheets');
 const config = require('../config');
 
 // Load the report configuration
@@ -96,13 +95,13 @@ const refreshRequestsFromS3 = async () => {
 };
 
 /**
- * Search for requests by article_id or request_id
- * @param {string} userId - User ID
+ * Search for requests by article_id or request_id (supports cross-user search)
+ * @param {string|null} userId - User ID (if null, searches across all users)
  * @param {string} articleId - Article ID (optional)
  * @param {string} requestId - Request ID (optional)
  * @returns {Promise<Object|null>} - Search result with metadata or null if not found
  */
-const searchRequests = async (userId, articleId = null, requestId = null) => {
+const searchRequests = async (userId = null, articleId = null, requestId = null) => {
   try {
     let finalRequestId = null;
     let associatedArticleId = null;
@@ -110,7 +109,13 @@ const searchRequests = async (userId, articleId = null, requestId = null) => {
 
     // If request_id is provided, try to find it first
     if (requestId) {
-      requestRecord = await dbManager.getRequestWithReportData(userId, requestId);
+      if (userId) {
+        // User-specific search
+        requestRecord = await dbManager.getRequestWithReportData(userId, requestId);
+      } else {
+        // Cross-user search
+        requestRecord = await dbManager.getRequestWithReportDataAnyUser(requestId);
+      }
       
       if (requestRecord) {
         finalRequestId = requestId;
@@ -121,7 +126,14 @@ const searchRequests = async (userId, articleId = null, requestId = null) => {
     // If no record found by request_id, try article_id
     if (!requestRecord && articleId) {
       // Get all requests for this article_id
-      const allRequestsForArticle = await dbManager.getRequestsWithReportDataByArticleId(userId, articleId);
+      let allRequestsForArticle;
+      if (userId) {
+        // User-specific search
+        allRequestsForArticle = await dbManager.getRequestsWithReportDataByArticleId(userId, articleId);
+      } else {
+        // Cross-user search
+        allRequestsForArticle = await dbManager.getRequestsWithReportDataByArticleIdAnyUser(articleId);
+      }
       
       if (allRequestsForArticle && allRequestsForArticle.length > 0) {
         // Return the most recent request (first in the sorted array)
@@ -142,10 +154,11 @@ const searchRequests = async (userId, articleId = null, requestId = null) => {
         found_by: finalRequestId === requestId ? 'request_id' : 'article_id',
         request_id: finalRequestId,
         article_id: associatedArticleId,
-        user_id: userId,
+        user_id: requestRecord.user_name, // Use the actual user from the record
         search_used: {
           request_id: !!requestId,
-          article_id: !!articleId
+          article_id: !!articleId,
+          cross_user_search: !userId
         },
         has_report: !!requestRecord.report_data,
         created_at: requestRecord.created_at,
@@ -153,6 +166,7 @@ const searchRequests = async (userId, articleId = null, requestId = null) => {
       },
       request_id: finalRequestId,
       article_id: associatedArticleId,
+      user_id: requestRecord.user_name, // Include the actual user who owns this request
       report_data: requestRecord.report_data
     };
 
@@ -163,7 +177,7 @@ const searchRequests = async (userId, articleId = null, requestId = null) => {
 };
 
 /**
- * Get report data for a specific request (optimized method that can be used by both report endpoints)
+ * Get report data for a specific request (supports cross-user access)
  * @param {string} userId - User ID
  * @param {string} requestId - Request ID
  * @returns {Promise<Object|null>} - Complete report data with metadata or null if not found
@@ -171,6 +185,7 @@ const searchRequests = async (userId, articleId = null, requestId = null) => {
 const getRequestReport = async (userId, requestId) => {
   try {
     // Get the request with report data
+    // Note: userId here refers to the target user whose data we want to access
     const requestRecord = await dbManager.getRequestWithReportData(userId, requestId);
     
     if (!requestRecord || !requestRecord.report_data) {
@@ -196,7 +211,7 @@ const getRequestReport = async (userId, requestId) => {
 };
 
 /**
- * Get report URL for a specific request (optimized method that extracts only URL)
+ * Get report URL for a specific request (supports cross-user access)
  * @param {string} userId - User ID
  * @param {string} requestId - Request ID
  * @returns {Promise<string|null>} - Report URL or null if not found
@@ -204,6 +219,7 @@ const getRequestReport = async (userId, requestId) => {
 const getRequestReportUrl = async (userId, requestId) => {
   try {
     // Get the request with report data
+    // Note: userId here refers to the target user whose data we want to access
     const requestRecord = await dbManager.getRequestWithReportData(userId, requestId);
     
     if (!requestRecord || !requestRecord.report_data) {
@@ -344,82 +360,6 @@ const getRequestsWithReportDataByArticleId = async (userName, articleId) => {
  */
 
 /**
- * Creates a Google Sheets file based on report configuration and GenShare response data
- * @param {string} version - Version of the report
- * @param {Array} responseData - Array of response data from GenShare
- * @param {Object} session - Processing session for logging
- * @returns {Promise<Object>} - Object containing fileId and url of the created Google Sheets
- */
-const createGoogleSheets = async (version, responseData, session) => {
-  if (!reportsConfig.versions[version]) throw new Error(`Error requesting Report version: ${version}`);
-  try {
-    // Convert response array to object for easier access
-    const responseObject = {};
-    responseData.forEach(item => {
-      responseObject[item.name] = item.value;
-    });
-
-    // Prepare sheets data based on reportsConfig.versions[version].googleSheets.sheets
-    const sheetsData = {};
-    
-    // Loop through each sheet in reportsConfig.versions[version].googleSheets.sheets
-    Object.keys(reportsConfig.versions[version].googleSheets.sheets).forEach(sheetName => {
-      const sheetConfig = reportsConfig.versions[version].googleSheets.sheets[sheetName];
-      if (sheetConfig.cells) {
-        sheetsData[sheetName] = {
-          cells: {}
-        };
-        
-        // For each cell in the sheet
-        Object.keys(sheetConfig.cells).forEach(cellReference => {
-          const responseKey = sheetConfig.cells[cellReference];
-          
-          // Get the value from the response object
-          let cellValue = '';
-          if (responseKey && Object.prototype.hasOwnProperty.call(responseObject, responseKey)) {
-            cellValue = responseObject[responseKey];
-            
-            // Handle array values by joining with newline
-            if (Array.isArray(cellValue)) {
-              cellValue = cellValue.join('\n');
-            } 
-            // Convert other non-string values to string
-            else if (typeof cellValue !== 'string') {
-              cellValue = cellValue.toString();
-            }
-          }
-          
-          sheetsData[sheetName].cells[cellReference] = cellValue;
-        });
-      }
-    });
-
-    // Create the Google Sheets file
-    const fileId = await createReport({
-      spreadsheetId: reportsConfig.versions[version].googleSheets.template.default,
-      name: responseObject.article_id,
-      sheets: sheetsData,
-      role: reportsConfig.versions[version].googleSheets.permissions.default,
-      folderId: reportsConfig.versions[version].googleSheets.folder.default
-    }, session);
-
-    session.addLog(`Google Sheets file created successfully with ID: ${fileId}`);
-    
-    const url = `https://docs.google.com/spreadsheets/d/${fileId}/edit`;
-    
-    return {
-      id: fileId,
-      url: url
-    };
-    
-  } catch (error) {
-    session.addLog(`Error creating Google Sheets file: ${error.message}`);
-    console.error('Error creating Google Sheets file:', error);
-    throw error;
-  }
-};
-
-/**
  * Build the JSON data based on report configuration, GenShare response data & report URL
  * @param {string} version - Version of the report
  * @param {Array} responseData - Array of response data from GenShare
@@ -492,7 +432,7 @@ module.exports = {
   initDatabase,
   refreshRequestsFromS3,
   
-  // New consolidated search/report methods
+  // New consolidated search/report methods (with cross-user support)
   searchRequests,
   getRequestReport,
   getRequestReportUrl,
@@ -509,6 +449,5 @@ module.exports = {
   getRequestsWithReportDataByArticleId,
 
   // Reports functionality
-  createGoogleSheets,
   buildJSON
 };
