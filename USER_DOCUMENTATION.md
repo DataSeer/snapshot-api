@@ -145,7 +145,7 @@ The ‘response’ key is an array of objects. Each item is structured as follow
 Here is the list of all available fields
 
 | name | description | value | comments |
-| --- | --- | --- |
+| --- | --- | --- | --- |
 | report_link | Report link | String | URL to the report page |
 | article_id | Article ID | String | An identifier for the document |
 | filename | The name of the file | String | The name of the file |
@@ -191,7 +191,7 @@ Here is the list of all available fields
 | cumulated_score | Cumulated score from snapshot | Integer | Cumulated score from snapshot |
 | warrants_code_online | URL(s) and PID(s) for any online code sharing locations | Array<String> | URL(s) and PID(s) for any online code sharing locations |
 
-```js
+```json
 {
   "response": [
     {
