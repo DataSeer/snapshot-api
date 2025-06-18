@@ -94,7 +94,7 @@ const getResponse = (response = [], version) => {
 const filterResponseForUser = (responseData, user) => {
   // If no response data or no filter settings, return as is
   if (!responseData || !user.genshare) {
-    return responseData;
+    return cleanSnapshotFieldsName(responseData);
   }
 
   const { availableFields, restrictedFields } = user.genshare;
@@ -102,7 +102,7 @@ const filterResponseForUser = (responseData, user) => {
   // If no filter restrictions, return full response
   if ((!availableFields || availableFields.length === 0) && 
       (!restrictedFields || restrictedFields.length === 0)) {
-    return responseData;
+    return cleanSnapshotFieldsName(responseData);
   }
 
   // Create a deep copy to avoid modifying original
@@ -120,6 +120,31 @@ const filterResponseForUser = (responseData, user) => {
       filteredResponse = filteredResponse.filter(item => 
         !restrictedFields.includes(item.name)
       );
+    }
+  }
+
+  return cleanSnapshotFieldsName(filteredResponse);
+};
+
+/**
+ * Remove suffix of all Snapshot response items
+ * @param {Object} responseData - Response property of the full GenShare response
+ * @returns {Object} - Filtered response
+ */
+const cleanSnapshotFieldsName = (responseData) => {
+  // If no response data, return as is
+  if (!responseData) {
+    return responseData;
+  }
+
+  // Create a deep copy to avoid modifying original
+  let filteredResponse = JSON.parse(JSON.stringify(responseData));
+
+  // Filter the response array
+  if (Array.isArray(filteredResponse)) {
+    for (let i = 0; i < filteredResponse.length; i++) {
+      let item = filteredResponse[i];
+      if (item && item.name) item.name = item.name.replace(/__.*$/, '');
     }
   }
 
