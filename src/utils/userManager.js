@@ -34,6 +34,21 @@ const updateUser = (userId, userData) => {
 };
 
 /**
+ * Validate client credentials
+ * @param {string} clientId - The client ID
+ * @param {string} clientSecret - The client secret
+ * @returns {boolean} True if credentials are valid
+ */
+const validateClientCredentials = (clientId, clientSecret) => {
+  try {
+    const user = getUserById(clientId);
+    return user.client_secret === clientSecret;
+  } catch (error) {
+    return false;
+  }
+};
+
+/**
  * Get user's authorized GenShare authorizedVersions
  * @param {string} userId - The user ID to check
  * @returns {Array} Array of authorized GenShare version names
@@ -81,6 +96,7 @@ const getUserResponseFieldRestrictions = (userId) => {
 module.exports = { 
   getUserById, 
   updateUser, 
+  validateClientCredentials,
   getUserGenShareVersions, 
   getUserDefaultGenShareVersion,
   getUserResponseFieldRestrictions
