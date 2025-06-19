@@ -168,10 +168,10 @@ Here is the list of all available fields
 | exemption_large | Do the authors claim an exemption because their dataset is too large to fit onto a suitable repository? | Boolean | Did the authors request an exemption because the data is too large to share? |
 | exemption_no_suitable_repository | Do the authors claim an exemption because there is no suitable repository for their dataset? | Boolean | Did the authors request an exemption because there is no suitable repository for the data? |
 | exemption_third_party | Do the authors claim an exemption because a third party controls access to their dataset? | Boolean | Did the authors request an exemption because the data is owned or held by a third party? |
-| exemption_reasons |  | Array<String> | List of the reasons did authors gave for their exemption claim. |
+| exemption_reasons | List of the reasons did authors gave for their exemption claim. | Array<String> | List of the reasons did authors gave for their exemption claim. |
 | das_exemption_reasons | List of the reasons did authors gave for their exemption claim. | Array<String> | List of the reasons did authors gave for their exemption claim. |
-| action_required | Action required after the analysis of manuscript | Array<String> | If the user has provided a data sharing policy, it will have a list of requirements (separate from the recommendations). Give a list of short statements explaining what action is **required** from the authors to comply with the policy. If no action is required, just put an empty list. This field is only for the "Requirements", not the "Recommendations". |
-| action_recommended | Action recommended after the analysis of manuscript | Array<String> | If the user has provided a data sharing policy, it will have a list of recommendations (separate from the requirements). Give a list of short statements explaining what action is **recommended** from the authors to comply with the policy. If no action is recommended, just put an empty list. This field is only for the "Recommendations", not the "Requirements". |
+| action_required | Action required after the analysis of manuscript | Array<String> | If the user has provided a data sharing policy, it will have a list of requirements (separate from the recommendations): a list of short statements explaining what action is **required** from the authors to comply with the policy. If no action is required, the list will be empty. This field is only for the "Requirements", not the "Recommendations". |
+| action_recommended | Action recommended after the analysis of manuscript | Array<String> | If the user has provided a data sharing policy, it will have a list of recommendations (separate from the requirements): a list of short statements explaining what action is **recommended** from the authors to comply with the policy. If no action is recommended, the list will be empty. This field is only for the "Recommendations", not the "Requirements". |
 | reasoning_summary | A summary paragraph explaining the decisions for the above fields | String | A summary paragraph explaining the decisions for the above fields |
 | reasoning | Detailed explanation of your reasoning for the answers. | String | Detailed explanation of your reasoning for the answers. |
 | data_generalist | Are any data shared on a generalist repository? | Boolean | Are any data shared on a generalist repository? |
@@ -180,9 +180,9 @@ Here is the list of all available fields
 | warrant_specialist | URL(s) and PID(s) for any specialist repositories | Array<String> | URL(s) and PID(s) for any specialist repositories |
 | data_url | Does the DAS contains one or more URLs? | Boolean | Does the DAS contain a URL? |
 | is_dryad | List of Non-functional repository URLs | Boolean | If there is a repository found in the manuscript text, is it Dryad? |
-| functional_urls |  | Array<String> | List of Functional URLs found in the DAS |
-| non-functional_urls |  | Array<String> | List of Non-functional URLs found in the DAS |
-| data_on_accept |  | Boolean | Does the DAS state that the data will be made available upon acceptance/publication? |
+| functional_urls | List of Functional URLs found in the DAS | Array<String> | List of Functional URLs found in the DAS |
+| non-functional_urls | List of Non-functional URLs found in the DAS | Array<String> | List of Non-functional URLs found in the DAS |
+| data_on_accept | Does the DAS state that the data will be made available upon acceptance/publication? | Boolean | Does the DAS state that the data will be made available upon acceptance/publication? |
 | computer_gen | Was shareable computer code generated? | Boolean | Was shareable computer code generated? |
 | computer_si | Is any computer code shared as Supplemental Material? | Boolean | Is any computer code shared as Supplemental Material? |
 | computer_online | Is any computer code shared online? | Boolean | Is any computer code shared online? |
