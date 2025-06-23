@@ -1,0 +1,20 @@
+{
+  "defaultVersion": "",
+  "versions": {
+    "Report (v0.1)": {
+      "snapshot-reports": {
+        "url": "http://localhost:4000/api/reports/create-url",
+        "method": "POST",
+        "apiKey": "api-key-for-snapshot-reports"
+      },
+      "JSON": {
+        "availableFields": [
+          "key1",
+          "key2",
+          "key3"
+        ],
+        "restrictedFields": []
+      }
+    }
+  }
+}

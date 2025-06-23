@@ -1,1 +1,38 @@
-{}
+{
+  "admin": {
+    "token": "XXXX",
+    "client_secret": "admin_client_secret",
+    "rateLimit": {
+      "max": 200,
+      "windowMs": 0
+    },
+    "genshare": {
+      "authorizedVersions": ["v1.0.0", "v2.0.0"],
+      "defaultVersion": "v1.0.0",
+      "availableFields": [],
+      "restrictedFields": []
+    },
+    "reports": {
+      "authorizedVersions": ["v1.0.0", "v2.0.0"],
+      "defaultVersion": "v1.0.0"
+    }
+  },
+  "test": {
+    "token": "XXXX",
+    "client_secret": "test_client_secret",
+    "rateLimit": {
+      "max": 100,
+      "windowMs": 900000
+    },
+    "genshare": {
+      "authorizedVersions": ["v1.0.0"],
+      "defaultVersion": "v1.0.0",
+      "availableFields": ["property1", "property2", "property3"],
+      "restrictedFields": ["property4"]
+    },
+    "reports": {
+      "authorizedVersions": [],
+      "defaultVersion": ""
+    }
+  }
+}

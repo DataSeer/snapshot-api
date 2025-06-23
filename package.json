@@ -8,8 +8,10 @@
   },
   "scripts": {
     "start": "node src/server.js",
+    "start:dev": "NODE_ENV=development NO_DB_REFRESH=true node src/server.js",
     "manage-permissions": "node scripts/manage_permissions.js",
     "manage-users": "node scripts/manage_users.js",
+    "manage-genshare": "node scripts/manage_genshare_versions.js",
     "analyze-logs": "node scripts/analyze_logs.js",
     "lint": "eslint . --ext .js",
     "lint:fix": "eslint . --ext .js --fix",
@@ -17,24 +19,28 @@
     "sync-version": "node scripts/sync_version.js",
     "version": "conventional-changelog -p angular -i CHANGELOG.md -s && git add CHANGELOG.md",
     "post-version": "git push && git push --tags",
-    "release": "standard-version"
+    "release": "standard-version",
+    "db:init": "node scripts/maintenance/initDB.js init",
+    "db:refresh": "node scripts/maintenance/initDB.js refresh",
+    "db:check": "node scripts/maintenance/initDB.js check"
   },
   "lint-staged": {
     "*.js": "eslint --fix"
   },
   "dependencies": {
-    "aws-sdk": "^2.1692.0",
-    "axios": "^1.7.7",
+    "@aws-sdk/client-s3": "^3.804.0",
+    "axios": "^1.9.0",
     "express": "^4.17.1",
     "express-rate-limit": "^5.2.6",
     "form-data": "^4.0.0",
     "googleapis": "^144.0.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
-    "multer": "^1.4.4-lts.1",
+    "multer": "^2.0.0",
     "on-headers": "^1.0.2",
     "readline": "^1.3.0",
     "semver": "^7.6.3",
+    "sqlite3": "^5.1.6",
     "uuid": "^8.3.2",
     "winston": "^3.15.0"
   },

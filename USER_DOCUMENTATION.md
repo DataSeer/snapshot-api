@@ -142,80 +142,257 @@ The ‘response’ key is an array of objects. Each item is structured as follow
 
 ***Note: the value of `cumulated_score` is between -10 and 32***
 
+Here is the list of all available fields
+
+| name | description | value | comments |
+| --- | --- | --- | --- |
+| report_link | Report link | String | URL to the report page |
+| article_id | Article ID | String | An identifier for the document |
+| filename | The name of the file | String | The name of the file |
+| submission_number | An identifier of the submission from Editorial Manager or ScholarOne | String | An identifier for the submission |
+| article_title | Title of the article | String | Title of the article as provided by the authors |
+| subject_area | Subject area | Array<String> | The classification selected by the author |
+| abstract | Abstract of the article | String | Abstract as it entered by the author |
+| editorial_policy | Editorial policy to use | String | The policy to specify used in the process |
+| das_custom_ms | Data availability in the metadata | String | Custom Data Availability Statement (to replace the DAS from the PDF) |
+| das_custom_presence_ms | Is there a DAS in the metadata? | Boolean | Is there a custom DAS provided? |
+| das_original_ms | Data Availability Statement in the manuscript | String | Data Availability Statement in the manuscript |
+| das_original_presence_ms | Have the authors provided a Data Availability Statement (DAS) in the manuscript? | Boolean | Have the authors provided a Data Availability Statement (DAS) in the manuscript? |
+| data_on_request | Are any data available on request? | Boolean | Does the article indicate that data is available on request? |
+| data_in_manuscript | Does the article indicate that data is available inside the manuscript? | Boolean | Does the article indicate that data is available inside the manuscript? |
+| data_in_si | Does the DAS say that the data are shared in the 'Supplementary material' section? | Boolean | Does the DAS say that the data are shared in the 'Supplementary material' section? |
+| data_in_repository | Does the article indicate that data is stored in an online repository? | Boolean | Does the article indicate that data is stored in an online repository? |
+| data_not_generated | Does the article indicate that data sharing does not apply? | Boolean | Does the article say that data sharing does not apply? ("yes" means the study did not generate data) |
+| exemption_requested | Do the authors claim an exemption from sharing their data on a repository? | Boolean | Did the authors request an exemption from data sharing? |
+| exemption_sensitive_ethics_protection | Do the authors claim an exemption because their data are too sensitive to share OR it would unethical to share them OR covered by a data protection agreement? | Boolean | Did the authors request an exemption for any of the following reasons: data too sensitive, ethical concerns, or data privacy/protection issues? |
+| exemption_large | Do the authors claim an exemption because their dataset is too large to fit onto a suitable repository? | Boolean | Did the authors request an exemption because the data is too large to share? |
+| exemption_no_suitable_repository | Do the authors claim an exemption because there is no suitable repository for their dataset? | Boolean | Did the authors request an exemption because there is no suitable repository for the data? |
+| exemption_third_party | Do the authors claim an exemption because a third party controls access to their dataset? | Boolean | Did the authors request an exemption because the data is owned or held by a third party? |
+| exemption_reasons | List of the reasons did authors gave for their exemption claim. | Array<String> | List of the reasons did authors gave for their exemption claim. |
+| das_exemption_reasons | List of the reasons did authors gave for their exemption claim. | Array<String> | List of the reasons did authors gave for their exemption claim. |
+| action_required | Action required after the analysis of manuscript | Array<String> | If the user has provided a data sharing policy, it will have a list of requirements (separate from the recommendations): a list of short statements explaining what action is **required** from the authors to comply with the policy. If no action is required, the list will be empty. This field is only for the "Requirements", not the "Recommendations". |
+| action_recommended | Action recommended after the analysis of manuscript | Array<String> | If the user has provided a data sharing policy, it will have a list of recommendations (separate from the requirements): a list of short statements explaining what action is **recommended** from the authors to comply with the policy. If no action is recommended, the list will be empty. This field is only for the "Recommendations", not the "Requirements". |
+| reasoning_summary | A summary paragraph explaining the decisions for the above fields | String | A summary paragraph explaining the decisions for the above fields |
+| reasoning | Detailed explanation of your reasoning for the answers. | String | Detailed explanation of your reasoning for the answers. |
+| data_generalist | Are any data shared on a generalist repository? | Boolean | Are any data shared on a generalist repository? |
+| warrant_generalist | URL(s) and PID(s) for any generalist repositories | Array<String> | URL(s) and PID(s) for any generalist repositories |
+| data_specialist | Are any data shared on a specialist repository? | Boolean | URL(s) and PID(s) for any generalist repositories found in either the DAS or full text |
+| warrant_specialist | URL(s) and PID(s) for any specialist repositories | Array<String> | URL(s) and PID(s) for any specialist repositories |
+| data_url | Does the DAS contains one or more URLs? | Boolean | Does the DAS contain a URL? |
+| is_dryad | List of Non-functional repository URLs | Boolean | If there is a repository found in the manuscript text, is it Dryad? |
+| functional_urls | List of Functional URLs found in the DAS | Array<String> | List of Functional URLs found in the DAS |
+| non-functional_urls | List of Non-functional URLs found in the DAS | Array<String> | List of Non-functional URLs found in the DAS |
+| data_on_accept | Does the DAS state that the data will be made available upon acceptance/publication? | Boolean | Does the DAS state that the data will be made available upon acceptance/publication? |
+| computer_gen | Was shareable computer code generated? | Boolean | Was shareable computer code generated? |
+| computer_si | Is any computer code shared as Supplemental Material? | Boolean | Is any computer code shared as Supplemental Material? |
+| computer_online | Is any computer code shared online? | Boolean | Is any computer code shared online? |
+| data_share_in_ms_or_si | Is the DAS stating that 'All data are in the manuscript and/or supporting information files? | Boolean | Is the DAS stating that 'All data are in the manuscript and/or supporting information files? |
+| data_share_si | Check for the minimal dataset in the Supporting Information files. | Boolean | Check for the minimal dataset in the Supporting Information files. |
+| cumulated_score | Cumulated score from snapshot | Integer | Cumulated score from snapshot |
+| warrants_code_online | URL(s) and PID(s) for any online code sharing locations | Array<String> | URL(s) and PID(s) for any online code sharing locations |
+
 ```json
 {
   "response": [
     {
       "name": "article_id",
       "description": "Article ID",
-      "value": "s41523-023-00574-7"
+      "value": "..."
     },
     {
-      "name": "das",
-      "description": "Data availability statement",
-      "value": "Data are available upon reasonable request. Access to datasets from the Cleveland Clinic and the University Hospitals Cleveland Medical Center (used with permission for this study) should be requested directly from these institutions via their data access request forms. Subject to the institutional review boards’ ethical approval, unidentified data would be made available as a test subset. All experiments and implementation details are described thoroughly in the Materials and methods section so they can be independently replicated with non-proprietary libraries. Details and codes for feature extraction, feature selection and statistical analysis are available at https://github.com/Hadi-Khorrami."
+      "name": "submission_number",
+      "description": "An identifier of the submission from Editorial Manager or ScholarOne",
+      "value": "..."
     },
     {
-      "name": "data_avail_req",
+      "name": "filename",
+      "description": "The name of the file",
+      "value": "..."
+    },
+    {
+      "name": "article_title",
+      "description": "Title of the article",
+      "value": "..."
+    },
+    {
+      "name": "subject_area",
+      "description": "Subject area",
+      "value": "..."
+    },
+    {
+      "name": "abstract",
+      "description": "Abstract of the article",
+      "value": "..."
+    },
+    {
+      "name": "editorial_policy",
+      "description": "Editorial policy to use",
+      "value": "..."
+    },
+    {
+      "name": "das_custom_ms",
+      "description": "Data Availability Statement provided in the metadata of Editorial Manager or ScholarOne?",
+      "value": "..."
+    },
+    {
+      "name": "das_custom_presence_ms",
+      "description": "Is there a Data Availability Statement provided in the metadata of Editorial Manager or ScholarOne?",
+      "value": true || false || "N/A"
+    },
+    {
+      "name": "das_original_ms",
+      "description": "Data Availability Statement in the manuscript",
+      "value": "..."
+    },
+    {
+      "name": "das_original_presence_ms",
+      "description": "Have the authors provided a Data Availability Statement (DAS) in the manuscript?",
+      "value": true || false || "N/A"
+    },
+    {
+      "name": "data_on_request",
       "description": "Are any data available on request?",
-      "value": "Yes"
+      "value": true || false || "N/A"
     },
     {
-      "name": "das_share_si",
+      "name": "data_in_manuscript",
+      "description": "Does the article indicate that data is available inside the manuscript?",
+      "value": true || false || "N/A"
+    },
+    {
+      "name": "das_in_si",
       "description": "Does the DAS say that the data are shared in the 'Supplementary material' section?",
-      "value": "No"
+      "value": true || false || "N/A"
+    },
+    {
+      "name": "data_not_generated",
+      "description": "Does the article indicate that data sharing does not apply?",
+      "value": true || false || "N/A"
+    },
+    {
+      "name": "exemption_requested",
+      "description": "Do the authors claim an exemption from sharing their data on a repository?",
+      "value": true || false || "N/A"
+    },
+    {
+      "name": "exemption_sensitive_ethics_protection",
+      "description": "Do the authors claim an exemption because their data are too sensitive to share OR it would unethical to share them OR covered by a data protection agreement?",
+      "value": true || false || "N/A"
+    },
+    {
+      "name": "exemption_large",
+      "description": "Do the authors claim an exemption because their dataset is too large to fit onto a suitable repository?",
+      "value": true || false || "N/A"
+    },
+    {
+      "name": "exemption_no_suitable_repository",
+      "description": "Do the authors claim an exemption because there is no suitable repository for their dataset?",
+      "value": true || false || "N/A"
+    },
+    {
+      "name": "exemption_third_party",
+      "description": "Do the authors claim an exemption because a third party controls access to their dataset?",
+      "value": true || false || "N/A"
+    },
+    {
+      "name": "das_exemption_reasons",
+      "description": "List of the reasons did authors gave for their exemption claim.",
+      "value": ["..."]
+    },
+    {
+      "name": "data_in_repository",
+      "description": "Does the article indicate that data is stored in an online repository?",
+      "value": true || false || "N/A"
+    },
+    {
+      "name": "reasoning_summary",
+      "description": "A summary paragraph explaining the decisions for the above fields",
+      "value": "..."
+    },
+    {
+      "name": "reasoning",
+      "description": "Detailed explanation of your reasoning for the answers.",
+      "value": "..."
     },
     {
       "name": "data_generalist",
       "description": "Are any data shared on a generalist repository?",
-      "value": "No"
+      "value": true || false || "N/A"
     },
     {
       "name": "warrant_generalist",
       "description": "URL(s) and PID(s) for any generalist repositories",
-      "value": []
+      "value": ["..."]
     },
     {
       "name": "data_specialist",
       "description": "Are any data shared on a specialist repository?",
-      "value": "No"
+      "value": true || false || "N/A"
     },
     {
       "name": "warrant_specialist",
       "description": "URL(s) and PID(s) for any specialist repositories",
-      "value": []
+      "value": ["..."]
+    },
+    {
+      "name": "data_url",
+      "description": "Does the DAS contains one or more URLs?",
+      "value": true || false || "N/A"
+    },
+    {
+      "name": "is_dryad",
+      "description": "If there is a repository found in the manuscript text, is it Dryad?",
+      "value": true || false || "N/A"
     },
     {
       "name": "non-functional_urls",
       "description": "List of Non-functional repository URLs",
-      "value": []
+      "value": ["..."]
     },
     {
       "name": "computer_gen",
-      "description": "Was any shareable computer code generated?",
-      "value": "Yes"
+      "description": "Was shareable computer code generated?",
+      "value": true || false || "N/A"
     },
     {
       "name": "computer_si",
       "description": "Is any computer code shared as Supplemental Material?",
-      "value": "No"
+      "value": true || false || "N/A"
     },
     {
       "name": "computer_online",
       "description": "Is any computer code shared online?",
-      "value": "Yes"
+      "value": true || false || "N/A"
     },
     {
       "name": "warrants_code_online",
       "description": "URL(s) and PID(s) for any online code sharing locations",
-      "value": [
-        "https://github.com/Hadi-Khorrami"
-      ]
+      "value": ["..."]
     },
     {
-        "name": "cumulated_score",
-        "description": "Cumulated score from snapshot",
-        "value": 0 // The score is between -10 and 32
+      "name": "cumulated_score",
+      "description": "Cumulated score from snapshot",
+      "value": 0 // Integer between -10 and 32
+    },
+    {
+      "name": "action_required",
+      "description": "Action required after the analysis of manuscript",
+      "value": ["..."]
+    },
+    {
+      "name": "action_recommended",
+      "description": "Action recommended after the analysis of manuscript",
+      "value": ["..."]
+    },
+    {
+      "name": "data_share_in_ms_or_si",
+      "description": "Is the DAS stating that 'All data are in the manuscript and/or supporting information files?",
+      "value": true || false || "N/A"
+    },
+    {
+      "name": "data_share_si",
+      "description": "Check for the minimal dataset in the Supporting Information files. ",
+      "value": true || false || "N/A"
     }
   ]
 }

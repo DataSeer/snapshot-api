@@ -1,284 +1,142 @@
 // File: src/controllers/genshareController.js
-const packageJson = require('../../package.json');
-const fs = require('fs');
-const axios = require('axios');
-const FormData = require('form-data');
-const config = require('../config');
+const fs = require('fs').promises;
+const genshareManager = require('../utils/genshareManager');
 const { ProcessingSession } = require('../utils/s3Storage');
-const { appendToSheet, convertToGoogleSheetsDate, convertToGoogleSheetsTime, convertToGoogleSheetsDuration } = require('../utils/googleSheets');
+const { getUserById } = require('../utils/userManager');
 
-const genshareConfig = require(config.genshareConfigPath);
-const processPDFConfig = genshareConfig.processPDF;
-const healthConfig = genshareConfig.health;
-
-const getPath = (path = []) => {
-  let headers = [
-      "A", "B", "C", "C Score", "D", "E", "E Score", "F", "F Score",
-      "G", "G Score", "H", "I", "J", "K", "L", "M", "N", "O", "P",
-      "P Score", "Q", "Q Score", "R", "R Score", "S", "S Score",
-      "T", "T Score", "U", "U Score", "V", "SnapShot Score"
-  ];
-  let defaultResult = Array(headers.length).fill('');
-  if (!Array.isArray(path) || path.length !== 2) return defaultResult;
-  let data = path[1];
-  let result = data.split(',');
-  // Convert "Score" to integer if possible
-  if (result.length === headers.length) {
-    for (let i = 0; i < headers.length; i++) {
-      if (headers[i].indexOf("Score") > -1) {
-        let parsedScore = parseInt(result[i]);
-        if (!isNaN(parsedScore)) result[i] = parsedScore;
-      }
-    }
-  }
-  return result;
-};
-
-const getResponse = (response = []) => {
-  let defaultResult = ["","","","","","","","","","","","",""];
-  const mapping = {
-    "article_id": 0,
-    "das": 1,
-    "data_avail_req": 2,
-    "das_share_si": 3,
-    "data_generalist": 4,
-    "warrant_generalist": 5,
-    "data_specialist": 6,
-    "warrant_specialist": 7,
-    "non-functional_urls": 8,
-    "computer_gen": 9,
-    "computer_si": 10,
-    "computer_online": 11,
-    "warrants_code_online": 12
-  }
-  if (!Array.isArray(response)) return defaultResult;
-  let result = [].concat(defaultResult);
-  for (let i = 0; i < response.length; i++) {
-    let item = response[i];
-    let index;
-    if (item && item.name) index = mapping[item.name];
-    if (typeof index === "number") {
-      // item.value can be an Array, Google Sheets require string
-      if (Array.isArray(item.value)) result[index] = item.value.join("\n");
-      else result[index] = item.value.toString();
-    }
-  }
-  return result;
-};
-
-
-const appendToSummary = async ({ session, errorStatus, req }) => {
-    try {
-      // Safely get the filename, defaulting to "No file" if not available
-      const filename = req.file?.originalname || "N/A";
-      // Get the response info
-      let response = getResponse(session.response?.data?.response);
-      // Get the Path info
-      let path = getPath(session.response?.data?.path);
-      // Current date
-      const now = new Date()
-      // Log to Google Sheets
-      await appendToSheet([
-        `=HYPERLINK("${session.url}","${session.requestId}")`, // Query ID with S3 link
-        session.getSnapshotAPIVersion(),                       // Snapshot API version
-        session.getGenshareVersion(),                          // GenShare version
-        errorStatus,                                           // Error status
-        convertToGoogleSheetsDate(now),                        // Date
-        convertToGoogleSheetsTime(now),                        // Time
-        convertToGoogleSheetsDuration(session.duration),       // Session duration
-        req.user.id,                                           // User ID
-        filename                                               // PDF filename or "No file"
-      ].concat(response).concat(path));
-      session.addLog('Logged to Google Sheets successfully');
-    } catch (sheetsError) {
-      session.addLog(`Error logging to Google Sheets: ${sheetsError.message}`);
-      console.error('Error logging to Google Sheets:', sheetsError);
-    }
-};
-
+/**
+ * Check health of all GenShare versions or a specific version
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
+ */
 module.exports.getGenShareHealth = async (req, res) => {
   try {
-    const response = await axios({
-      method: healthConfig.method,
-      url: healthConfig.url,
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-    // Forward the status code
-    res.status(response.status);
-    // Forward the headers
-    Object.entries(response.headers).forEach(([key, value]) => {
-      res.set(key, value);
-    });
-    // Send the response data
-    res.send(response.data);
+    const user = getUserById(req.user.id);
+    const requestedVersion = req.query.version || null;
+    
+    const healthResult = await genshareManager.getGenShareHealth(user, requestedVersion);
+    
+    // Return health results for all checked versions
+    res.json(healthResult);
   } catch (error) {
-    // Forward error response if available
-    if (error.response) return res.status(error.response.status).send(error.message);
-    return res.status(500).send('GenShare health check failed');
+    return res.status(500).send('GenShare health check failed: ' + error.message);
   }
 };
 
+/**
+ * Process a PDF document using the appropriate GenShare version
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
+ */
 module.exports.processPDF = async (req, res) => {
   // Initialize processing session
-  const session = new ProcessingSession(req.user.id, req.file);
-  session.setSnapshotAPIVersion(`v${packageJson.version}`);
-  let errorStatus = "No"; // Initialize error status
+  const session = new ProcessingSession(req.user.id);
+  
+  // Set origin as direct API request
+  session.setOrigin('direct');
   
   try {
-    // Input validation
-    if (!req.file) {
-      errorStatus = 'Input request error: Required "file" missing';
-      session.addLog('Error: Required "file" missing');
-      await session.saveToS3();
-      await appendToSummary({ session, errorStatus, req });
-      return res.status(400).send('Required "file" missing.');
-    }
-
-    if (req.file.mimetype !== "application/pdf") {
-      errorStatus = 'Input request error: Invalid file type';
-      session.addLog('Error: Invalid file type ' + req.file.mimetype);
-      await session.saveToS3();
-      await appendToSummary({ session, errorStatus, req });
-      return res.status(400).send('Required "file" invalid. Must have mimetype "application/pdf"');
-    }
-
-    let options;
-    try {
-      options = JSON.parse(req.body.options);
-      if (options === null) {
-        errorStatus = 'Input request error: Required "options" missing';
-        session.addLog('Error: Required "options" missing');
-        await session.saveToS3();
-        await appendToSummary({ session, errorStatus, req });
-        return res.status(400).send('Required "options" missing. Must be a valid JSON object.');
-      } else if (typeof options !== 'object' || Array.isArray(options)) {
-        errorStatus = 'Input request error: Invalid options format';
-        session.addLog('Error: Invalid options format');
-        await session.saveToS3();
-        await appendToSummary({ session, errorStatus, req });
-        return res.status(400).send('Required "options" invalid. Must be a JSON object.');
-      }
-      session.options = options;
-    } catch (error) {
-      errorStatus = "Input request error: Error parsing options";
-      session.addLog('Error parsing options: ' + error.message);
-      await session.saveToS3();
-      await appendToSummary({ session, errorStatus, req });
-      return res.status(400).send('Required "options" invalid. Must be a valid JSON object.');
-    }
-
-    // Log initial request details
-    session.addLog(`Request received from ${req.user.id}`);
-
-    const formData = new FormData();
-    
-    // Create read stream from the uploaded file
-    const fileStream = fs.createReadStream(req.file.path);
-    formData.append('file', fileStream, {
-      filename: req.file.originalname,
-      contentType: req.file.mimetype
+    // Store API request
+    session.setAPIRequest({
+      method: req.method,
+      path: req.path,
+      query: req.query,
+      body: req.body,
+      file: req.file ? {
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size
+      } : null
     });
-
-    // Add options with decision_tree_path for the request only
-    const requestOptions = {
-      ...options,
-      decision_tree_path: true,
-      debug: true
+    
+    // Add file if present
+    if (req.file) {
+      session.addFile(req.file, 'api');
+    }
+    
+    // Parse options if they exist
+    let parsedOptions = {};
+    
+    if (req.body.options) {
+      try {
+        // This parsing is necessary when client sends multipart/form-data
+        parsedOptions = typeof req.body.options === 'string' 
+          ? JSON.parse(req.body.options) 
+          : req.body.options;
+      } catch (parseError) {
+        // If parsing fails, check if options is already an object (could happen with application/json content type)
+        parsedOptions = typeof req.body.options === 'object' && req.body.options !== null 
+          ? req.body.options 
+          : {};
+        
+        session.addLog(`Warning: Error parsing options: ${parseError.message}`);
+      }
+    }
+    
+    const processingData = {
+      file: req.file,
+      user: {
+        id: req.user.id
+      },
+      options: parsedOptions
     };
-    formData.append('options', JSON.stringify(requestOptions));
-
-    // Forward any additional form fields (except options which we've already handled)
+    
+    // Add any additional request body fields except 'options'
     Object.keys(req.body).forEach(key => {
       if (key !== 'options') {
-        formData.append(key, req.body[key]);
+        processingData[key] = req.body[key];
       }
     });
-
-    // Log third-party service request
-    session.addLog(`Sending request to GenShare service`);
-    session.addLog(`URL: ${processPDFConfig.url}`);
-
-    const response = await axios({
-      method: processPDFConfig.method,
-      url: processPDFConfig.url,
-      data: formData,
-      headers: {
-        ...formData.getHeaders()
-      },
-      responseType: 'json',
-      maxBodyLength: Infinity
+    
+    // Process the PDF using the manager - this is synchronous processing
+    const result = await genshareManager.processPDF(processingData, session);
+    
+    // Store API response
+    session.setAPIResponse({
+      status: result.status,
+      data: result.data
     });
-
-    // Check if response status is not 2xx or 3xx
-    if (response.status >= 400) {
-      errorStatus = `GenShare Error (HTTP ${response.status})`;
-    }
-
-    // Log successful response
-    session.addLog(`Received response from GenShare service`);
-    session.addLog(`Status: ${response.status}`);
-
-    // Store complete response info before modification
-    session.setResponse({
-      status: response.status,
-      headers: response.headers,
-      data: { ...response.data }
-    });
-
-    // Remove path property from response data
-    let filteredData = {};
-    if (response.data && typeof response.data === 'object') {
-      filteredData = { response: response.data.response };
-    }
-
-    session.setGenshareVersion(`v${response.data.version}`);
-
-    // Save session data and clean up
-    session.addLog('Response processing completed');
+    
+    // Save session data to S3
     await session.saveToS3();
     
-    // Log to summary sheet before sending response
-    await appendToSummary({ session, errorStatus, req });
-
-    // Clean up temporary file
-    await fs.promises.unlink(req.file.path).catch(err => {
-      console.error('Error deleting temporary file:', err);
-    });
-
-    // Forward modified response to client
-    res.status(response.status);
-    Object.entries(response.headers).forEach(([key, value]) => {
-      res.set(key, value);
-    });
-    res.json(filteredData);
-
-  } catch (error) {
-    // Set error status based on the type of error
-    if (error.response) {
-      errorStatus = `GenShare Error (HTTP ${error.response.status})`;
-    } else {
-      errorStatus = `${error.message}`;
+    // Now that ALL processing is complete, we can safely clean up the temporary file
+    if (req.file && req.file.path) {
+      await fs.unlink(req.file.path).catch(err => {
+        console.error(`[${session.requestId}] Error deleting temporary file:`, err);
+      });
     }
 
+    // Forward modified response to client
+    res.status(result.status);
+    Object.entries(result.headers).forEach(([key, value]) => {
+      res.set(key, value);
+    });
+    res.json({ response: result.data });
+
+  } catch (error) {
     // Log error
     session.addLog(`Error processing request: ${error.message}`);
     session.addLog(`Stack: ${error.stack}`);
 
     try {
+      // Store error response
+      session.setAPIResponse({
+        status: 'error',
+        error: error.message
+      });
+      
       // Save session data with error information
       await session.saveToS3();
-      // Log to summary sheet before sending error response
-      await appendToSummary({ session, errorStatus, req });
+
     } catch (s3Error) {
-      console.error('Error saving session data:', s3Error);
+      console.error(`[${session.requestId}] Error saving session data:`, s3Error);
     }
 
-    // Clean up temporary file if it exists
+    // Clean up temporary file if it exists, but only after all processing, including error handling, is complete
     if (req.file && req.file.path) {
-      await fs.promises.unlink(req.file.path).catch(err => {
-        console.error('Error deleting temporary file:', err);
+      await fs.unlink(req.file.path).catch(err => {
+        console.error(`[${session.requestId}] Error deleting temporary file:`, err);
       });
     }
     

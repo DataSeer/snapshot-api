@@ -4,6 +4,8 @@
 
 conf/*.json
 
+sqlite/*.db
+
 node_modules/
 
 log/*.log

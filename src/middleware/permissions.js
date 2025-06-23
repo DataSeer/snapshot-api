@@ -1,9 +1,5 @@
 // File: src/middleware/permissions.js
-const { getPermissions } = require('../utils/permissionsManager');
-
-const normalizeUrl = (url) => {
-    return url === '/' ? url : url.replace(/\/$/, '');
-};
+const { getPermissions, normalizeUrl } = require('../utils/permissionsManager');
 
 module.exports.checkPermissions = (req, res, next) => {
     const permissionsConfig = getPermissions();
