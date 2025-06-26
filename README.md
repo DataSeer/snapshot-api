@@ -32,6 +32,7 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - User-specific rate limiting
 - AWS S3 storage for complete request traceability
 - Version-specific Google Sheets logging and reports
+- **DS Logs generation from S3 data** with proper CSV formatting and special character handling
 - Health monitoring for all integrated services
 - Editorial Manager API integration for submissions handling
 - **Job status tracking and retry mechanism** with exponential backoff
@@ -66,6 +67,7 @@ docker run -d -p 3000:3000 --name snapshot-api snapshot-api
 docker run -d -p 3000:3000 \
   -v $(pwd)/.env:/usr/src/app/.env \
   -v $(pwd)/conf:/usr/src/app/conf \
+  -v $(pwd)/output:/usr/src/app/output \
   -v $(pwd)/log:/usr/src/app/log \
   -v $(pwd)/sqlite:/usr/src/app/sqlite \
   snapshot-api
@@ -83,7 +85,7 @@ npm install
 
 # Copy configuration files
 cp .env.default .env
-mkdir -p conf sqlite log
+mkdir -p conf sqlite log output
 cp conf/*.default conf/
 ```
 
@@ -654,6 +656,37 @@ npm run queue:status
 npm run queue:cleanup
 ```
 
+### DS Logs Generation
+
+**NEW:** Generate Google Sheets compatible CSV logs from S3 data:
+
+```bash
+# Generate DS logs from S3 data
+npm run refresh-ds-logs
+
+# This will create files in the output/ directory:
+# - ds_logs_TIMESTAMP.csv         (Main CSV file with all log data)
+# - ds_logs_summary_TIMESTAMP.json (Processing summary and metadata)
+```
+
+The DS logs script:
+- **Scans all S3 GenShare data** and extracts request/response information
+- **Retrieves report links from SQLite database** using the report_data.report_link field
+- **Handles special characters** (commas, quotes, newlines, semicolons) using Papa Parse
+- **Generates CSV files** ready for Google Sheets import
+- **Detects processing errors** and marks them appropriately
+- **Uses existing configuration** for version mappings and response formatting
+- **Creates comprehensive summaries** with processing statistics including report link counts
+
+Output includes:
+- Query ID (hyperlinked to S3 location)
+- Snapshot API and GenShare versions
+- Error status detection
+- User information and file details
+- Report URLs retrieved from database report_data
+- All GenShare response fields based on version configuration
+- Proper CSV formatting with special character handling
+
 ### Log Analysis
 
 ```bash
@@ -677,6 +710,7 @@ snapshot-api/
 │   ├── queueManager.json  # Queue system configuration
 │   └── ...               # Other config files
 ├── log/                   # Log files
+├── output/                # Generated files (DS logs, reports, etc.)
 ├── scripts/               # Management scripts
 │   ├── maintenance/       # DB maintenance scripts
 │   ├── analyze_logs.js
@@ -684,7 +718,9 @@ snapshot-api/
 │   ├── manage_permissions.js
 │   ├── manage_users.js
 │   ├── queue_status.js    # Queue monitoring script
-│   └── sync_version.js
+│   ├── refresh_ds_logs.js # NEW: DS logs generation script
+│   ├── sync_version.js
+│   └── test_csv_handling.js # NEW: CSV handling test script
 ├── sqlite/                # SQLite database (includes job queue)
 ├── src/
 │   ├── controllers/       # Request handlers
@@ -706,12 +742,12 @@ snapshot-api/
 │   ├── utils/             # Utility functions
 │   │   ├── dbManager.js   # Updated with job queue tables
 │   │   ├── emManager.js   # Updated with asynchronous processing
-│   │   ├── genshareManager.js
-│   │   ├── googleSheets.js
+│   │   ├── genshareManager.js # Updated exports for DS logs
+│   │   ├── googleSheets.js # Updated with CSV utilities
 │   │   ├── jwtManager.js
 │   │   ├── logger.js
 │   │   ├── permissionsManager.js
-│   │   ├── queueManager.js      # NEW: Job queue system
+│   │   ├── queueManager.js      # Job queue system
 │   │   ├── rateLimiter.js
 │   │   ├── reportsManager.js
 │   │   ├── requestsManager.js
@@ -757,6 +793,7 @@ docker run -d \
   -v $(pwd)/conf:/usr/src/app/conf \
   -v $(pwd)/sqlite:/usr/src/app/sqlite \
   -v $(pwd)/log:/usr/src/app/log \
+  -v $(pwd)/output:/usr/src/app/output \
   --name snapshot-api \
   snapshot-api:latest
 ```
@@ -833,6 +870,7 @@ The API includes special endpoints for integration with Editorial Manager with f
 - **winston** and **morgan**: Logging utilities
 - **express-rate-limit**: Rate limiting middleware
 - **events**: Node.js EventEmitter for job status callbacks
+- **papaparse**: Robust CSV parsing and generation with special character handling
 
 ### Development Dependencies
 
@@ -845,3 +883,11 @@ The queue system is built using native Node.js capabilities:
 - **EventEmitter**: Job status change notifications
 - **setTimeout**: Retry scheduling with exponential backoff
 - **Promise**: Asynchronous job processing coordination
+
+### DS Logs Dependencies
+
+The DS logs generation system uses:
+- **Papa Parse**: Professional CSV handling with proper escaping
+- **S3 Storage utilities**: Existing S3 integration for data retrieval
+- **GenShare Manager**: Existing data formatting functions
+- **Google Sheets utilities**: Date/time formatting helpers

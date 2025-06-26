@@ -5,9 +5,11 @@ conf/*.json
 
 sqlite/*.db
 
+output/*.csv
+output/*.json
+
 tmp/
 
 log/*.log
-
 
 .idea

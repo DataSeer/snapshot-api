@@ -536,5 +536,7 @@ module.exports = {
   getGenShareHealth,
   processPDF,
   appendToSummary,
-  filterResponseForUser
+  filterResponseForUser,
+  getPath,
+  getResponse
 };
