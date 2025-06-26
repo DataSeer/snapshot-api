@@ -4,6 +4,9 @@
 
 conf/*.json
 
+output/*.csv
+output/*.json
+
 sqlite/*.db
 
 node_modules/

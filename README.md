@@ -67,6 +67,7 @@ docker run -d -p 3000:3000 --name snapshot-api snapshot-api
 docker run -d -p 3000:3000 \
   -v $(pwd)/.env:/usr/src/app/.env \
   -v $(pwd)/conf:/usr/src/app/conf \
+  -v $(pwd)/output:/usr/src/app/output \
   -v $(pwd)/log:/usr/src/app/log \
   -v $(pwd)/sqlite:/usr/src/app/sqlite \
   snapshot-api
