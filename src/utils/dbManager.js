@@ -109,6 +109,25 @@ const initDatabase = async () => {
       });
     });
     
+    // Create the snapshot-mails-submissions table if it doesn't exist
+    await new Promise((resolve, reject) => {
+      db.run(`CREATE TABLE IF NOT EXISTS "snapshot-mails-submissions" (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        request_id TEXT NOT NULL UNIQUE,
+        sender_email TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        canceled_at DATETIME DEFAULT NULL
+      )`, (err) => {
+        if (err) {
+          console.error('Error creating snapshot-mails-submissions table:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+    
     // Create the processing_jobs table if it doesn't exist
     await new Promise((resolve, reject) => {
       db.run(`CREATE TABLE IF NOT EXISTS processing_jobs (
@@ -1025,6 +1044,118 @@ const cancelEmSubmission = async (requestId) => {
 };
 
 /*
+ * SNAPSHOT MAILS SUBMISSIONS METHODS
+ */
+
+/**
+ * Store a new Snapshot Mails submission
+ * @param {string} requestId - The request ID
+ * @param {string} sender_email - The email address
+ * @param {string} filename - The filename
+ * @returns {Promise<number>} - ID of the inserted record
+ */
+const storeSnapshotMailsSubmission = async (requestId, sender_email, filename) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        `INSERT INTO "snapshot-mails-submissions" (request_id, sender_email, filename)
+         VALUES (?, ?, ?)`,
+        [requestId, sender_email, filename],
+        function(err) {
+          if (err) reject(err);
+          else resolve(this.lastID);
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error storing SM submission:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get submission by request ID
+ * @param {string} requestId - The request ID
+ * @returns {Promise<Object|null>} - Submission record or null if not found
+ */
+const getSnapshotMailsSubmissionByRequestId = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT * FROM "snapshot-mails-submissions" WHERE request_id = ?`,
+        [requestId],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row || null);
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting SM submission by request ID:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update canceled_at timestamp for a submission
+ * @param {string} requestId - The request ID
+ * @returns {Promise<boolean>} - True if submission was found and updated
+ */
+const cancelSnapshotMailsSubmission = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+    const now = new Date().toISOString();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE "snapshot-mails-submissions"
+         SET canceled_at = ?
+         WHERE request_id = ?`,
+        [now, requestId],
+        function(err) {
+          if (err) reject(err);
+          else resolve(this.changes > 0);
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error canceling SM submission:', error);
+    throw error;
+  }
+};
+
+/*
  * QUEUE MANAGEMENT METHODS
  */
 
@@ -1516,6 +1647,11 @@ module.exports = {
   storeEmSubmission,
   getEmSubmissionByRequestId,
   cancelEmSubmission,
+
+  // Snapshot Mails submissions methods
+  storeSnapshotMailsSubmission,
+  getSnapshotMailsSubmissionByRequestId,
+  cancelSnapshotMailsSubmission,
   
   // Queue management methods
   addJobToQueue,
