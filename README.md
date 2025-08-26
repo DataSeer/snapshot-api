@@ -17,6 +17,7 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - [Deployment](#deployment)
 - [Security](#security)
 - [Editorial Manager Integration](#editorial-manager-integration)
+- [Snapshot Mails Integration](#snapshot-mails-integration)
 - [Dependencies](#dependencies)
 
 ## Features
@@ -35,6 +36,7 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - **DS Logs generation from S3 data** with proper CSV formatting and special character handling
 - Health monitoring for all integrated services
 - Editorial Manager API integration for submissions handling
+- **Snapshot Mails integration** for email-based PDF submissions
 - **Job status tracking and retry mechanism** with exponential backoff
 - **Event-driven job completion callbacks** for reliable external notifications
 - Comprehensive logging system
@@ -196,6 +198,24 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
       "authorizedVersions": ["Report v1"],
       "defaultVersion": "Report v1"
     }
+  },
+  "snapshot-mails": {
+    "token": "jwt_token_for_snapshot_mails",
+    "client_secret": "client_secret_for_snapshot_mails",
+    "rateLimit": {
+      "max": 100,
+      "windowMs": 900000
+    },
+    "genshare": {
+      "authorizedVersions": ["v1.0.0"],
+      "defaultVersion": "v1.0.0",
+      "availableFields": [],
+      "restrictedFields": []
+    },
+    "reports": {
+      "authorizedVersions": ["Report v1"],
+      "defaultVersion": "Report v1"
+    }
   }
 }
 ```
@@ -258,6 +278,27 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
       "GET": {
         "description": "Search for reports",
         "allowed": ["admin"],
+        "blocked": []
+      }
+    },
+    "/snapshot-mails/submissions": {
+      "POST": {
+        "description": "Process email-based PDF submissions",
+        "allowed": ["snapshot-mails"],
+        "blocked": []
+      }
+    },
+    "/snapshot-mails/jobs": {
+      "GET": {
+        "description": "Check job status for email submissions",
+        "allowed": ["snapshot-mails"],
+        "blocked": []
+      }
+    },
+    "/snapshot-mails/test-notification": {
+      "POST": {
+        "description": "Test notification system",
+        "allowed": ["snapshot-mails"],
         "blocked": []
       }
     }
@@ -337,6 +378,14 @@ POST   /editorial-manager/reports        - Get report data
 POST   /editorial-manager/reportLink     - Get report URL from token
 GET    /editorial-manager/job-status     - Get job status by report ID
 POST   /editorial-manager/retry          - Retry a failed job
+
+# Snapshot Mails integration
+POST   /snapshot-mails/submissions       - Handle email-based PDF submissions (asynchronous)
+GET    /snapshot-mails/jobs/:requestId   - Get job status for email submissions
+POST   /snapshot-mails/test-notification - Test notification system
+
+# Snapshot Reports endpoints
+GET    /snapshot-reports/:requestId/genshare - Get GenShare data for a request
 ```
 
 ## Queue System
@@ -567,6 +616,76 @@ curl -X POST http://localhost:3000/editorial-manager/cancel \
   -d "report_id=12345678901234567890123456789012"
 ```
 
+## Snapshot Mails Integration
+
+The API includes special endpoints for integration with the snapshot-mails service for email-based PDF submissions:
+
+### Email-Based Submission Workflow
+
+1. **User sends email** with PDF attachment and keywords to designated email address
+2. **Snapshot-mails service** processes the email and extracts PDF + keywords
+3. **Snapshot-mails authenticates** with the API using client credentials
+4. **Snapshot-mails submits** the PDF to the API for processing (gets immediate response with request_id)
+5. **The API processes** the PDF asynchronously in the background
+6. **API sends notification** to snapshot-mails when processing completes
+7. **Snapshot-mails sends** results email back to original sender
+
+### Snapshot Mails API Endpoints
+
+```bash
+# Submit PDF from email (called by snapshot-mails service)
+curl -X POST http://localhost:3000/snapshot-mails/submissions \
+  -H "Authorization: Bearer <snapshot-mails-token>" \
+  -F "file=@document.pdf" \
+  -F 'submission_data={"sender_email": "user@example.com", "keywords": {"article_type": "research"}, "filename": "paper.pdf"}'
+
+# Response:
+# {
+#   "status": "Success",
+#   "request_id": "12345678901234567890123456789012"
+# }
+
+# Check job status for email submission
+curl -G http://localhost:3000/snapshot-mails/jobs/12345678901234567890123456789012 \
+  -H "Authorization: Bearer <snapshot-mails-token>"
+
+# Response:
+# {
+#   "request_id": "12345678901234567890123456789012",
+#   "status": "completed",
+#   "created_at": "2025-01-01T10:00:00Z",
+#   "updated_at": "2025-01-01T10:05:00Z",
+#   "retries": 0,
+#   "max_retries": 3,
+#   "results": {
+#     "genshare_status": "success"
+#   }
+# }
+
+### Snapshot Mails Configuration
+
+To set up snapshot-mails integration:
+
+1. **Create snapshot-mails user** in the API:
+```bash
+npm run manage-users -- add snapshot-mails
+```
+
+2. **Configure permissions** for snapshot-mails routes in `conf/permissions.json`
+
+3. **Set up notification URL** in the snapshot-mails service configuration
+
+4. **Deploy snapshot-mails service** with proper IMAP/SMTP credentials
+
+### Asynchronous Benefits for Email Processing
+
+- **Immediate Email Response**: Users get quick confirmation that their email was processed
+- **Reliable Processing**: PDF processing continues even if email service disconnects
+- **Better Resource Management**: Configurable concurrency prevents system overload
+- **Automatic Retry**: Failed processing jobs are retried automatically
+- **Status Tracking**: Full visibility into processing progress via notifications
+- **Error Handling**: Users receive clear error messages via email
+
 ## Scripts
 
 The following management scripts are available to help manage various aspects of the application:
@@ -574,26 +693,26 @@ The following management scripts are available to help manage various aspects of
 ### User Management
 
 ```bash
-# Add a new user
-npm run manage-users -- add user123
+# Add a new user (including snapshot-mails)
+npm run manage-users -- add snapshot-mails
 
 # List all users
 npm run manage-users -- list
 
 # Refresh a user's token
-npm run manage-users -- refresh-token user123
+npm run manage-users -- refresh-token snapshot-mails
 
 # Refresh a client secret
-npm run manage-users -- refresh-client-secret user123
+npm run manage-users -- refresh-client-secret snapshot-mails
 
 # Update rate limit
-npm run manage-users -- update-limit user123 '{"max": 200, "windowMs": 900000}'
+npm run manage-users -- update-limit snapshot-mails '{"max": 100, "windowMs": 900000}'
 
 # Update GenShare settings
-npm run manage-users -- update-genshare user123 '{"authorizedVersions": ["v1.0.0", "v2.0.0"], "defaultVersion": "v2.0.0"}'
+npm run manage-users -- update-genshare snapshot-mails '{"authorizedVersions": ["v1.0.0"], "defaultVersion": "v1.0.0"}'
 
 # Remove a user
-npm run manage-users -- remove user123
+npm run manage-users -- remove snapshot-mails
 ```
 
 ### GenShare Version Management
@@ -624,11 +743,11 @@ npm run manage-genshare -- remove v2.0.0
 # List all permissions
 npm run manage-permissions -- list
 
-# Add route permission
-npm run manage-permissions -- add /endpoint METHOD '["user1", "user2"]' '["user3"]'
+# Add route permission (including snapshot-mails routes)
+npm run manage-permissions -- add /snapshot-mails/submissions POST '["snapshot-mails"]' '[]'
 
 # Allow user access to route
-npm run manage-permissions -- allow /endpoint METHOD user4
+npm run manage-permissions -- allow /snapshot-mails/submissions POST snapshot-mails
 
 # Block user from route
 npm run manage-permissions -- block /endpoint METHOD user5
@@ -733,15 +852,16 @@ snapshot-api/
 │   │   ├── healthController.js
 │   │   ├── reportsController.js
 │   │   ├── requestsController.js
+│   │   ├── snapshotMailsController.js # Snapshot mails controller
 │   │   └── versionsController.js
 │   ├── middleware/        # Express middleware
 │   │   ├── auth.js
 │   │   └── permissions.js
 │   ├── routes/            # API routes
-│   │   └── index.js       # Updated with queue endpoints
+│   │   └── index.js
 │   ├── utils/             # Utility functions
-│   │   ├── dbManager.js   # Updated with job queue tables
-│   │   ├── emManager.js   # Updated with asynchronous processing
+│   │   ├── dbManager.js
+│   │   ├── emManager.js
 │   │   ├── genshareManager.js # Updated exports for DS logs
 │   │   ├── googleSheets.js # Updated with CSV utilities
 │   │   ├── jwtManager.js
@@ -752,6 +872,7 @@ snapshot-api/
 │   │   ├── reportsManager.js
 │   │   ├── requestsManager.js
 │   │   ├── s3Storage.js
+│   │   ├── snapshotMailsManager.js # Snapshot mails manager
 │   │   ├── userManager.js
 │   │   └── versions.js
 │   ├── config.js          # Application configuration
@@ -827,6 +948,7 @@ PORT=3000
 - Token expiration for temporary tokens
 - **Job isolation**: Each job runs independently with proper error handling
 - **Database transaction safety**: Queue operations use proper database transactions
+- **Email authorization**: Only authorized email addresses can submit via snapshot-mails
 
 ## Editorial Manager Integration
 
@@ -855,6 +977,35 @@ The API includes special endpoints for integration with Editorial Manager with f
 - **Better Resource Management**: Configurable concurrency prevents system overload
 - **Automatic Retry**: Failed jobs are retried automatically
 - **Status Tracking**: Full visibility into job progress and outcomes
+
+## Snapshot Mails Integration
+
+The API includes special endpoints for integration with the snapshot-mails service for email-based PDF submissions with full asynchronous processing:
+
+### Features
+
+- **Email-Based Submissions**: Users can submit PDFs via email with keywords
+- **Asynchronous Processing**: All email submissions are processed in the background
+- **Notification System**: Automatic notifications sent back to snapshot-mails service
+- **Job Status Tracking**: Real-time status updates for email-based submissions
+- **Error Handling**: Comprehensive error handling with email notifications to users
+
+### Snapshot Mails Workflow
+
+1. **User sends email** with PDF attachment and keywords to designated email address
+2. **Snapshot-mails service** monitors the email address and processes new emails
+3. **Snapshot-mails authenticates** with the API using client credentials (OAuth 2.0)
+4. **Snapshot-mails submits** PDF and metadata to API (gets immediate response with request_id)
+5. **The API processes** the PDF asynchronously in the background
+6. **API sends notification** to snapshot-mails when processing completes or fails
+7. **Snapshot-mails retrieves** final results and sends email response to original sender
+
+### Configuration for Snapshot Mails
+
+1. **Create snapshot-mails user** with appropriate permissions
+2. **Configure notification URL** in snapshot-mails service
+3. **Set up email monitoring** in snapshot-mails service
+4. **Configure SMTP settings** for result email delivery
 
 ## Dependencies
 
@@ -891,3 +1042,10 @@ The DS logs generation system uses:
 - **S3 Storage utilities**: Existing S3 integration for data retrieval
 - **GenShare Manager**: Existing data formatting functions
 - **Google Sheets utilities**: Date/time formatting helpers
+
+### Snapshot Mails Dependencies
+
+The snapshot-mails integration uses:
+- **axios**: HTTP client for notification callbacks
+- **Database utilities**: Mail submission tracking and management
+- **Queue system**: Asynchronous job processing for email submissions

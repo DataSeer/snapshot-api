@@ -16,11 +16,18 @@ const {
   revokeTokenEditorialManager
 } = require('../controllers/authController');
 const { 
-  postSubmissions,
-  postCancelUpload,
-  postReport,
-  postReportLink
+  postSubmissions: emPostSubmissions,
+  postCancelUpload: emPostCancelUpload,
+  postReport: emPostReport,
+  postReportLink: emPostReportLink,
+  getJobStatus: emGetJobStatus,
+  retryJob: emRetryJob
 } = require('../controllers/emController');
+const {
+  postSubmissions: postMailSubmissions,
+  getJobStatus: getMailJobStatus,
+  retryJob: retryMailJob
+} = require('../controllers/snapshotMailsController');
 const { getGenshareData } = require('../controllers/snapshotReportsController');
 const { authenticateToken } = require('../middleware/auth');
 const { checkPermissions } = require('../middleware/permissions');
@@ -63,12 +70,18 @@ authenticatedRouter.get('/datastet/health', getDatastetHealth);
 authenticatedRouter.post('/requests/refresh', refreshRequests);
 authenticatedRouter.get('/requests/search', searchRequest); // Available params: article_id & request_id
 
-// Editorial Manager endpoints (keep unchanged as requested)
-authenticatedRouter.post('/editorial-manager/submissions', upload.any(), postSubmissions);
-authenticatedRouter.post('/editorial-manager/cancel', postCancelUpload); // return true
-authenticatedRouter.post('/editorial-manager/reports', postReport); // return { "report_token": "", "scores": "", "flag": true }
-// use "upload.none()" to parse multipart form data requests
-authenticatedRouter.post('/editorial-manager/reportLink', upload.none(), postReportLink); // return { "report_url": "..." }
+// Editorial Manager endpoints
+authenticatedRouter.post('/editorial-manager/submissions', upload.any(), emPostSubmissions);
+authenticatedRouter.post('/editorial-manager/cancel', emPostCancelUpload);
+authenticatedRouter.post('/editorial-manager/reports', emPostReport);
+authenticatedRouter.post('/editorial-manager/reportLink', upload.none(), emPostReportLink);
+authenticatedRouter.get('/editorial-manager/jobs/:reportId', emGetJobStatus);
+authenticatedRouter.post('/editorial-manager/retry/:reportId', emRetryJob);
+
+// Snapshot Mails endpoints
+authenticatedRouter.post('/snapshot-mails/submissions', upload.any(), postMailSubmissions);
+authenticatedRouter.get('/snapshot-mails/jobs/:requestId', getMailJobStatus);
+authenticatedRouter.post('/snapshot-mails/retry/:requestId', retryMailJob);
 
 // Snapshot Reports endpoints
 authenticatedRouter.get('/snapshot-reports/:requestId/genshare', getGenshareData);
