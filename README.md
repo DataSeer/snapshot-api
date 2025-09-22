@@ -499,11 +499,18 @@ curl -X POST http://localhost:3000/editorial-manager/revokeToken \
 All PDF processing is now asynchronous and returns immediately with a request ID:
 
 ```bash
-# Basic usage - returns immediately with request_id
+# Basic usage with PDF only - returns immediately with request_id
 curl -X POST http://localhost:3000/processPDF \
   -H "Authorization: Bearer <your-token>" \
   -F "file=@document.pdf" \
   -F 'options={"article_id": "ARTICLE123"}'
+
+# With supplementary files (ZIP format required)
+curl -X POST http://localhost:3000/processPDF \
+  -H "Authorization: Bearer <your-token>" \
+  -F "file=@document.pdf" \
+  -F "supplementary_file=@supplementary.zip" \
+  -F 'options={"article_id": "ARTICLE123", "document_type": "article"}'
 
 # Response:
 # {
@@ -511,6 +518,30 @@ curl -X POST http://localhost:3000/processPDF \
 #   "request_id": "12345678901234567890123456789012",
 #   "message": "PDF processing started in background"
 # }
+```
+
+#### Supplementary Files Support
+
+The API now supports optional supplementary files that can be included with PDF submissions:
+
+- **Format**: Must be a ZIP file (`.zip` extension or `application/zip` MIME type)
+- **Field Name**: Use `supplementary_file` as the form field name
+- **Processing**: The ZIP file is forwarded to GenShare for analysis alongside the main PDF
+- **Storage**: Both PDF and supplementary files are stored in AWS S3 for complete traceability
+- **Validation**: Non-ZIP files are rejected with a 400 error
+
+Example file structure for supplementary materials:
+```
+supplementary.zip
+├── data/
+│   ├── dataset1.csv
+│   └── dataset2.xlsx
+├── figures/
+│   ├── figure_s1.png
+│   └── figure_s2.tiff
+└── code/
+    ├── analysis.py
+    └── requirements.txt
 ```
 
 ### Checking Job Status

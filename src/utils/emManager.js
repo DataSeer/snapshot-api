@@ -1,6 +1,9 @@
 // File: src/utils/emManager.js
 const fs = require('fs').promises;
+const fsSync = require('fs'); // Add sync version for createWriteStream
+const path = require('path');
 const axios = require('axios');
+const archiver = require('archiver');
 const dbManager = require('./dbManager');
 const genshareManager = require('./genshareManager');
 const requestsManager = require('./requestsManager');
@@ -13,6 +16,52 @@ const emConfig = require(config.emConfigPath);
 
 // Load the genshare configuration
 const genshareConfig = require(config.genshareConfigPath);
+
+/**
+ * Create a ZIP file from supplementary files
+ * @param {Array} supplementaryFiles - Array of file objects to zip
+ * @param {string} outputPath - Path where to create the ZIP file
+ * @returns {Promise<string>} - Path to the created ZIP file
+ */
+const createSupplementaryFilesZip = async (supplementaryFiles, outputPath) => {
+  return new Promise((resolve, reject) => {
+    const output = fsSync.createWriteStream(outputPath); // Use fsSync for createWriteStream
+    const archive = archiver('zip', {
+      zlib: { level: 9 } // Sets the compression level
+    });
+
+    output.on('close', () => {
+      console.log(`[EM] ZIP file created: ${archive.pointer()} total bytes`);
+      resolve(outputPath);
+    });
+
+    output.on('end', () => {
+      console.log('[EM] Data has been drained');
+    });
+
+    archive.on('warning', (err) => {
+      if (err.code === 'ENOENT') {
+        console.warn('[EM] ZIP warning:', err);
+      } else {
+        reject(err);
+      }
+    });
+
+    archive.on('error', (err) => {
+      reject(err);
+    });
+
+    archive.pipe(output);
+
+    // Add files to the archive
+    for (const file of supplementaryFiles) {
+      archive.file(file.path, { name: file.originalname });
+    }
+
+    // Finalize the archive
+    archive.finalize();
+  });
+};
 
 /**
  * Handle job completion - called when a job is marked as completed in the database
@@ -132,30 +181,50 @@ const processSubmission = async (data, session) => {
     // Extract file data from the submission
     const fileDataArray = file_data || [];
     
-    // Find the Reviewer PDF file for background processing
+    // Find the Reviewer PDF file and supplementary files for background processing
     let reviewerPdfFile = null;
     let reviewerPdfMetadata = null;
+    let supplementaryFiles = [];
+    let supplementaryFilesMetadata = [];
     let dasValue = "";
     
-    // First, find the file metadata for "Reviewer PDF"
+    // First, analyze file metadata to identify file types
     for (const fileData of fileDataArray) {
       if (fileData.file_description === "Reviewer PDF") {
         reviewerPdfMetadata = fileData;
         session.addLog(`Found Reviewer PDF metadata: ${fileData.file_name}`);
-        break;
+      } else if (fileData.file_item_type_family === "Supplemental") {
+        supplementaryFilesMetadata.push(fileData);
+        session.addLog(`Found supplementary file metadata: ${fileData.file_name} (${fileData.file_description})`);
       }
     }
     
-    // Then find the actual file based on the metadata
-    if (reviewerPdfMetadata && files && files.length > 0) {
-      for (const file of files) {
-        if (file.originalname === reviewerPdfMetadata.file_name) {
-          reviewerPdfFile = file;
-          session.addLog(`Found matching Reviewer PDF file: ${file.originalname}`);
-          break;
+    // Then find the actual files based on the metadata
+    if (files && files.length > 0) {
+      // Find reviewer PDF file
+      if (reviewerPdfMetadata) {
+        for (const file of files) {
+          if (file.originalname === reviewerPdfMetadata.file_name) {
+            reviewerPdfFile = file;
+            session.addLog(`Found matching Reviewer PDF file: ${file.originalname}`);
+            break;
+          }
+        }
+      }
+      
+      // Find supplementary files
+      for (const suppMetadata of supplementaryFilesMetadata) {
+        for (const file of files) {
+          if (file.originalname === suppMetadata.file_name) {
+            supplementaryFiles.push(file);
+            session.addLog(`Found matching supplementary file: ${file.originalname}`);
+            break;
+          }
         }
       }
     }
+    
+    session.addLog(`Found ${supplementaryFiles.length} supplementary files to include`);
     
     // Search for DAS trigger in custom questions
     const customQuestions = custom_questions || [];
@@ -184,6 +253,7 @@ const processSubmission = async (data, session) => {
       user_id,
       files,
       reviewerPdfFile,
+      supplementaryFiles, // Include supplementary files in queue data
       das_value: dasValue,
       // Include any other data needed for processing
     };
@@ -210,14 +280,6 @@ const processSubmission = async (data, session) => {
       processEmSubmissionJob, // Pass the job processor function
       onJobComplete // Pass the completion callback
     );
-    
-    // queueManager.onJobStatusChange(reportId, 'processing', () => {
-    //   console.log(`[EM] Job ${reportId} started processing at ${new Date().toISOString()}`);
-    // });
-    
-    // queueManager.onJobStatusChange(reportId, 'completed', () => {
-    //   console.log(`[EM] Job ${reportId} completed at ${new Date().toISOString()}`);
-    // });
     
     // Create immediate result with report_id
     const result = {
@@ -253,6 +315,7 @@ const processEmSubmissionJob = async (job) => {
   
   // Track file paths for cleanup at the end
   const tempFilePaths = [];
+  let supplementaryZipPath = null;
   
   try {
     // Set origin as external service (Editorial Manager)
@@ -273,6 +336,42 @@ const processEmSubmissionJob = async (job) => {
       }
     }
     
+    // Create ZIP file from supplementary files if any exist
+    let supplementaryFilesZip = null;
+    if (data.supplementaryFiles && data.supplementaryFiles.length > 0) {
+      session.addLog(`Creating ZIP archive from ${data.supplementaryFiles.length} supplementary files`);
+      
+      // Create temporary ZIP file path
+      supplementaryZipPath = path.join('tmp', `supplementary_${job.request_id}.zip`);
+      
+      try {
+        // Create the ZIP file
+        await createSupplementaryFilesZip(data.supplementaryFiles, supplementaryZipPath);
+        
+        // Create a file object for the ZIP that looks like a multer file
+        supplementaryFilesZip = {
+          path: supplementaryZipPath,
+          originalname: `supplementary_file.zip`,
+          mimetype: 'application/zip',
+          size: (await fs.stat(supplementaryZipPath)).size,
+          fieldname: 'supplementary_files'
+        };
+        
+        // Add to session for S3 storage
+        session.addFile(supplementaryFilesZip, 'editorial-manager');
+        
+        // Add to cleanup list
+        tempFilePaths.push(supplementaryZipPath);
+        
+        session.addLog(`Supplementary files ZIP created: ${supplementaryFilesZip.originalname} (${supplementaryFilesZip.size} bytes)`);
+        
+      } catch (zipError) {
+        session.addLog(`Error creating supplementary files ZIP: ${zipError.message}`);
+        console.error(`[${job.request_id}] Error creating ZIP:`, zipError);
+        // Continue processing without supplementary files rather than failing
+      }
+    }
+    
     // Process with GenShare if applicable
     let genshareResult = null;
     
@@ -282,6 +381,7 @@ const processEmSubmissionJob = async (job) => {
       // Prepare data for GenShare processing
       const genshareData = {
         file: data.reviewerPdfFile,
+        supplementary_file: supplementaryFilesZip, // Include the ZIP file if created
         options: {
           article_id: data.document_id,
           document_type: data.document_type,
@@ -298,6 +398,11 @@ const processEmSubmissionJob = async (job) => {
         // Process the PDF with GenShare
         genshareResult = await genshareManager.processPDF(genshareData, session);
         session.addLog(`GenShare processing completed with status: ${genshareResult.status}`);
+        
+        if (supplementaryFilesZip) {
+          session.addLog(`GenShare processed main PDF with ${data.supplementaryFiles.length} supplementary files`);
+        }
+        
       } catch (genshareError) {
         session.addLog(`Error processing with GenShare: ${genshareError.message}`);
         
@@ -782,5 +887,6 @@ module.exports = {
   getJobStatus,
   retryJob,
   handleProcessEmSubmissionJobCompletion,
-  handleProcessEmSubmissionJobFailure
+  handleProcessEmSubmissionJobFailure,
+  createSupplementaryFilesZip
 };
