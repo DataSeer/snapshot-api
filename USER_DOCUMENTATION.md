@@ -11,7 +11,7 @@
 
 This document provides detailed information about the available endpoints in
 the [Snapshot API](https://snapshot.dataseer.ai) (hosted on [snapshot.dataseer.ai](https://snapshot.dataseer.ai)).
-The API expects to receive one PDF document for each request, along with, required parameters and an authentication
+The API expects to receive one PDF document for each request, along with optional supplementary files, required parameters and an authentication
 token, and it returns a JSON response with the computed OSI scores and other relevant information.
 
 ## Authentication
@@ -80,10 +80,11 @@ fetch('https://snapshot.dataseer.ai/', {
 
 #### Request Parameters
 
-| Field   | Type   | Description                                                                                             |
-|---------|--------|---------------------------------------------------------------------------------------------------------|
-| file    | File   | The PDF file to be processed (required)                                                                 |
-| options | String | **JSON string** of processing options (required) which is a dictionary with optional and required items |
+| Field                | Type   | Description                                                                                             |
+|----------------------|--------|---------------------------------------------------------------------------------------------------------|
+| file                 | File   | The PDF file to be processed (required)                                                                 |
+| supplementary_file  | File   | ZIP file containing supplementary materials (optional)                                                  |
+| options              | String | **JSON string** of processing options (required) which is a dictionary with optional and required items |
 
 The `options` parameter must contain one mandatory field:
 
@@ -100,9 +101,18 @@ The `options` parameter must contain one mandatory field:
 }
 ```
 
+#### Supplementary Files
+
+The `supplementary_file` parameter is optional and must be a ZIP file containing any supplementary materials related to the manuscript. When provided:
+
+- The file must be in ZIP format (`.zip` extension or `application/zip` MIME type)
+- The ZIP file will be forwarded to the GenShare service for analysis alongside the main PDF
+- Non-ZIP files will be rejected with a 400 error
+- The supplementary files are stored in AWS S3 for complete request traceability
+
 #### Example Request
 
-Using curl:
+Using curl with main PDF only:
 
 ```bash
 curl -X POST -H "Authorization: Bearer <your_token>" \
@@ -111,13 +121,27 @@ curl -X POST -H "Authorization: Bearer <your_token>" \
      https://snapshot.dataseer.ai/processPDF
 ```
 
+Using curl with PDF and supplementary files:
+
+```bash
+curl -X POST -H "Authorization: Bearer <your_token>" \
+     -F "file=@path/to/your/file.pdf" \
+     -F "supplementary_file=@path/to/supplementary.zip" \
+     -F 'options={"article_id": "KWG1234", "document_type": "article"}' \
+     https://snapshot.dataseer.ai/processPDF
+```
+
 Using JavaScript (with fetch):
 
 ```javascript
 const formData = new FormData();
-formData.append('file', fileInput.files[0]);
+formData.append('file', fileInput.files[0]); // Main PDF file
+if (supplementaryInput.files[0]) {
+    formData.append('supplementary_file', supplementaryInput.files[0]); // Optional ZIP file
+}
 formData.append('options', JSON.stringify({
-    // options data
+    "article_id": "KWG1234",
+    "document_type": "article"
 }));
 
 fetch('https://snapshot.dataseer.ai/processPDF', {
@@ -135,7 +159,7 @@ fetch('https://snapshot.dataseer.ai/processPDF', {
 #### Example Response
 
 Here is an example of JSON data returned by the API.
-The ‘response’ key is an array of objects. Each item is structured as follows:
+The 'response' key is an array of objects. Each item is structured as follows:
   - `name`: the name of the data (ex: das, non-functional_urls, cumulated_score)
   - `description`: the description of the data (ex: "Data availability statement" for "das")
   - `value`: the value of the data
@@ -190,6 +214,8 @@ Here is the list of all available fields
 | data_share_si | Check for the minimal dataset in the Supporting Information files. | Boolean | Check for the minimal dataset in the Supporting Information files. |
 | cumulated_score | Cumulated score from snapshot | Integer | Cumulated score from snapshot |
 | warrants_code_online | URL(s) and PID(s) for any online code sharing locations | Array<String> | URL(s) and PID(s) for any online code sharing locations |
+| warrants_code_online | URL(s) and PID(s) for any online code sharing locations | Array<String> | URL(s) and PID(s) for any online code sharing locations |
+| claims_no_data_shared | Claims no data shared | Boolean | Claims no data shared |
 
 ```json
 {
@@ -393,6 +419,11 @@ Here is the list of all available fields
       "name": "data_share_si",
       "description": "Check for the minimal dataset in the Supporting Information files. ",
       "value": true || false || "N/A"
+    },
+    {
+      "name": "claims_no_data_shared",
+      "description": "Claims no data shared",
+      "value": true || false || "N/A"
     }
   ]
 }
@@ -406,6 +437,7 @@ The API uses standard HTTP status codes to indicate the success or failure of re
 |--------------------------------------------------------------------------------------------------------------------------------------------------------|------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | The PDF document is not supplied                                                                                                                       | 400        | No file received. The Snapshot tools expect PDF documents supplied as 'form-data' with key 'file'. Check the documentation for more information.                                                                                                                       |
 | The file provided is not a PDF document                                                                                                                | 400        | Wrong file received. The file must be a PDF document provided as form-data with key 'file'. Check the documentation for more information.                                                                                                                              |
+| The supplementary files provided are not in ZIP format                                                                                                 | 400        | Invalid supplementary files format. Only ZIP files are supported.                                                                                                                                                                                                      |
 | The request does not contains the `options` parameter                                                                                                  | 400        | No options information received, this is a mandatory parameter that must contain at least 'article_id' and 'document_type'. Check the documentation for more information.                                                                                              |
 | The `options` parameter does not contains valid data, or its data is not properly formatted as JSON (e.g. used single quotes instead of double quotes) | 400        | The options parameter was not well formatted. This is a mandatory parameter that should follow the JSON format (e.g. double quotes instead of single quotes) and must contain at least 'article_id' and 'document_type'. Check the documentation for more information. |
 | `article_id` is not supplied                                                                                                                           | 400        | Missing article ID. It is a required information to be supplied as field 'article_id' of the parameter 'options'. Check the documentation for more information.                                                                                                        |
@@ -413,5 +445,4 @@ The API uses standard HTTP status codes to indicate the success or failure of re
 | `document_type` is not supplied                                                                                                                        | 400        | Missing document type. It is a required information to be supplied as field 'document_type' of the parameter 'options'. Check the documentation for more information.                                                                                                  |
 | `document_type` is supplied but invalid: empty, null or of a non-acceptable type                                                                       | 400        | The supplied document type is empty or null. It is a required information to be supplied as field 'document_type' of the parameter 'options'. Check the documentation for more information.                                                                            |
 | `document_type` is supplied but indicate a document that type that is not supported                                                                    | 400        | The SnapShot tool does not support this type of document. Check the documentation for more information.                                                                                                                                                                |
-| `supplementary_files` are not well formed JSON                                                                                                         | 400        | The supplementary file list cannot be parsed as a JSON object.                                                                                                                                                                                                         |
-
+| `supplementary_file` are not well formed JSON                                                                                                         | 400        | The supplementary file list cannot be parsed as a JSON object.                                                                                                                                                                                                         |

@@ -351,6 +351,16 @@ const processPDF = async (data, session) => {
     contentType: data.file.mimetype
   });
 
+  // Add supplementary files if present
+  if (data.supplementary_file) {
+    const supplementaryStream = fs.createReadStream(data.supplementary_file.path);
+    formData.append('supplementary_file', supplementaryStream, {
+      filename: data.supplementary_file.originalname,
+      contentType: data.supplementary_file.mimetype
+    });
+    session.addLog(`Added supplementary files: ${data.supplementary_file.originalname} (${data.supplementary_file.size} bytes)`);
+  }
+
   // Add options with decision_tree_path for the request only
   const requestOptions = {
     ...options,
@@ -364,13 +374,23 @@ const processPDF = async (data, session) => {
   session.addLog(`URL: ${processPDFConfig.url}`);
 
   // Store GenShare request data
-  session.setGenshareRequest({
+  const genshareRequestData = {
     ...requestOptions,
     file: {
       filename: data.file.originalname,
       contentType: data.file.mimetype
     }
-  });
+  };
+
+  // Add supplementary files info to request data if present
+  if (data.supplementary_file) {
+    genshareRequestData.supplementary_file = {
+      filename: data.supplementary_file.originalname,
+      contentType: data.supplementary_file.mimetype
+    };
+  }
+
+  session.setGenshareRequest(genshareRequestData);
 
   try {
     const response = await axios({
