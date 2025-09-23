@@ -704,8 +704,30 @@ const getReport = async (reportId) => {
           };
         }
         
-        // Extract scores from report data
-        let scores = emConfig.reportCompleteNotification.params.scores;
+        // Extract scores from report data - try to get action_required from GenShare response
+        let scores = emConfig.reportCompleteNotification.params.scores; // Default fallback
+        
+        try {
+          // Try to get action_required from job completion data
+          if (job.completion_data) {
+            const jobCompletionData = JSON.parse(job.completion_data);
+            const genshareResult = jobCompletionData.genshare_result;
+            
+            if (genshareResult && genshareResult.data && Array.isArray(genshareResult.data)) {
+              // Find the action_required field in the GenShare response
+              const actionRequiredItem = genshareResult.data.find(item => 
+                item.name === 'action_required'
+              );
+              
+              if (actionRequiredItem && actionRequiredItem.value && actionRequiredItem.value.trim() !== '') {
+                scores = actionRequiredItem.value;
+              }
+            }
+          }
+        } catch (parseError) {
+          console.error(`[${reportId}] Error parsing completion data for action_required:`, parseError);
+          // Keep the default scores value from config
+        }
         
         return {
           report_token: `token-${reportId.substring(0, 8)}`,
