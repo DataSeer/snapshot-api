@@ -18,6 +18,53 @@ const emConfig = require(config.emConfigPath);
 const genshareConfig = require(config.genshareConfigPath);
 
 /**
+ * Get graph value based on publication code
+ * @param {string} publicationCode - Publication code from submission
+ * @returns {string} - Graph value to use
+ */
+const getGraphValue = (publicationCode) => {
+  try {
+    // Check if graph configuration exists
+    if (!emConfig.graph) {
+      console.warn('[EM] No graph configuration found in emConfig');
+      return null;
+    }
+
+    // Check if there's a custom config for this publication code
+    if (emConfig.graph.custom && emConfig.graph.custom[publicationCode]) {
+      const customValue = emConfig.graph.custom[publicationCode];
+      if (emConfig.graph.available.includes(customValue)) {
+        console.log(`[EM] Using custom graph value "${customValue}" for publication code "${publicationCode}"`);
+        return customValue;
+      } else {
+        console.warn(`[EM] Custom graph value "${customValue}" is not in available values: ${emConfig.graph.available.join(', ')}`);
+      }
+    }
+
+    // Check if the default value is in available values
+    if (emConfig.graph.default) {
+      if (emConfig.graph.available && Array.isArray(emConfig.graph.available)) {
+        if (emConfig.graph.available.includes(emConfig.graph.default)) {
+          console.log(`[EM] Using default graph value "${emConfig.graph.default}" for publication code "${publicationCode}"`);
+          return emConfig.graph.default;
+        } else {
+          console.warn(`[EM] Default graph value "${emConfig.graph.default}" is not in available values: ${emConfig.graph.available.join(', ')}`);
+        }
+      } else {
+        console.log(`[EM] Using default graph value "${emConfig.graph.default}" for publication code "${publicationCode}" (no available values validation)`);
+        return emConfig.graph.default;
+      }
+    }
+
+    console.warn(`[EM] No valid graph configuration found for publication code "${publicationCode}"`);
+    return null;
+  } catch (error) {
+    console.error(`[EM] Error getting graph value for publication code "${publicationCode}":`, error);
+    return null;
+  }
+};
+
+/**
  * Create a ZIP file from supplementary files
  * @param {Array} supplementaryFiles - Array of file objects to zip
  * @param {string} outputPath - Path where to create the ZIP file
@@ -243,6 +290,12 @@ const processSubmission = async (data, session) => {
       if (dasValue) break;
     }
     
+    // Get graph value based on publication code
+    const graphValue = getGraphValue(publication_code);
+    if (graphValue) {
+      session.addLog(`Graph value for publication code "${publication_code}": "${graphValue}"`);
+    }
+    
     // Create queue data for background processing
     const queueData = {
       service_id,
@@ -255,6 +308,7 @@ const processSubmission = async (data, session) => {
       reviewerPdfFile,
       supplementaryFiles, // Include supplementary files in queue data
       das_value: dasValue,
+      graph_value: graphValue, // Include graph value in queue data
       // Include any other data needed for processing
     };
     
@@ -378,17 +432,28 @@ const processEmSubmissionJob = async (job) => {
     if (data.reviewerPdfFile) {
       session.addLog('Processing reviewer PDF with GenShare in background');
       
+      // Prepare options for GenShare processing
+      const genshareOptions = {
+        article_id: data.document_id,
+        document_type: data.document_type,
+        article_title: data.article_title,
+        editorial_policy: data.publication_code, // "publication_code" (from EM) is the "editorial_policy" parameter (in Snapshot) used for the DAS exemption process
+        das: data.das_value,
+      };
+      
+      // Add graph value to options if available
+      if (data.graph_value) {
+        genshareOptions.graph = data.graph_value;
+        session.addLog(`Including graph value in GenShare options: "${data.graph_value}"`);
+      } else {
+        session.addLog(`No “graph” value found, so GenShare will use the default value.`);
+      }
+      
       // Prepare data for GenShare processing
       const genshareData = {
         file: data.reviewerPdfFile,
         supplementary_file: supplementaryFilesZip, // Include the ZIP file if created
-        options: {
-          article_id: data.document_id,
-          document_type: data.document_type,
-          article_title: data.article_title,
-          editorial_policy: data.publication_code, // "publication_code" (from EM) is the "editorial_policy" parameter (in Snapshot) used for the DAS exemption process
-          das: data.das_value,
-        },
+        options: genshareOptions,
         user: {
           id: data.user_id
         }
@@ -910,5 +975,6 @@ module.exports = {
   retryJob,
   handleProcessEmSubmissionJobCompletion,
   handleProcessEmSubmissionJobFailure,
-  createSupplementaryFilesZip
+  createSupplementaryFilesZip,
+  getGraphValue
 };
