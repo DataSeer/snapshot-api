@@ -15,5 +15,12 @@
     "data access",
     "data sharing",
     "availability of data and materials"
-  ]
+  ],
+  "graph": {
+    "available": ["PLOS", "TFOD", "SURR"],
+    "default": "SURR",
+    "custom": {
+      "dataseer_test": "SURR"
+    }
+  }
 }
