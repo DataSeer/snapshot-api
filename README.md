@@ -39,6 +39,7 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - **Snapshot Mails integration** for email-based PDF submissions
 - **Job status tracking and retry mechanism** with exponential backoff
 - **Event-driven job completion callbacks** for reliable external notifications
+- **Configurable graph parameters** for publication-specific GenShare processing
 - Comprehensive logging system
 - SQLite database for article-request mapping and job queue management
 - Endpoints for report retrieval by article ID or request ID
@@ -324,11 +325,82 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 {
   "reportCompleteNotification": {
     "disabled": false,
-    "url": "https://editorial-manager-service/api/{publication_code}/report-complete"
+    "url": "https://editorial-manager-service/api/{publication_code}/report-complete",
+    "params": {
+      "scores": "",
+      "flag": true
+    }
   },
-  "das_triggers": ["data availability", "data sharing", "data access"]
+  "das_triggers": [
+    "data availability",
+    "data and code availability statement", 
+    "data availability statement",
+    "code availability",
+    "data access",
+    "data sharing",
+    "availability of data and materials"
+  ],
+  "graph": {
+    "available": ["PLOS", "TFOD", "SURR"],
+    "default": "SURR",
+    "custom": {
+      "dataseer_test": "SURR",
+      "journal_xyz": "PLOS",
+      "nature_communications": "TFOD"
+    }
+  }
 }
 ```
+
+### Graph Configuration
+
+The Editorial Manager configuration now supports publication-specific graph parameters that are sent to GenShare for processing:
+
+#### Graph Configuration Properties:
+
+- **`available`** (array): List of valid graph values that can be used
+- **`default`** (string): Default graph value used when no custom mapping exists for a publication code
+- **`custom`** (object): Publication code-specific mappings where:
+  - **Key**: Publication code from Editorial Manager submission
+  - **Value**: Graph value to use for that publication
+
+#### How Graph Selection Works:
+
+1. **Custom Mapping Check**: System first checks if the submission's `publication_code` has a custom mapping in the `graph.custom` object
+2. **Default Fallback**: If no custom mapping exists (or is not avaialble), the system uses the value from `graph.default`  
+3. **Validation**: The selected graph value is validated against the `graph.available` array
+4. **GenShare Integration**: The graph value is included in the GenShare request options as `"graph": "<selected_value>"`
+
+#### Example Graph Configuration:
+
+```json
+{
+  "graph": {
+    "available": ["PLOS", "TFOD", "SURR"],
+    "default": "SURR",
+    "custom": {
+      "dataseer_test": "SURR",
+      "plos_one": "PLOS", 
+      "nature_comms": "TFOD",
+      "science_journal": "PLOS"
+    }
+  }
+}
+```
+
+With this configuration:
+- Submissions from `dataseer_test` → uses `"SURR"`
+- Submissions from `plos_one` → uses `"PLOS"`
+- Submissions from `nature_comms` → uses `"TFOD"`
+- Submissions from any other publication code → uses default `"SURR"`
+
+#### Logging and Debugging:
+
+The system provides comprehensive logging for graph configuration:
+- Logs which graph value is selected for each publication code
+- Warns about invalid configurations or missing values
+- Tracks when graph values are sent to GenShare
+- Handles configuration errors gracefully with fallback behavior
 
 10. **Google Sheets Credentials:**
 ```json
@@ -692,6 +764,7 @@ curl -G http://localhost:3000/snapshot-mails/jobs/123456789012345678901234567890
 #     "genshare_status": "success"
 #   }
 # }
+```
 
 ### Snapshot Mails Configuration
 
@@ -858,6 +931,7 @@ npm run analyze-queue-logs
 snapshot-api/
 ├── conf/                  # Configuration files
 │   ├── queueManager.json  # Queue system configuration
+│   ├── em.json           # Editorial Manager config (includes graph settings)
 │   └── ...               # Other config files
 ├── log/                   # Log files
 ├── output/                # Generated files (DS logs, reports, etc.)
@@ -931,6 +1005,16 @@ The queue system runs automatically when the server starts. Key development cons
 - Failed jobs are automatically retried with exponential backoff
 - Memory cleanup prevents resource leaks
 
+### Graph Configuration Development
+
+When working with the graph configuration feature:
+
+- Graph values are determined at submission time based on publication code
+- Custom mappings take precedence over default values
+- All selected graph values are validated against the available array
+- Comprehensive logging helps debug configuration issues
+- The graph value is passed through the entire processing pipeline
+
 ## Deployment
 
 ### Docker Deployment
@@ -967,6 +1051,16 @@ PORT=3000
 - Consider job cleanup policies for long-running deployments
 - Monitor queue performance through logs and status endpoints
 
+### Graph Configuration Deployment
+
+For production deployments with graph configuration:
+
+- Ensure `conf/em.json` contains proper graph configuration
+- Validate that all publication codes have appropriate mappings
+- Test graph value selection with sample publication codes
+- Monitor logs for graph configuration warnings or errors
+- Consider creating backup configurations for critical publications
+
 ## Security
 
 - JWT-based authentication with permanent and temporary tokens
@@ -980,6 +1074,7 @@ PORT=3000
 - **Job isolation**: Each job runs independently with proper error handling
 - **Database transaction safety**: Queue operations use proper database transactions
 - **Email authorization**: Only authorized email addresses can submit via snapshot-mails
+- **Graph configuration validation**: Graph values are validated against allowed values
 
 ## Editorial Manager Integration
 
@@ -991,15 +1086,26 @@ The API includes special endpoints for integration with Editorial Manager with f
 4. **Report Generation**: Creates and provides access to reports when processing completes
 5. **Retry Mechanism**: Allows retrying failed jobs
 6. **Cancellation**: Allows canceling in-progress submissions
+7. **Graph Configuration**: Automatic graph parameter selection based on publication code
 
 ### Editorial Manager Workflow
 
 1. Editorial Manager authenticates with the API to get a temporary token
 2. EM submits a document with metadata for processing (gets immediate response with report_id)
-3. The API processes the document asynchronously in the background
-4. EM can check job status using the report_id
-5. When processing completes, EM receives a notification and can retrieve the report
-6. EM can retry failed jobs or cancel in-progress submissions
+3. The API automatically selects the appropriate graph value based on publication code
+4. The API processes the document asynchronously in the background with the selected graph parameter
+5. EM can check job status using the report_id
+6. When processing completes, EM receives a notification and can retrieve the report
+7. EM can retry failed jobs or cancel in-progress submissions
+
+### Graph Configuration Benefits for Editorial Manager
+
+- **Publication-Specific Processing**: Different journals can use different graph configurations
+- **Centralized Management**: Graph configurations are managed in the API configuration
+- **Automatic Selection**: No need for Editorial Manager to specify graph parameters
+- **Fallback Behavior**: Default graph values ensure processing continues even with unknown publications
+- **Configuration Validation**: Invalid graph values are caught and logged
+- **Audit Trail**: All graph selections are logged for troubleshooting
 
 ### Asynchronous Benefits
 
@@ -1080,3 +1186,11 @@ The snapshot-mails integration uses:
 - **axios**: HTTP client for notification callbacks
 - **Database utilities**: Mail submission tracking and management
 - **Queue system**: Asynchronous job processing for email submissions
+
+### Graph Configuration Dependencies
+
+The graph configuration feature uses:
+- **Editorial Manager configuration**: Graph settings stored in `conf/em.json`
+- **Validation utilities**: Built-in array validation for allowed graph values
+- **Logging system**: Comprehensive logging for graph selection and validation
+- **GenShare integration**: Graph values passed to GenShare via options parameter
