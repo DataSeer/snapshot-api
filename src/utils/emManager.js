@@ -20,7 +20,7 @@ const genshareConfig = require(config.genshareConfigPath);
 /**
  * Get graph value based on publication code
  * @param {string} publicationCode - Publication code from submission
- * @returns {string} - Graph value to use
+ * @returns {string|null} - Graph value to use or null if no configuration
  */
 const getGraphValue = (publicationCode) => {
   try {
@@ -30,34 +30,48 @@ const getGraphValue = (publicationCode) => {
       return null;
     }
 
-    // Check if there's a custom config for this publication code
+    // 1. Check if there are available values - if not, return null
+    if (!emConfig.graph.available || !Array.isArray(emConfig.graph.available) || emConfig.graph.available.length === 0) {
+      console.warn('[EM] No available graph values found in configuration');
+      return null;
+    }
+
+    // 2. Determine the default value
+    let defaultValue;
+    if (!emConfig.graph.default) {
+      // If no default is set, use the first available value
+      defaultValue = emConfig.graph.available[0];
+      console.log(`[EM] No default graph value set, using first available value: "${defaultValue}"`);
+    } else {
+      // Check if the configured default value is in available values
+      if (emConfig.graph.available.includes(emConfig.graph.default)) {
+        defaultValue = emConfig.graph.default;
+        console.log(`[EM] Using configured default graph value: "${defaultValue}"`);
+      } else {
+        // Default value is not available, use first available value
+        defaultValue = emConfig.graph.available[0];
+        console.warn(`[EM] Configured default graph value "${emConfig.graph.default}" not in available values [${emConfig.graph.available.join(', ')}], using first available: "${defaultValue}"`);
+      }
+    }
+
+    // 3. Check for custom configuration for this publication code
     if (emConfig.graph.custom && emConfig.graph.custom[publicationCode]) {
       const customValue = emConfig.graph.custom[publicationCode];
+      
+      // Validate that the custom value is in available values
       if (emConfig.graph.available.includes(customValue)) {
         console.log(`[EM] Using custom graph value "${customValue}" for publication code "${publicationCode}"`);
         return customValue;
       } else {
-        console.warn(`[EM] Custom graph value "${customValue}" is not in available values: ${emConfig.graph.available.join(', ')}`);
+        console.warn(`[EM] Custom graph value "${customValue}" for publication code "${publicationCode}" not in available values [${emConfig.graph.available.join(', ')}], using default: "${defaultValue}"`);
+        return defaultValue;
       }
     }
 
-    // Check if the default value is in available values
-    if (emConfig.graph.default) {
-      if (emConfig.graph.available && Array.isArray(emConfig.graph.available)) {
-        if (emConfig.graph.available.includes(emConfig.graph.default)) {
-          console.log(`[EM] Using default graph value "${emConfig.graph.default}" for publication code "${publicationCode}"`);
-          return emConfig.graph.default;
-        } else {
-          console.warn(`[EM] Default graph value "${emConfig.graph.default}" is not in available values: ${emConfig.graph.available.join(', ')}`);
-        }
-      } else {
-        console.log(`[EM] Using default graph value "${emConfig.graph.default}" for publication code "${publicationCode}" (no available values validation)`);
-        return emConfig.graph.default;
-      }
-    }
+    // No custom configuration found, use default value
+    console.log(`[EM] No custom graph configuration for publication code "${publicationCode}", using default: "${defaultValue}"`);
+    return defaultValue;
 
-    console.warn(`[EM] No valid graph configuration found for publication code "${publicationCode}"`);
-    return null;
   } catch (error) {
     console.error(`[EM] Error getting graph value for publication code "${publicationCode}":`, error);
     return null;
@@ -445,8 +459,6 @@ const processEmSubmissionJob = async (job) => {
       if (data.graph_value) {
         genshareOptions.graph = data.graph_value;
         session.addLog(`Including graph value in GenShare options: "${data.graph_value}"`);
-      } else {
-        session.addLog(`No “graph” value found, so GenShare will use the default value.`);
       }
       
       // Prepare data for GenShare processing
