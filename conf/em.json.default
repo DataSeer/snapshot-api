@@ -22,5 +22,13 @@
     "custom": {
       "dataseer_test": "SURR"
     }
+  },
+  "report": {
+    "available": ["PLOS (v0.1)", "PLOS (v0.2)", "TFOD (v0.1)", "TFOD (v0.2)", "Generic (v0.1)"],
+    "default": "TFOD (v0.2)",
+    "custom": {
+      "dataseer_test": "TFOD (v0.2)",
+      "pwattest": "PLOS (v0.2)"
+    }
   }
 }

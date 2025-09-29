@@ -18,6 +18,66 @@ const emConfig = require(config.emConfigPath);
 const genshareConfig = require(config.genshareConfigPath);
 
 /**
+ * Get report value based on publication code
+ * @param {string} publicationCode - Publication code from submission
+ * @returns {string|null} - Report value to use or null if no configuration
+ */
+const getReportValue = (publicationCode) => {
+  try {
+    // Check if report configuration exists
+    if (!emConfig.report) {
+      console.warn('[EM] No report configuration found in emConfig');
+      return null;
+    }
+
+    // 1. Check if there are available values - if not, return null
+    if (!emConfig.report.available || !Array.isArray(emConfig.report.available) || emConfig.report.available.length === 0) {
+      console.warn('[EM] No available report values found in configuration');
+      return null;
+    }
+
+    // 2. Determine the default value
+    let defaultValue;
+    if (!emConfig.report.default) {
+      // If no default is set, use the first available value
+      defaultValue = emConfig.report.available[0];
+      console.log(`[EM] No default report value set, using first available value: "${defaultValue}"`);
+    } else {
+      // Check if the configured default value is in available values
+      if (emConfig.report.available.includes(emConfig.report.default)) {
+        defaultValue = emConfig.report.default;
+        console.log(`[EM] Using configured default report value: "${defaultValue}"`);
+      } else {
+        // Default value is not available, use first available value
+        defaultValue = emConfig.report.available[0];
+        console.warn(`[EM] Configured default report value "${emConfig.report.default}" not in available values [${emConfig.report.available.join(', ')}], using first available: "${defaultValue}"`);
+      }
+    }
+
+    // 3. Check for custom configuration for this publication code
+    if (emConfig.report.custom && emConfig.report.custom[publicationCode]) {
+      const customValue = emConfig.report.custom[publicationCode];
+      
+      // Validate that the custom value is in available values
+      if (emConfig.report.available.includes(customValue)) {
+        console.log(`[EM] Using custom report value "${customValue}" for publication code "${publicationCode}"`);
+        return customValue;
+      } else {
+        console.warn(`[EM] Custom report value "${customValue}" for publication code "${publicationCode}" not in available values [${emConfig.report.available.join(', ')}], using default: "${defaultValue}"`);
+        return defaultValue;
+      }
+    }
+
+    // No custom configuration found, use default value
+    console.log(`[EM] No custom report configuration for publication code "${publicationCode}", using default: "${defaultValue}"`);
+    return defaultValue;
+
+  } catch (error) {
+    console.error(`[EM] Error getting report value for publication code "${publicationCode}":`, error);
+    return null;
+  }
+};
+/**
  * Get graph value based on publication code
  * @param {string} publicationCode - Publication code from submission
  * @returns {string|null} - Graph value to use or null if no configuration
@@ -310,6 +370,12 @@ const processSubmission = async (data, session) => {
       session.addLog(`Graph value for publication code "${publication_code}": "${graphValue}"`);
     }
     
+    // Get report value based on publication code
+    const reportValue = getReportValue(publication_code);
+    if (reportValue) {
+      session.addLog(`Graph value for publication code "${publication_code}": "${reportValue}"`);
+    }
+    
     // Create queue data for background processing
     const queueData = {
       service_id,
@@ -323,6 +389,7 @@ const processSubmission = async (data, session) => {
       supplementaryFiles, // Include supplementary files in queue data
       das_value: dasValue,
       graph_value: graphValue, // Include graph value in queue data
+      report: reportValue, // Include report value in queue data
       // Include any other data needed for processing
     };
     
@@ -459,6 +526,12 @@ const processEmSubmissionJob = async (job) => {
       if (data.graph_value) {
         genshareOptions.graph = data.graph_value;
         session.addLog(`Including graph value in GenShare options: "${data.graph_value}"`);
+      }
+      
+      // Add report value to options if available
+      if (data.report) {
+        genshareOptions.report = data.report;
+        session.addLog(`Including report value in GenShare options: "${data.report}"`);
       }
       
       // Prepare data for GenShare processing
