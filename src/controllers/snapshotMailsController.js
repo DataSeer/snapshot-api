@@ -62,6 +62,12 @@ module.exports.postSubmissions = async (req, res) => {
       });
     }
     
+    // Extract user parameters (if provided)
+    const userParameters = submissionData.user_parameters || {};
+    
+    // Log user parameters for debugging
+    session.addLog(`User parameters received: ${JSON.stringify(userParameters)}`);
+    
     // Prepare data for snapshotMailsManager
     const mailSubmissionData = {
       sender_email: submissionData.sender_email,
@@ -70,7 +76,8 @@ module.exports.postSubmissions = async (req, res) => {
       filename: submissionData.filename || req.files[0].originalname,
       original_subject: submissionData.original_subject || 'Email Submission',
       user_id: req.user.id,
-      files: req.files || []
+      files: req.files || [],
+      user_parameters: userParameters // Pass user parameters to manager
     };
 
     // Process the mail submission
