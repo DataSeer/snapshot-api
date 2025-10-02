@@ -94,7 +94,7 @@ const handleProcessMailSubmissionJobFailure = async (requestId, error) => {
  */
 const processSubmission = async (data, session) => {
   try {
-    const { sender_email, sender_name, keywords, filename, original_subject, user_id, files } = data;
+    const { sender_email, sender_name, keywords, filename, original_subject, user_id, files, user_parameters } = data;
     
     if (!sender_email) {
       throw new Error('Missing required field: sender_email');
@@ -115,6 +115,7 @@ const processSubmission = async (data, session) => {
     session.addLog(`Sender Name: ${sender_name}`);
     session.addLog(`Original Subject: ${original_subject}`);
     session.addLog(`Keywords: ${JSON.stringify(keywords)}`);
+    session.addLog(`User Parameters: ${JSON.stringify(user_parameters || {})}`);
     
     // Find the PDF file for background processing
     let pdfFile = null;
@@ -138,7 +139,7 @@ const processSubmission = async (data, session) => {
       user_id,
       files,
       pdfFile,
-      // Include any other data needed for processing
+      user_parameters: user_parameters || {} // Include user parameters in queue data
     };
     
     // Define completion callback
@@ -206,6 +207,10 @@ const processMailSubmissionJob = async (job) => {
     // Log that we're starting background processing
     session.addLog('Starting background processing of snapshot-mails submission');
     
+    // Log user parameters
+    const userParameters = data.user_parameters || {};
+    session.addLog(`User parameters in job: ${JSON.stringify(userParameters)}`);
+    
     // Add files to the session if they exist - DO THIS EARLY
     if (data.files && data.files.length > 0) {
       for (const file of data.files) {
@@ -224,17 +229,25 @@ const processMailSubmissionJob = async (job) => {
     if (data.pdfFile) {
       session.addLog('Processing PDF with GenShare in background');
       
+      // Merge keywords with user parameters for GenShare options
+      // User parameters take precedence over keywords
+      const genshareOptions = {
+        // Use email subject as article_id if not provided in keywords
+        article_id: data.keywords.article_id || `email_${data.sender_email.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`,
+        document_type: data.keywords.article_type || data.keywords.document_type || 'research',
+        article_title: data.keywords.title || data.original_subject || 'Email Submission',
+        // Add keywords
+        ...data.keywords,
+        // Add user-specific parameters (these override keywords if there are conflicts)
+        ...userParameters
+      };
+      
+      session.addLog(`GenShare options: ${JSON.stringify(genshareOptions)}`);
+      
       // Prepare data for GenShare processing
       const genshareData = {
         file: data.pdfFile,
-        options: {
-          // Use email subject as article_id if not provided in keywords
-          article_id: data.keywords.article_id || `email_${data.sender_email.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`,
-          document_type: data.keywords.article_type || data.keywords.document_type || 'research',
-          article_title: data.keywords.title || data.original_subject || 'Email Submission',
-          // Add any other keywords as options
-          ...data.keywords
-        },
+        options: genshareOptions,
         user: {
           id: data.user_id
         }
