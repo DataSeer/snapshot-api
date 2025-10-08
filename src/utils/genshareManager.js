@@ -156,7 +156,7 @@ const cleanSnapshotFieldsName = (responseData) => {
  * @param {Object} options - Options containing session, error status, and request
  * @returns {Promise<void>}
  */
-const appendToSummary = async ({ session, errorStatus, data, genshareVersion, reportURL }) => {
+const appendToSummary = async ({ session, errorStatus, data, genshareVersion, reportURL, graphValue, reportValue }) => {
   try {
     // Safely get the filename, defaulting to "No file" if not available
     const filename = data.file?.originalname || "N/A";
@@ -182,7 +182,9 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersion, re
       convertToGoogleSheetsDuration(session.getDuration()),  // Session duration
       data.user.id,                                          // User ID
       filename,                                              // PDF filename or "No file"
-      reportURL                                              // Report URL
+      reportValue || "",                                      // Report value from GenShare request,
+      reportURL,                                             // Report URL
+      graphValue || ""                                       // Graph value from GenShare request
     ].concat(response).concat(path), genshareVersion);
     
     session.addLog('Logged to Google Sheets successfully');
@@ -320,7 +322,9 @@ const processPDF = async (data, session) => {
     // Use the user's defaultVersion (which can be empty)
     activeReportVersion = user.reports?.defaultVersion || "";
   }
-  
+
+  let activeGenShareGraphValue = data.options?.graph || "";
+
   // Input validation
   if (!data.file) {
     errorStatus = 'Input error: Required "file" missing';
@@ -424,6 +428,22 @@ const processPDF = async (data, session) => {
       }
     }
 
+    // Log the graph value returned
+    let responseGenShareGraphValue = response?.data?.graph_policy_traversal_data?.graph_type || "";
+
+    if (!responseGenShareGraphValue) {
+      session.addLog(`GenShare graph value returned not found`);
+    } else {
+      session.addLog(`GenShare graph value returned found: ${responseGenShareGraphValue}`);
+      if (activeGenShareGraphValue.indexOf(responseGenShareGraphValue) > -1) {
+        session.addLog(`GenShare graph values match: (${activeGenShareGraphValue} - ${responseGenShareGraphValue})`);
+      } else {
+        session.addLog(`GenShare graph values don't match (${activeGenShareGraphValue} - ${responseGenShareGraphValue})`);
+      }
+    }
+
+    activeGenShareGraphValue = responseGenShareGraphValue;
+
     session.addLog(`Received response from GenShare service with status: ${response.status}`);
 
     // Store complete response in the session
@@ -480,6 +500,37 @@ const processPDF = async (data, session) => {
       }
     }
 
+    // Validate action_required field
+    const actionRequiredItem = response.data.response.find(item => item.name === "action_required");
+    if (actionRequiredItem && actionRequiredItem.value === "") {
+      const validationError = new Error('Snapshot response contains invalid action_required value (empty string)');
+      session.addLog('Error: action_required value is empty in Snapshot response');
+      errorStatus = 'Validation error: action_required is empty';
+      
+      // Log to summary sheet with error status
+      try {
+        await appendToSummary({
+          session,
+          errorStatus,
+          data,
+          genshareVersion: activeGenShareVersion,
+          reportURL,
+          graphValue: activeGenShareGraphValue,
+          reportVersion: activeReportVersion
+        });
+      } catch (summaryError) {
+        session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
+        console.error(`[${session.requestId}] Error logging validation error to summary:`, summaryError);
+      }
+      
+      // Throw error with 500 status
+      validationError.status = 500;
+      throw validationError;
+    }
+
+    // Session data preparation is complete
+    session.addLog('Response processing completed');
+
     // Session data preparation is complete
     session.addLog('Response processing completed');
 
@@ -504,7 +555,9 @@ const processPDF = async (data, session) => {
         errorStatus,
         data,
         genshareVersion: activeGenShareVersion,
-        reportURL
+        reportURL,
+        graphValue: activeGenShareGraphValue,
+        reportVersion: activeReportVersion
       });
     } catch (summaryError) {
       session.addLog(`Error logging to summary: ${summaryError.message}`);
@@ -540,7 +593,9 @@ const processPDF = async (data, session) => {
         errorStatus,
         data,
         genshareVersion: activeGenShareVersion || genshareConfig.defaultVersion,
-        reportURL: ""
+        reportURL: "",
+        graphValue: activeGenShareGraphValue,
+        reportVersion: activeReportVersion
       });
     } catch (summaryError) {
       session.addLog(`Error logging error to summary: ${summaryError.message}`);
