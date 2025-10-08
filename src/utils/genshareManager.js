@@ -156,7 +156,7 @@ const cleanSnapshotFieldsName = (responseData) => {
  * @param {Object} options - Options containing session, error status, and request
  * @returns {Promise<void>}
  */
-const appendToSummary = async ({ session, errorStatus, data, genshareVersion, reportURL, graphValue, reportValue }) => {
+const appendToSummary = async ({ session, errorStatus, data, genshareVersion, reportURL, graphValue, reportVersion }) => {
   try {
     // Safely get the filename, defaulting to "No file" if not available
     const filename = data.file?.originalname || "N/A";
@@ -182,7 +182,7 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersion, re
       convertToGoogleSheetsDuration(session.getDuration()),  // Session duration
       data.user.id,                                          // User ID
       filename,                                              // PDF filename or "No file"
-      reportValue || "",                                      // Report value from GenShare request,
+      reportVersion || "",                                   // Report value from GenShare request,
       reportURL,                                             // Report URL
       graphValue || ""                                       // Graph value from GenShare request
     ].concat(response).concat(path), genshareVersion);
