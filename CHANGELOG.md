@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file. See [standa
 * add refresh ds logs script ([ef3ec41](https://github.com/DataSeer/snapshot-api/commits/ef3ec41a7368b1e6fc353da85b0474256e1cdc5d))
 * update Docker part ([46912a4](https://github.com/DataSeer/snapshot-api/commits/46912a4eaa7023ff8d747acc4bb245430fe1a536))
 
+
 ## [3.0.0](https://github.com/DataSeer/snapshot-api/compare/v2.0.1...v3.0.0) (2025-06-23)
 
 
