@@ -2,58 +2,6 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-## [3.2.0](https://github.com/DataSeer/snapshot-api/compare/v2.0.1...v3.2.0) (2025-10-09)
-
-
-### Features
-
-* add 'fake' EM endpoints ([90d5e0c](https://github.com/DataSeer/snapshot-api/commits/90d5e0c8f065736a74ded8686f03ca9e353c2adb))
-* add 'graph' value management for EM ([10c204a](https://github.com/DataSeer/snapshot-api/commits/10c204a0378a6fee01ff2aff2a07a81ad46a3cdd))
-* add 'Report' feature ([f85b81d](https://github.com/DataSeer/snapshot-api/commits/f85b81dc8a613aba7d8f0fba6a8c37adfff67461))
-* add authentication API route to get temporary JWT (for 'Editorial Manager') ([99d8e55](https://github.com/DataSeer/snapshot-api/commits/99d8e550888b4e848b2501c0fd40e2c0f51ac738))
-* add multiple GenShare versions management ([cd3d202](https://github.com/DataSeer/snapshot-api/commits/cd3d202e9a9ba4cc0dee431fe9a6a31e09938fbf))
-* add refresh ds logs script ([ef3ec41](https://github.com/DataSeer/snapshot-api/commits/ef3ec41a7368b1e6fc353da85b0474256e1cdc5d))
-* add skip options for 'reportCompleteNotification' process ([155bc79](https://github.com/DataSeer/snapshot-api/commits/155bc7948872c2c67bb24519b003e155915543d7))
-* clean snapshot response fields name returned to the client ([003ec9e](https://github.com/DataSeer/snapshot-api/commits/003ec9e95091d76af9178048c59209d4bf22cca0))
-* fix Report Version logged in DS Logs ([11e0b98](https://github.com/DataSeer/snapshot-api/commits/11e0b98b97e235a1c9f6b059aa66fc26584dbc13))
-* implement snapshot-reports service ([5e6b1b0](https://github.com/DataSeer/snapshot-api/commits/5e6b1b038e4850d811c9b6d5e3232bcc2b01550a))
-* improve EM integration ([e814957](https://github.com/DataSeer/snapshot-api/commits/e814957ee804c58df2dfa10bac97572ba1b20a71))
-* improve graph value management ([62fe0f7](https://github.com/DataSeer/snapshot-api/commits/62fe0f72b82703a9eccc28dbc42356f319766462))
-* improve logs about GenShare versions matching (requested vs returned) ([8436c05](https://github.com/DataSeer/snapshot-api/commits/8436c054d11197b53060e495b68e4646eb2a30a5))
-* improve Snapshot Reponse management ([8c5b90e](https://github.com/DataSeer/snapshot-api/commits/8c5b90e38977052dac42a22fd6479ce72d5c25a9))
-* manage all EM endpoints ([85c7156](https://github.com/DataSeer/snapshot-api/commits/85c715626d8015b751294b7ef479e58bce0af5be))
-* manage custom options from snapshot-mails ([784608c](https://github.com/DataSeer/snapshot-api/commits/784608ca507e8465b2843c262c0f34e2145b7558))
-* manage graph policy traversal llm in genshare (and in the EM part) ([57277b9](https://github.com/DataSeer/snapshot-api/commits/57277b9b42868c7707e65b3ccb664961cbe0d1fc))
-* manage report kind based on journal_code when request come from EM ([fc71a73](https://github.com/DataSeer/snapshot-api/commits/fc71a7394df62f9c6ff3709c328f95b38c1e36db))
-* manage snapshot-mails ([2450477](https://github.com/DataSeer/snapshot-api/commits/24504773318f7ebf1aaa68f2980e3565a1f3b844))
-* remove unused key in the EM conf ([7cfe210](https://github.com/DataSeer/snapshot-api/commits/7cfe21090c6edd811ec64bed0d5b3a1868d48865))
-* set a default 'scores' in the EM submissions process ([a16800e](https://github.com/DataSeer/snapshot-api/commits/a16800ecc1e622126946bd8239b461806b227846))
-* update Docker part ([46912a4](https://github.com/DataSeer/snapshot-api/commits/46912a4eaa7023ff8d747acc4bb245430fe1a536))
-* update EM scores with the 'action_required' value if available ([165a213](https://github.com/DataSeer/snapshot-api/commits/165a213aa00a0146090878d15243ea4760e02db1))
-* upgrade S3 npm package version ([1fb820d](https://github.com/DataSeer/snapshot-api/commits/1fb820d9f1e6a21f682956f7458ffd78fcecbcd0))
-* use emConfig to store scores & flag values ([fd169b7](https://github.com/DataSeer/snapshot-api/commits/fd169b719e402269efe6eef2f60ebe10d0fbaac1))
-
-
-### Bug Fixes
-
-* fix custom_questions EM integration ([19eab0f](https://github.com/DataSeer/snapshot-api/commits/19eab0f20912ae1cafd0fa7223c339e9403cc60d))
-* fix manage_genshare_versions script ([46c47d1](https://github.com/DataSeer/snapshot-api/commits/46c47d100820a0c7a746495673aa47420ffe3d4c))
-* fix package-lock.json file ([4738514](https://github.com/DataSeer/snapshot-api/commits/4738514db031f8a72ebb16506ed845e89cdbd76c))
-* fix the 'report complete' process ([c272c1e](https://github.com/DataSeer/snapshot-api/commits/c272c1e58502da67aad47d299de9249ad001ac9b))
-* increase multer version used ([df76b60](https://github.com/DataSeer/snapshot-api/commits/df76b608bf5253335023d65c811c7807bca32391))
-* manage multipart form data requests on EM route /reportLink ([28ff550](https://github.com/DataSeer/snapshot-api/commits/28ff5500259028c44da577c7640feb2f62c9dd3f))
-* remove PDF mimetype check before genshare process ([2c08e73](https://github.com/DataSeer/snapshot-api/commits/2c08e734dcd5919c6b1de9df6c74f9434ea1e93d))
-* remove wrong file ([5940faa](https://github.com/DataSeer/snapshot-api/commits/5940faa6e998ef7eae7e729313fb00426eb3c174))
-* upgrade axios vulnerability ([c5b6f6e](https://github.com/DataSeer/snapshot-api/commits/c5b6f6e65ee689ce5551ff82fa359babdfaf9cf3))
-
-
-### Documentation
-
-* update documentation ([0a698a6](https://github.com/DataSeer/snapshot-api/commits/0a698a69df706ae64abf342b4e6cf788d2d90a5b))
-* update README documentation ([3a869cf](https://github.com/DataSeer/snapshot-api/commits/3a869cf5943a54ca77ede2ade2f75c0e484570c2))
-* update snapshot user documentation ([7cd6a97](https://github.com/DataSeer/snapshot-api/commits/7cd6a9730a5f4135e08f3b9b89ed2dd71b75eac0))
-* update snapshot user documentation ([803fe4e](https://github.com/DataSeer/snapshot-api/commits/803fe4e0cd293faa68ae89e16b0f7f9c9f02eeba))
-
 ### [2.0.1](https://github.com/DataSeer/snapshot-api/compare/v2.0.0...v2.0.1) (2025-02-13)
 
 
