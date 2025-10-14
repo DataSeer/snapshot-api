@@ -311,7 +311,9 @@ const processMailSubmissionJob = async (job) => {
     // NOTE: Notification will be sent in the completion callback
     // after the job is marked as completed in the database
     
-    // Clean up temporary files ONLY AFTER processing is complete
+    // Clean up temporary files ONLY AFTER FINAL processing is complete (no more retries)
+    // Success means job completed - safe to delete files
+    session.addLog('Job completed successfully - cleaning up temporary files');
     if (tempFilePaths.length > 0) {
       for (const filePath of tempFilePaths) {
         try {
@@ -365,13 +367,25 @@ const processMailSubmissionJob = async (job) => {
       console.error(`[${job.request_id}] Error in error handling:`, saveError);
     }
     
-    // Clean up temporary files even in case of error, but only after all processing is done
-    if (tempFilePaths.length > 0) {
-      for (const filePath of tempFilePaths) {
-        try {
-          await fs.unlink(filePath);
-        } catch (unlinkError) {
-          console.error(`[${job.request_id}] Error deleting temporary file:`, unlinkError);
+    // Check if job will be retried before cleaning up files
+    // Only delete files if this is the FINAL failure (no more retries)
+    const willRetry = job.retries < job.max_retries;
+    
+    if (willRetry) {
+      session.addLog(`Job will be retried (${job.retries + 1}/${job.max_retries}) - keeping temporary files for retry`);
+      console.log(`[${job.request_id}] Keeping temporary files for retry attempt ${job.retries + 1}/${job.max_retries}`);
+    } else {
+      session.addLog('Job failed permanently - cleaning up temporary files');
+      console.log(`[${job.request_id}] Job failed permanently - cleaning up temporary files`);
+      
+      // Clean up temporary files only after final failure
+      if (tempFilePaths.length > 0) {
+        for (const filePath of tempFilePaths) {
+          try {
+            await fs.unlink(filePath);
+          } catch (unlinkError) {
+            console.error(`[${job.request_id}] Error deleting temporary file:`, unlinkError);
+          }
         }
       }
     }
