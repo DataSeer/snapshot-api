@@ -258,9 +258,10 @@ const getGenShareHealth = async (user, requestedVersion) => {
  * Process a PDF document using GenShare service
  * @param {Object} data - PDF and processing data 
  * @param {ProcessingSession} session - Processing session for logging
+ * @param {boolean} shouldLogToSummary - Whether to log to Google Sheets summary (default: true)
  * @returns {Promise<Object>} - Processing result
  */
-const processPDF = async (data, session) => {
+const processPDF = async (data, session, shouldLogToSummary = true) => {
   // Get the user's full information
   const user = getUserById(data.user.id);
   
@@ -507,29 +508,28 @@ const processPDF = async (data, session) => {
       session.addLog('Error: action_required value is empty in Snapshot response');
       errorStatus = 'Validation error: action_required is empty';
       
-      // Log to summary sheet with error status
-      try {
-        await appendToSummary({
-          session,
-          errorStatus,
-          data,
-          genshareVersion: activeGenShareVersion,
-          reportURL,
-          graphValue: activeGenShareGraphValue,
-          reportVersion: activeReportVersion
-        });
-      } catch (summaryError) {
-        session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
-        console.error(`[${session.requestId}] Error logging validation error to summary:`, summaryError);
+      // Log to summary sheet with error status ONLY if shouldLogToSummary is true
+      if (shouldLogToSummary) {
+        try {
+          await appendToSummary({
+            session,
+            errorStatus,
+            data,
+            genshareVersion: activeGenShareVersion,
+            reportURL,
+            graphValue: activeGenShareGraphValue,
+            reportVersion: activeReportVersion
+          });
+        } catch (summaryError) {
+          session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
+          console.error(`[${session.requestId}] Error logging validation error to summary:`, summaryError);
+        }
       }
       
       // Throw error with 500 status
       validationError.status = 500;
       throw validationError;
     }
-
-    // Session data preparation is complete
-    session.addLog('Response processing completed');
 
     // Session data preparation is complete
     session.addLog('Response processing completed');
@@ -548,31 +548,35 @@ const processPDF = async (data, session) => {
       });
     }
 
-    // Log to summary sheet before returning the result
-    try {
-      await appendToSummary({
-        session,
-        errorStatus,
-        data,
-        genshareVersion: activeGenShareVersion,
-        reportURL,
-        graphValue: activeGenShareGraphValue,
-        reportVersion: activeReportVersion
-      });
-    } catch (summaryError) {
-      session.addLog(`Error logging to summary: ${summaryError.message}`);
-      console.error(`[${session.requestId}] Error logging to summary:`, summaryError);
-      // Don't fail the process if summary logging fails
+    // Log to summary sheet before returning the result ONLY if shouldLogToSummary is true
+    if (shouldLogToSummary) {
+      try {
+        await appendToSummary({
+          session,
+          errorStatus,
+          data,
+          genshareVersion: activeGenShareVersion,
+          reportURL,
+          graphValue: activeGenShareGraphValue,
+          reportVersion: activeReportVersion
+        });
+      } catch (summaryError) {
+        session.addLog(`Error logging to summary: ${summaryError.message}`);
+        console.error(`[${session.requestId}] Error logging to summary:`, summaryError);
+        // Don't fail the process if summary logging fails
+      }
     }
 
-    // Return the processing result
+    // Return the processing result with additional metadata
     return {
       status: response.status,
       headers: response.headers,
       data: finalData,
       errorStatus,
       activeGenShareVersion,
-      reportURL
+      reportURL,
+      activeGenShareGraphValue, // Add this for caller to use
+      activeReportVersion       // Add this for caller to use
     };
   } catch (error) {
     // Set error status based on the type of error
@@ -586,20 +590,22 @@ const processPDF = async (data, session) => {
     session.addLog(`Error processing request: ${error.message}`);
     session.addLog(`Stack: ${error.stack}`);
 
-    // Try to log to summary sheet even in case of error
-    try {
-      await appendToSummary({
-        session,
-        errorStatus,
-        data,
-        genshareVersion: activeGenShareVersion || genshareConfig.defaultVersion,
-        reportURL: "",
-        graphValue: activeGenShareGraphValue,
-        reportVersion: activeReportVersion
-      });
-    } catch (summaryError) {
-      session.addLog(`Error logging error to summary: ${summaryError.message}`);
-      console.error(`[${session.requestId}] Error logging error to summary:`, summaryError);
+    // Log to summary sheet even in case of error ONLY if shouldLogToSummary is true
+    if (shouldLogToSummary) {
+      try {
+        await appendToSummary({
+          session,
+          errorStatus,
+          data,
+          genshareVersion: activeGenShareVersion || genshareConfig.defaultVersion,
+          reportURL: "",
+          graphValue: activeGenShareGraphValue,
+          reportVersion: activeReportVersion
+        });
+      } catch (summaryError) {
+        session.addLog(`Error logging error to summary: ${summaryError.message}`);
+        console.error(`[${session.requestId}] Error logging error to summary:`, summaryError);
+      }
     }
 
     // Re-throw the original error

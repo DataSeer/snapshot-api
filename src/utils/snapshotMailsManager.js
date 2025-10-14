@@ -200,6 +200,12 @@ const processMailSubmissionJob = async (job) => {
   // Track file paths for cleanup at the end
   const tempFilePaths = [];
   
+  // Variables for summary logging
+  let errorStatus = "No";
+  let reportURL = "";
+  let graphValue = "";
+  let reportVersion = "";
+  
   try {
     // Set origin as external service (snapshot-mails)
     session.setOrigin('external', 'snapshot-mails');
@@ -254,25 +260,18 @@ const processMailSubmissionJob = async (job) => {
       };
       
       try {
-        // Process the PDF with GenShare
-        genshareResult = await genshareManager.processPDF(genshareData, session);
+        // Process the PDF with GenShare - DON'T log to summary here (pass false)
+        genshareResult = await genshareManager.processPDF(genshareData, session, false);
         session.addLog(`GenShare processing completed with status: ${genshareResult.status}`);
+        
+        // Extract values from GenShare result for summary
+        reportURL = genshareResult.reportURL || "";
+        graphValue = genshareResult.activeGenShareGraphValue || "";
+        reportVersion = genshareResult.activeReportVersion || "";
+        
       } catch (genshareError) {
         session.addLog(`Error processing with GenShare: ${genshareError.message}`);
-        
-        // Still try to log to summary for GenShare errors
-        try {
-          await genshareManager.appendToSummary({
-            session,
-            errorStatus: `GenShare Error: ${genshareError.message}`,
-            data: genshareData,
-            genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
-            reportURL: ""
-          });
-        } catch (summaryError) {
-          session.addLog(`Error logging to summary: ${summaryError.message}`);
-        }
-        
+        errorStatus = `GenShare Error: ${genshareError.message}`;
         throw genshareError; // Re-throw to be caught by outer try/catch
       }
     }
@@ -288,6 +287,25 @@ const processMailSubmissionJob = async (job) => {
       } catch (dbError) {
         session.addLog(`Error saving report to database: ${dbError.message}`);
       }
+    }
+    
+    // Log to summary sheet ONCE at the end - SUCCESS case
+    try {
+      await genshareManager.appendToSummary({
+        session,
+        errorStatus,
+        data: {
+          file: data.pdfFile,
+          user: { id: data.user_id }
+        },
+        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
+        reportURL,
+        graphValue,
+        reportVersion
+      });
+    } catch (summaryError) {
+      session.addLog(`Error logging to summary: ${summaryError.message}`);
+      console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
     }
     
     // NOTE: Notification will be sent in the completion callback
@@ -316,21 +334,25 @@ const processMailSubmissionJob = async (job) => {
     session.addLog(`Error in background processing: ${error.message}`);
     session.addLog(`Stack: ${error.stack}`);
     
-    // Ensure we log to summary even in top-level error cases
+    // Set error status if not already set
+    if (errorStatus === "No") {
+      errorStatus = `Job Error: ${error.message}`;
+    }
+    
+    // Log to summary sheet ONCE at the end - ERROR case
     try {
-      // If we have a GenShare error, try to log to summary with the error status
-      if (data.pdfFile) {
-        await genshareManager.appendToSummary({
-          session,
-          errorStatus: `Job Error: ${error.message}`,
-          data: {
-            file: data.pdfFile,
-            user: { id: data.user_id }
-          },
-          genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
-          reportURL: ""
-        });
-      }
+      await genshareManager.appendToSummary({
+        session,
+        errorStatus,
+        data: {
+          file: data.pdfFile,
+          user: { id: data.user_id }
+        },
+        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
+        reportURL,
+        graphValue,
+        reportVersion
+      });
     } catch (summaryError) {
       session.addLog(`Error logging to summary: ${summaryError.message}`);
       console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
