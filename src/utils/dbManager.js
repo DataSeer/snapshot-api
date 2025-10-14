@@ -1297,10 +1297,10 @@ const getNextPendingJob = async () => {
     const job = await new Promise((resolve, reject) => {
       db.get(
         `SELECT * FROM processing_jobs 
-         WHERE (status = ? OR (status = ? AND retries < max_retries))
+         WHERE (status = ? OR status = ? OR (status = ? AND retries < max_retries))
          ORDER BY priority DESC, created_at ASC
          LIMIT 1`,
-        ['pending', 'failed'],
+        ['pending', 'retrying', 'failed'],
         (err, row) => {
           if (err) reject(err);
           else resolve(row || null);
