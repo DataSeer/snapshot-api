@@ -452,6 +452,12 @@ const processEmSubmissionJob = async (job) => {
   const tempFilePaths = [];
   let supplementaryZipPath = null;
   
+  // Variables for summary logging
+  let errorStatus = "No";
+  let reportURL = "";
+  let graphValue = data.graph_value || "";
+  let reportVersion = data.report || "";
+  
   try {
     // Set origin as external service (Editorial Manager)
     session.setOrigin('external', 'editorial-manager');
@@ -545,30 +551,22 @@ const processEmSubmissionJob = async (job) => {
       };
       
       try {
-        // Process the PDF with GenShare
-        genshareResult = await genshareManager.processPDF(genshareData, session);
+        // Process the PDF with GenShare - DON'T log to summary here (pass false)
+        genshareResult = await genshareManager.processPDF(genshareData, session, false);
         session.addLog(`GenShare processing completed with status: ${genshareResult.status}`);
         
         if (supplementaryFilesZip) {
           session.addLog(`GenShare processed main PDF with ${data.supplementaryFiles.length} supplementary files`);
         }
         
+        // Extract values from GenShare result for summary
+        reportURL = genshareResult.reportURL || "";
+        graphValue = genshareResult.activeGenShareGraphValue || graphValue;
+        reportVersion = genshareResult.activeReportVersion || reportVersion;
+        
       } catch (genshareError) {
         session.addLog(`Error processing with GenShare: ${genshareError.message}`);
-        
-        // Still try to log to summary for GenShare errors
-        try {
-          await genshareManager.appendToSummary({
-            session,
-            errorStatus: `GenShare Error: ${genshareError.message}`,
-            data: genshareData,
-            genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
-            reportURL: ""
-          });
-        } catch (summaryError) {
-          session.addLog(`Error logging to summary: ${summaryError.message}`);
-        }
-        
+        errorStatus = `GenShare Error: ${genshareError.message}`;
         throw genshareError; // Re-throw to be caught by outer try/catch
       }
     }
@@ -586,10 +584,31 @@ const processEmSubmissionJob = async (job) => {
       }
     }
     
+    // Log to summary sheet ONCE at the end - SUCCESS case
+    try {
+      await genshareManager.appendToSummary({
+        session,
+        errorStatus,
+        data: {
+          file: data.reviewerPdfFile,
+          user: { id: data.user_id }
+        },
+        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
+        reportURL,
+        graphValue,
+        reportVersion
+      });
+    } catch (summaryError) {
+      session.addLog(`Error logging to summary: ${summaryError.message}`);
+      console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
+    }
+    
     // NOTE: Notification will be sent in the completion callback
     // after the job is marked as completed in the database
     
-    // Clean up temporary files ONLY AFTER processing is complete
+    // Clean up temporary files ONLY AFTER FINAL processing is complete (no more retries)
+    // Success means job completed - safe to delete files
+    session.addLog('Job completed successfully - cleaning up temporary files');
     if (tempFilePaths.length > 0) {
       for (const filePath of tempFilePaths) {
         await fs.unlink(filePath).catch(err => {
@@ -608,21 +627,25 @@ const processEmSubmissionJob = async (job) => {
     session.addLog(`Error in background processing: ${error.message}`);
     session.addLog(`Stack: ${error.stack}`);
     
-    // Ensure we log to summary even in top-level error cases
+    // Set error status if not already set
+    if (errorStatus === "No") {
+      errorStatus = `Job Error: ${error.message}`;
+    }
+    
+    // Log to summary sheet ONCE at the end - ERROR case
     try {
-      // If we have a GenShare error, try to log to summary with the error status
-      if (data.reviewerPdfFile) {
-        await genshareManager.appendToSummary({
-          session,
-          errorStatus: `Job Error: ${error.message}`,
-          data: {
-            file: data.reviewerPdfFile,
-            user: { id: data.user_id }
-          },
-          genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
-          reportURL: ""
-        });
-      }
+      await genshareManager.appendToSummary({
+        session,
+        errorStatus,
+        data: {
+          file: data.reviewerPdfFile,
+          user: { id: data.user_id }
+        },
+        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
+        reportURL,
+        graphValue,
+        reportVersion
+      });
     } catch (summaryError) {
       session.addLog(`Error logging to summary: ${summaryError.message}`);
       console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
@@ -635,12 +658,24 @@ const processEmSubmissionJob = async (job) => {
       console.error(`[${job.request_id}] Error in error handling:`, saveError);
     }
     
-    // Clean up temporary files even in case of error, but only after all processing is done
-    if (tempFilePaths.length > 0) {
-      for (const filePath of tempFilePaths) {
-        await fs.unlink(filePath).catch(err => {
-          console.error(`[${job.request_id}] Error deleting temporary file:`, err);
-        });
+    // Check if job will be retried before cleaning up files
+    // Only delete files if this is the FINAL failure (no more retries)
+    const willRetry = job.retries < job.max_retries;
+    
+    if (willRetry) {
+      session.addLog(`Job will be retried (${job.retries + 1}/${job.max_retries}) - keeping temporary files for retry`);
+      console.log(`[${job.request_id}] Keeping temporary files for retry attempt ${job.retries + 1}/${job.max_retries}`);
+    } else {
+      session.addLog('Job failed permanently - cleaning up temporary files');
+      console.log(`[${job.request_id}] Job failed permanently - cleaning up temporary files`);
+      
+      // Clean up temporary files only after final failure
+      if (tempFilePaths.length > 0) {
+        for (const filePath of tempFilePaths) {
+          await fs.unlink(filePath).catch(err => {
+            console.error(`[${job.request_id}] Error deleting temporary file:`, err);
+          });
+        }
       }
     }
     
