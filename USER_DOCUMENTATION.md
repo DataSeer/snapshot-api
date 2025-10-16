@@ -82,22 +82,24 @@ fetch('https://snapshot.dataseer.ai/', {
 
 | Field                | Type   | Description                                                                                             |
 |----------------------|--------|---------------------------------------------------------------------------------------------------------|
-| file                 | File   | The PDF file to be processed (required)                                                                 |
-| supplementary_file  | File   | ZIP file containing supplementary materials (optional)                                                  |
-| options              | String | **JSON string** of processing options (required) which is a dictionary with optional and required items |
+| file                 | File   | (required) The PDF file to be processed                                                                 |
+| supplementary_file   | File   | (optional) ZIP file containing supplementary materials                                                  |
+| options              | String | (required) **JSON string** of processing options which is a dictionary with optional and required items |
 
-The `options` parameter must contain one mandatory field:
+The `options` parameter is a JSON object with following properties:
 
 - `document_type` (required): specify the type of the document sent (see example below), the accepted values are
   `article`, `research-article`, `research_article`, `original-article`, `original_article`. Invalid values will be
   rejected by the API with error code 400.
 - `article_id` (required): specify the article ID of the document sent, the API will return 400 if the ID is empty or
   null
+- `das` (optional): specify the DAS of the document sent
 
 ```json
 {
      "article_id": "KWG1234",
-     "document_type": "article"
+     "document_type": "article",
+     "das": "The DAS content of my article"
 }
 ```
 
