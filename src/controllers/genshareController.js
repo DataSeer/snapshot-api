@@ -42,16 +42,55 @@ module.exports.processPDF = async (req, res) => {
       path: req.path,
       query: req.query,
       body: req.body,
-      file: req.file ? {
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size
-      } : null
+      files: req.files ? Object.entries(req.files).flatMap(([fieldname, files]) => 
+        files.map(file => ({
+          fieldname: fieldname,
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size
+        }))
+      ) : []
     });
     
-    // Add file if present
-    if (req.file) {
-      session.addFile(req.file, 'api');
+    // Find the main PDF file and supplementary files
+    let mainFile = null;
+    let supplementaryFile = null;
+    
+    if (req.files) {
+      // When using upload.fields(), files are in req.files object with field names as keys
+      if (req.files.file && req.files.file.length > 0) {
+        mainFile = req.files.file[0];
+      }
+      if (req.files.supplementary_file && req.files.supplementary_file.length > 0) {
+        supplementaryFile = req.files.supplementary_file[0];
+      }
+    }
+    
+    // Add main file if present
+    if (mainFile) {
+      session.addFile(mainFile, 'api');
+    }
+    
+    // Add supplementary file if present
+    if (supplementaryFile) {
+      // Validate that it's a ZIP file
+      if (supplementaryFile.mimetype !== 'application/zip' && 
+          supplementaryFile.mimetype !== 'application/x-zip-compressed' &&
+          !supplementaryFile.originalname.toLowerCase().endsWith('.zip')) {
+        // Clean up uploaded files before throwing error
+        const filesToCleanup = [mainFile, supplementaryFile].filter(f => f && f.path);
+        await Promise.all(filesToCleanup.map(file => 
+          fs.unlink(file.path).catch(err => 
+            console.error(`[${session.requestId}] Error cleaning up file:`, err)
+          )
+        ));
+        
+        return res.status(400).json({
+          error: 'Invalid supplementary files format. Only ZIP files are supported.'
+        });
+      }
+      
+      session.addFile(supplementaryFile, 'api');
     }
     
     // Parse options if they exist
@@ -74,7 +113,8 @@ module.exports.processPDF = async (req, res) => {
     }
     
     const processingData = {
-      file: req.file,
+      file: mainFile,
+      supplementary_file: supplementaryFile,
       user: {
         id: req.user.id
       },
@@ -100,12 +140,13 @@ module.exports.processPDF = async (req, res) => {
     // Save session data to S3
     await session.saveToS3();
     
-    // Now that ALL processing is complete, we can safely clean up the temporary file
-    if (req.file && req.file.path) {
-      await fs.unlink(req.file.path).catch(err => {
-        console.error(`[${session.requestId}] Error deleting temporary file:`, err);
-      });
-    }
+    // Now that ALL processing is complete, we can safely clean up the temporary files
+    const filesToCleanup = [mainFile, supplementaryFile].filter(f => f && f.path);
+    await Promise.all(filesToCleanup.map(file => 
+      fs.unlink(file.path).catch(err => 
+        console.error(`[${session.requestId}] Error deleting temporary file:`, err)
+      )
+    ));
 
     // Forward modified response to client
     res.status(result.status);
@@ -133,12 +174,24 @@ module.exports.processPDF = async (req, res) => {
       console.error(`[${session.requestId}] Error saving session data:`, s3Error);
     }
 
-    // Clean up temporary file if it exists, but only after all processing, including error handling, is complete
-    if (req.file && req.file.path) {
-      await fs.unlink(req.file.path).catch(err => {
-        console.error(`[${session.requestId}] Error deleting temporary file:`, err);
+    // Clean up temporary files if they exist, but only after all processing, including error handling, is complete
+    const filesToCleanup = [];
+    if (req.files) {
+      // With upload.fields(), files are organized by field name
+      Object.values(req.files).forEach(fileArray => {
+        fileArray.forEach(file => {
+          if (file && file.path) {
+            filesToCleanup.push(file);
+          }
+        });
       });
     }
+    
+    await Promise.all(filesToCleanup.map(file => 
+      fs.unlink(file.path).catch(err => 
+        console.error(`[${session.requestId}] Error deleting temporary file:`, err)
+      )
+    ));
     
     // Forward error response if available
     if (error.response) return res.status(error.response.status).send(error.message);

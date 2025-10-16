@@ -359,16 +359,17 @@ class ProcessingSession {
   addFile(file, origin = 'api') {
     if (!file) return this;
     
-    // Add file with metadata
+    // Add file with metadata including file type
     this.files.push({
       path: file.path,
       originalname: file.originalname,
       mimetype: file.mimetype,
       size: file.size,
-      origin: origin
+      origin: origin,
+      fieldname: file.fieldname || 'file' // Track which field this file came from
     });
     
-    this.addLog(`[S3] Added file: ${file.originalname} (${file.size} bytes, origin: ${origin})`, 'INFO');
+    this.addLog(`[S3] Added file: ${file.originalname} (${file.size} bytes, origin: ${origin}, field: ${file.fieldname || 'file'})`, 'INFO');
     return this;
   }
 
@@ -447,7 +448,8 @@ class ProcessingSession {
           originalName: file.originalname,
           size: file.size,
           mimeType: file.mimetype,
-          origin: file.origin
+          origin: file.origin,
+          fieldname: file.fieldname || 'file' // Include field name for supplementary files tracking
         }));
         
         filesToUpload.push({
@@ -471,7 +473,8 @@ class ProcessingSession {
             size: file.size,
             md5: md5Hash,
             mimeType: file.mimetype,
-            origin: file.origin
+            origin: file.origin,
+            fieldname: file.fieldname || 'file'
           };
           
           // Add file metadata
@@ -481,9 +484,13 @@ class ProcessingSession {
             contentType: 'application/json'
           });
           
-          // Add the actual file
+          // Add the actual file with descriptive naming
+          const fileName = file.fieldname === 'supplementary_file' 
+            ? `supplementary_file_${fileIndex}.${fileExtension}`
+            : `file_${fileIndex}.${fileExtension}`;
+          
           filesToUpload.push({
-            key: `${this.getBasePath()}/files/file_${fileIndex}.${fileExtension}`,
+            key: `${this.getBasePath()}/files/${fileName}`,
             data: createReadStream(file.path),
             contentType: file.mimetype
           });

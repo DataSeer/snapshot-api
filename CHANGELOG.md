@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.2.1](https://github.com/DataSeer/snapshot-api/compare/v3.2.0...v3.2.1) (2025-10-14)
+
+### Bug Fixes
+
+* fix the retry system (manage 'retrying' case) ([b15b847](https://github.com/DataSeer/snapshot-api/commits/b15b8473bf67aa5eb0b86dc238e265c1d9673c06))
+* fix multiple DS logs on error case ([7bb44fa](https://github.com/DataSeer/snapshot-api/commits/7bb44fa6cfd1a7c4c9e260e4a8dfe39d4f6c4a7d))
+* fix the remove files management ([936570a](https://github.com/DataSeer/snapshot-api/commits/936570aa3ead9af0f3e7f882abe5125dfe48a23e))
+
+
+## [3.2.0](https://github.com/DataSeer/snapshot-api/compare/v3.1.0...v3.2.0) (2025-10-09)
+
+### Features
+
+* manage graph policy traversal llm in genshare and EM ([57277b9](https://github.com/DataSeer/snapshot-api/commits/57277b9b42868c7707e65b3ccb664961cbe0d1fc))
+* add 'graph' value management for EM ([10c204a](https://github.com/DataSeer/snapshot-api/commits/10c204a0378a6fee01ff2aff2a07a81ad46a3cdd))
+* improve graph value management ([62fe0f7](https://github.com/DataSeer/snapshot-api/commits/62fe0f72b82703a9eccc28dbc42356f319766462))
+* manage report kind based on journal_code when request come from EM ([fc71a73](https://github.com/DataSeer/snapshot-api/commits/fc71a7394df62f9c6ff3709c328f95b38c1e36db))
+* manage custom options from snapshot-mails ([784608c](https://github.com/DataSeer/snapshot-api/commits/784608ca507e8465b2843c262c0f34e2145b7558))
+* improve Snapshot Response management ([8c5b90e](https://github.com/DataSeer/snapshot-api/commits/8c5b90e38977052dac42a22fd6479ce72d5c25a9))
+* update EM scores with the 'action_required' value if available ([165a213](https://github.com/DataSeer/snapshot-api/commits/165a213aa00a0146090878d15243ea4760e02db1))
+* manage snapshot-mails ([2450477](https://github.com/DataSeer/snapshot-api/commits/24504773318f7ebf1aaa68f2980e3565a1f3b844))
+
+
+### Bug Fixes
+
+* fix Report Version logged in DS Logs ([11e0b98](https://github.com/DataSeer/snapshot-api/commits/11e0b98b97e235a1c9f6b059aa66fc26584dbc13))
+* fix package-lock.json file ([4738514](https://github.com/DataSeer/snapshot-api/commits/4738514db031f8a72ebb16506ed845e89cdbd76c))
+* remove wrong file ([5940faa](https://github.com/DataSeer/snapshot-api/commits/5940faa6e998ef7eae7e729313fb00426eb3c174))
+
+
+### Documentation
+
+* update documentation ([0a698a6](https://github.com/DataSeer/snapshot-api/commits/0a698a69df706ae64abf342b4e6cf788d2d90a5b))
+
+
 ## [3.1.0](https://github.com/DataSeer/snapshot-api/compare/v3.0.0...v3.1.0) (2025-06-26)
 
 
@@ -9,6 +44,7 @@ All notable changes to this project will be documented in this file. See [standa
 
 * add refresh ds logs script ([ef3ec41](https://github.com/DataSeer/snapshot-api/commits/ef3ec41a7368b1e6fc353da85b0474256e1cdc5d))
 * update Docker part ([46912a4](https://github.com/DataSeer/snapshot-api/commits/46912a4eaa7023ff8d747acc4bb245430fe1a536))
+
 
 ## [3.0.0](https://github.com/DataSeer/snapshot-api/compare/v2.0.1...v3.0.0) (2025-06-23)
 

@@ -1,6 +1,9 @@
 // File: src/utils/emManager.js
 const fs = require('fs').promises;
+const fsSync = require('fs'); // Add sync version for createWriteStream
+const path = require('path');
 const axios = require('axios');
+const archiver = require('archiver');
 const dbManager = require('./dbManager');
 const genshareManager = require('./genshareManager');
 const requestsManager = require('./requestsManager');
@@ -13,6 +16,173 @@ const emConfig = require(config.emConfigPath);
 
 // Load the genshare configuration
 const genshareConfig = require(config.genshareConfigPath);
+
+/**
+ * Get report value based on publication code
+ * @param {string} publicationCode - Publication code from submission
+ * @returns {string|null} - Report value to use or null if no configuration
+ */
+const getReportValue = (publicationCode) => {
+  try {
+    // Check if report configuration exists
+    if (!emConfig.report) {
+      console.warn('[EM] No report configuration found in emConfig');
+      return null;
+    }
+
+    // 1. Check if there are available values - if not, return null
+    if (!emConfig.report.available || !Array.isArray(emConfig.report.available) || emConfig.report.available.length === 0) {
+      console.warn('[EM] No available report values found in configuration');
+      return null;
+    }
+
+    // 2. Determine the default value
+    let defaultValue;
+    if (!emConfig.report.default) {
+      // If no default is set, use the first available value
+      defaultValue = emConfig.report.available[0];
+      console.log(`[EM] No default report value set, using first available value: "${defaultValue}"`);
+    } else {
+      // Check if the configured default value is in available values
+      if (emConfig.report.available.includes(emConfig.report.default)) {
+        defaultValue = emConfig.report.default;
+        console.log(`[EM] Using configured default report value: "${defaultValue}"`);
+      } else {
+        // Default value is not available, use first available value
+        defaultValue = emConfig.report.available[0];
+        console.warn(`[EM] Configured default report value "${emConfig.report.default}" not in available values [${emConfig.report.available.join(', ')}], using first available: "${defaultValue}"`);
+      }
+    }
+
+    // 3. Check for custom configuration for this publication code
+    if (emConfig.report.custom && emConfig.report.custom[publicationCode]) {
+      const customValue = emConfig.report.custom[publicationCode];
+      
+      // Validate that the custom value is in available values
+      if (emConfig.report.available.includes(customValue)) {
+        console.log(`[EM] Using custom report value "${customValue}" for publication code "${publicationCode}"`);
+        return customValue;
+      } else {
+        console.warn(`[EM] Custom report value "${customValue}" for publication code "${publicationCode}" not in available values [${emConfig.report.available.join(', ')}], using default: "${defaultValue}"`);
+        return defaultValue;
+      }
+    }
+
+    // No custom configuration found, use default value
+    console.log(`[EM] No custom report configuration for publication code "${publicationCode}", using default: "${defaultValue}"`);
+    return defaultValue;
+
+  } catch (error) {
+    console.error(`[EM] Error getting report value for publication code "${publicationCode}":`, error);
+    return null;
+  }
+};
+/**
+ * Get graph value based on publication code
+ * @param {string} publicationCode - Publication code from submission
+ * @returns {string|null} - Graph value to use or null if no configuration
+ */
+const getGraphValue = (publicationCode) => {
+  try {
+    // Check if graph configuration exists
+    if (!emConfig.graph) {
+      console.warn('[EM] No graph configuration found in emConfig');
+      return null;
+    }
+
+    // 1. Check if there are available values - if not, return null
+    if (!emConfig.graph.available || !Array.isArray(emConfig.graph.available) || emConfig.graph.available.length === 0) {
+      console.warn('[EM] No available graph values found in configuration');
+      return null;
+    }
+
+    // 2. Determine the default value
+    let defaultValue;
+    if (!emConfig.graph.default) {
+      // If no default is set, use the first available value
+      defaultValue = emConfig.graph.available[0];
+      console.log(`[EM] No default graph value set, using first available value: "${defaultValue}"`);
+    } else {
+      // Check if the configured default value is in available values
+      if (emConfig.graph.available.includes(emConfig.graph.default)) {
+        defaultValue = emConfig.graph.default;
+        console.log(`[EM] Using configured default graph value: "${defaultValue}"`);
+      } else {
+        // Default value is not available, use first available value
+        defaultValue = emConfig.graph.available[0];
+        console.warn(`[EM] Configured default graph value "${emConfig.graph.default}" not in available values [${emConfig.graph.available.join(', ')}], using first available: "${defaultValue}"`);
+      }
+    }
+
+    // 3. Check for custom configuration for this publication code
+    if (emConfig.graph.custom && emConfig.graph.custom[publicationCode]) {
+      const customValue = emConfig.graph.custom[publicationCode];
+      
+      // Validate that the custom value is in available values
+      if (emConfig.graph.available.includes(customValue)) {
+        console.log(`[EM] Using custom graph value "${customValue}" for publication code "${publicationCode}"`);
+        return customValue;
+      } else {
+        console.warn(`[EM] Custom graph value "${customValue}" for publication code "${publicationCode}" not in available values [${emConfig.graph.available.join(', ')}], using default: "${defaultValue}"`);
+        return defaultValue;
+      }
+    }
+
+    // No custom configuration found, use default value
+    console.log(`[EM] No custom graph configuration for publication code "${publicationCode}", using default: "${defaultValue}"`);
+    return defaultValue;
+
+  } catch (error) {
+    console.error(`[EM] Error getting graph value for publication code "${publicationCode}":`, error);
+    return null;
+  }
+};
+
+/**
+ * Create a ZIP file from supplementary files
+ * @param {Array} supplementaryFiles - Array of file objects to zip
+ * @param {string} outputPath - Path where to create the ZIP file
+ * @returns {Promise<string>} - Path to the created ZIP file
+ */
+const createSupplementaryFilesZip = async (supplementaryFiles, outputPath) => {
+  return new Promise((resolve, reject) => {
+    const output = fsSync.createWriteStream(outputPath); // Use fsSync for createWriteStream
+    const archive = archiver('zip', {
+      zlib: { level: 9 } // Sets the compression level
+    });
+
+    output.on('close', () => {
+      console.log(`[EM] ZIP file created: ${archive.pointer()} total bytes`);
+      resolve(outputPath);
+    });
+
+    output.on('end', () => {
+      console.log('[EM] Data has been drained');
+    });
+
+    archive.on('warning', (err) => {
+      if (err.code === 'ENOENT') {
+        console.warn('[EM] ZIP warning:', err);
+      } else {
+        reject(err);
+      }
+    });
+
+    archive.on('error', (err) => {
+      reject(err);
+    });
+
+    archive.pipe(output);
+
+    // Add files to the archive
+    for (const file of supplementaryFiles) {
+      archive.file(file.path, { name: file.originalname });
+    }
+
+    // Finalize the archive
+    archive.finalize();
+  });
+};
 
 /**
  * Handle job completion - called when a job is marked as completed in the database
@@ -132,30 +302,50 @@ const processSubmission = async (data, session) => {
     // Extract file data from the submission
     const fileDataArray = file_data || [];
     
-    // Find the Reviewer PDF file for background processing
+    // Find the Reviewer PDF file and supplementary files for background processing
     let reviewerPdfFile = null;
     let reviewerPdfMetadata = null;
+    let supplementaryFiles = [];
+    let supplementaryFilesMetadata = [];
     let dasValue = "";
     
-    // First, find the file metadata for "Reviewer PDF"
+    // First, analyze file metadata to identify file types
     for (const fileData of fileDataArray) {
       if (fileData.file_description === "Reviewer PDF") {
         reviewerPdfMetadata = fileData;
         session.addLog(`Found Reviewer PDF metadata: ${fileData.file_name}`);
-        break;
+      } else if (fileData.file_item_type_family === "Supplemental") {
+        supplementaryFilesMetadata.push(fileData);
+        session.addLog(`Found supplementary file metadata: ${fileData.file_name} (${fileData.file_description})`);
       }
     }
     
-    // Then find the actual file based on the metadata
-    if (reviewerPdfMetadata && files && files.length > 0) {
-      for (const file of files) {
-        if (file.originalname === reviewerPdfMetadata.file_name) {
-          reviewerPdfFile = file;
-          session.addLog(`Found matching Reviewer PDF file: ${file.originalname}`);
-          break;
+    // Then find the actual files based on the metadata
+    if (files && files.length > 0) {
+      // Find reviewer PDF file
+      if (reviewerPdfMetadata) {
+        for (const file of files) {
+          if (file.originalname === reviewerPdfMetadata.file_name) {
+            reviewerPdfFile = file;
+            session.addLog(`Found matching Reviewer PDF file: ${file.originalname}`);
+            break;
+          }
+        }
+      }
+      
+      // Find supplementary files
+      for (const suppMetadata of supplementaryFilesMetadata) {
+        for (const file of files) {
+          if (file.originalname === suppMetadata.file_name) {
+            supplementaryFiles.push(file);
+            session.addLog(`Found matching supplementary file: ${file.originalname}`);
+            break;
+          }
         }
       }
     }
+    
+    session.addLog(`Found ${supplementaryFiles.length} supplementary files to include`);
     
     // Search for DAS trigger in custom questions
     const customQuestions = custom_questions || [];
@@ -174,6 +364,18 @@ const processSubmission = async (data, session) => {
       if (dasValue) break;
     }
     
+    // Get graph value based on publication code
+    const graphValue = getGraphValue(publication_code);
+    if (graphValue) {
+      session.addLog(`Graph value for publication code "${publication_code}": "${graphValue}"`);
+    }
+    
+    // Get report value based on publication code
+    const reportValue = getReportValue(publication_code);
+    if (reportValue) {
+      session.addLog(`Graph value for publication code "${publication_code}": "${reportValue}"`);
+    }
+    
     // Create queue data for background processing
     const queueData = {
       service_id,
@@ -184,7 +386,10 @@ const processSubmission = async (data, session) => {
       user_id,
       files,
       reviewerPdfFile,
+      supplementaryFiles, // Include supplementary files in queue data
       das_value: dasValue,
+      graph_value: graphValue, // Include graph value in queue data
+      report: reportValue, // Include report value in queue data
       // Include any other data needed for processing
     };
     
@@ -210,14 +415,6 @@ const processSubmission = async (data, session) => {
       processEmSubmissionJob, // Pass the job processor function
       onJobComplete // Pass the completion callback
     );
-    
-    // queueManager.onJobStatusChange(reportId, 'processing', () => {
-    //   console.log(`[EM] Job ${reportId} started processing at ${new Date().toISOString()}`);
-    // });
-    
-    // queueManager.onJobStatusChange(reportId, 'completed', () => {
-    //   console.log(`[EM] Job ${reportId} completed at ${new Date().toISOString()}`);
-    // });
     
     // Create immediate result with report_id
     const result = {
@@ -253,6 +450,13 @@ const processEmSubmissionJob = async (job) => {
   
   // Track file paths for cleanup at the end
   const tempFilePaths = [];
+  let supplementaryZipPath = null;
+  
+  // Variables for summary logging
+  let errorStatus = "No";
+  let reportURL = "";
+  let graphValue = data.graph_value || "";
+  let reportVersion = data.report || "";
   
   try {
     // Set origin as external service (Editorial Manager)
@@ -273,47 +477,96 @@ const processEmSubmissionJob = async (job) => {
       }
     }
     
+    // Create ZIP file from supplementary files if any exist
+    let supplementaryFilesZip = null;
+    if (data.supplementaryFiles && data.supplementaryFiles.length > 0) {
+      session.addLog(`Creating ZIP archive from ${data.supplementaryFiles.length} supplementary files`);
+      
+      // Create temporary ZIP file path
+      supplementaryZipPath = path.join('tmp', `supplementary_${job.request_id}.zip`);
+      
+      try {
+        // Create the ZIP file
+        await createSupplementaryFilesZip(data.supplementaryFiles, supplementaryZipPath);
+        
+        // Create a file object for the ZIP that looks like a multer file
+        supplementaryFilesZip = {
+          path: supplementaryZipPath,
+          originalname: `supplementary_file.zip`,
+          mimetype: 'application/zip',
+          size: (await fs.stat(supplementaryZipPath)).size,
+          fieldname: 'supplementary_files'
+        };
+        
+        // Add to session for S3 storage
+        session.addFile(supplementaryFilesZip, 'editorial-manager');
+        
+        // Add to cleanup list
+        tempFilePaths.push(supplementaryZipPath);
+        
+        session.addLog(`Supplementary files ZIP created: ${supplementaryFilesZip.originalname} (${supplementaryFilesZip.size} bytes)`);
+        
+      } catch (zipError) {
+        session.addLog(`Error creating supplementary files ZIP: ${zipError.message}`);
+        console.error(`[${job.request_id}] Error creating ZIP:`, zipError);
+        // Continue processing without supplementary files rather than failing
+      }
+    }
+    
     // Process with GenShare if applicable
     let genshareResult = null;
     
     if (data.reviewerPdfFile) {
       session.addLog('Processing reviewer PDF with GenShare in background');
       
+      // Prepare options for GenShare processing
+      const genshareOptions = {
+        article_id: data.document_id,
+        document_type: data.document_type,
+        article_title: data.article_title,
+        editorial_policy: data.publication_code, // "publication_code" (from EM) is the "editorial_policy" parameter (in Snapshot) used for the DAS exemption process
+        das: data.das_value,
+      };
+      
+      // Add graph value to options if available
+      if (data.graph_value) {
+        genshareOptions.graph = data.graph_value;
+        session.addLog(`Including graph value in GenShare options: "${data.graph_value}"`);
+      }
+      
+      // Add report value to options if available
+      if (data.report) {
+        genshareOptions.report = data.report;
+        session.addLog(`Including report value in GenShare options: "${data.report}"`);
+      }
+      
       // Prepare data for GenShare processing
       const genshareData = {
         file: data.reviewerPdfFile,
-        options: {
-          article_id: data.document_id,
-          document_type: data.document_type,
-          article_title: data.article_title,
-          editorial_policy: data.publication_code, // "publication_code" (from EM) is the "editorial_policy" parameter (in Snapshot) used for the DAS exemption process
-          das: data.das_value,
-        },
+        supplementary_file: supplementaryFilesZip, // Include the ZIP file if created
+        options: genshareOptions,
         user: {
           id: data.user_id
         }
       };
       
       try {
-        // Process the PDF with GenShare
-        genshareResult = await genshareManager.processPDF(genshareData, session);
+        // Process the PDF with GenShare - DON'T log to summary here (pass false)
+        genshareResult = await genshareManager.processPDF(genshareData, session, false);
         session.addLog(`GenShare processing completed with status: ${genshareResult.status}`);
-      } catch (genshareError) {
-        session.addLog(`Error processing with GenShare: ${genshareError.message}`);
         
-        // Still try to log to summary for GenShare errors
-        try {
-          await genshareManager.appendToSummary({
-            session,
-            errorStatus: `GenShare Error: ${genshareError.message}`,
-            data: genshareData,
-            genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
-            reportURL: ""
-          });
-        } catch (summaryError) {
-          session.addLog(`Error logging to summary: ${summaryError.message}`);
+        if (supplementaryFilesZip) {
+          session.addLog(`GenShare processed main PDF with ${data.supplementaryFiles.length} supplementary files`);
         }
         
+        // Extract values from GenShare result for summary
+        reportURL = genshareResult.reportURL || "";
+        graphValue = genshareResult.activeGenShareGraphValue || graphValue;
+        reportVersion = genshareResult.activeReportVersion || reportVersion;
+        
+      } catch (genshareError) {
+        session.addLog(`Error processing with GenShare: ${genshareError.message}`);
+        errorStatus = `GenShare Error: ${genshareError.message}`;
         throw genshareError; // Re-throw to be caught by outer try/catch
       }
     }
@@ -331,10 +584,31 @@ const processEmSubmissionJob = async (job) => {
       }
     }
     
+    // Log to summary sheet ONCE at the end - SUCCESS case
+    try {
+      await genshareManager.appendToSummary({
+        session,
+        errorStatus,
+        data: {
+          file: data.reviewerPdfFile,
+          user: { id: data.user_id }
+        },
+        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
+        reportURL,
+        graphValue,
+        reportVersion
+      });
+    } catch (summaryError) {
+      session.addLog(`Error logging to summary: ${summaryError.message}`);
+      console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
+    }
+    
     // NOTE: Notification will be sent in the completion callback
     // after the job is marked as completed in the database
     
-    // Clean up temporary files ONLY AFTER processing is complete
+    // Clean up temporary files ONLY AFTER FINAL processing is complete (no more retries)
+    // Success means job completed - safe to delete files
+    session.addLog('Job completed successfully - cleaning up temporary files');
     if (tempFilePaths.length > 0) {
       for (const filePath of tempFilePaths) {
         await fs.unlink(filePath).catch(err => {
@@ -353,21 +627,25 @@ const processEmSubmissionJob = async (job) => {
     session.addLog(`Error in background processing: ${error.message}`);
     session.addLog(`Stack: ${error.stack}`);
     
-    // Ensure we log to summary even in top-level error cases
+    // Set error status if not already set
+    if (errorStatus === "No") {
+      errorStatus = `Job Error: ${error.message}`;
+    }
+    
+    // Log to summary sheet ONCE at the end - ERROR case
     try {
-      // If we have a GenShare error, try to log to summary with the error status
-      if (data.reviewerPdfFile) {
-        await genshareManager.appendToSummary({
-          session,
-          errorStatus: `Job Error: ${error.message}`,
-          data: {
-            file: data.reviewerPdfFile,
-            user: { id: data.user_id }
-          },
-          genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
-          reportURL: ""
-        });
-      }
+      await genshareManager.appendToSummary({
+        session,
+        errorStatus,
+        data: {
+          file: data.reviewerPdfFile,
+          user: { id: data.user_id }
+        },
+        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
+        reportURL,
+        graphValue,
+        reportVersion
+      });
     } catch (summaryError) {
       session.addLog(`Error logging to summary: ${summaryError.message}`);
       console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
@@ -380,12 +658,24 @@ const processEmSubmissionJob = async (job) => {
       console.error(`[${job.request_id}] Error in error handling:`, saveError);
     }
     
-    // Clean up temporary files even in case of error, but only after all processing is done
-    if (tempFilePaths.length > 0) {
-      for (const filePath of tempFilePaths) {
-        await fs.unlink(filePath).catch(err => {
-          console.error(`[${job.request_id}] Error deleting temporary file:`, err);
-        });
+    // Check if job will be retried before cleaning up files
+    // Only delete files if this is the FINAL failure (no more retries)
+    const willRetry = job.retries < job.max_retries;
+    
+    if (willRetry) {
+      session.addLog(`Job will be retried (${job.retries + 1}/${job.max_retries}) - keeping temporary files for retry`);
+      console.log(`[${job.request_id}] Keeping temporary files for retry attempt ${job.retries + 1}/${job.max_retries}`);
+    } else {
+      session.addLog('Job failed permanently - cleaning up temporary files');
+      console.log(`[${job.request_id}] Job failed permanently - cleaning up temporary files`);
+      
+      // Clean up temporary files only after final failure
+      if (tempFilePaths.length > 0) {
+        for (const filePath of tempFilePaths) {
+          await fs.unlink(filePath).catch(err => {
+            console.error(`[${job.request_id}] Error deleting temporary file:`, err);
+          });
+        }
       }
     }
     
@@ -599,8 +889,30 @@ const getReport = async (reportId) => {
           };
         }
         
-        // Extract scores from report data
-        let scores = emConfig.reportCompleteNotification.params.scores;
+        // Extract scores from report data - try to get action_required from GenShare response
+        let scores = emConfig.reportCompleteNotification.params.scores; // Default fallback
+        
+        try {
+          // Try to get action_required from job completion data
+          if (job.completion_data) {
+            const jobCompletionData = JSON.parse(job.completion_data);
+            const genshareResult = jobCompletionData.genshare_result;
+            
+            if (genshareResult && genshareResult.data && Array.isArray(genshareResult.data)) {
+              // Find the action_required field in the GenShare response
+              const actionRequiredItem = genshareResult.data.find(item => 
+                item.name === 'action_required'
+              );
+              
+              if (actionRequiredItem && actionRequiredItem.value && actionRequiredItem.value.trim() !== '') {
+                scores = actionRequiredItem.value;
+              }
+            }
+          }
+        } catch (parseError) {
+          console.error(`[${reportId}] Error parsing completion data for action_required:`, parseError);
+          // Keep the default scores value from config
+        }
         
         return {
           report_token: `token-${reportId.substring(0, 8)}`,
@@ -782,5 +1094,7 @@ module.exports = {
   getJobStatus,
   retryJob,
   handleProcessEmSubmissionJobCompletion,
-  handleProcessEmSubmissionJobFailure
+  handleProcessEmSubmissionJobFailure,
+  createSupplementaryFilesZip,
+  getGraphValue
 };

@@ -156,7 +156,7 @@ const cleanSnapshotFieldsName = (responseData) => {
  * @param {Object} options - Options containing session, error status, and request
  * @returns {Promise<void>}
  */
-const appendToSummary = async ({ session, errorStatus, data, genshareVersion, reportURL }) => {
+const appendToSummary = async ({ session, errorStatus, data, genshareVersion, reportURL, graphValue, reportVersion }) => {
   try {
     // Safely get the filename, defaulting to "No file" if not available
     const filename = data.file?.originalname || "N/A";
@@ -182,7 +182,9 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersion, re
       convertToGoogleSheetsDuration(session.getDuration()),  // Session duration
       data.user.id,                                          // User ID
       filename,                                              // PDF filename or "No file"
-      reportURL                                              // Report URL
+      reportVersion || "",                                   // Report value from GenShare request,
+      reportURL,                                             // Report URL
+      graphValue || ""                                       // Graph value from GenShare request
     ].concat(response).concat(path), genshareVersion);
     
     session.addLog('Logged to Google Sheets successfully');
@@ -256,9 +258,10 @@ const getGenShareHealth = async (user, requestedVersion) => {
  * Process a PDF document using GenShare service
  * @param {Object} data - PDF and processing data 
  * @param {ProcessingSession} session - Processing session for logging
+ * @param {boolean} shouldLogToSummary - Whether to log to Google Sheets summary (default: true)
  * @returns {Promise<Object>} - Processing result
  */
-const processPDF = async (data, session) => {
+const processPDF = async (data, session, shouldLogToSummary = true) => {
   // Get the user's full information
   const user = getUserById(data.user.id);
   
@@ -320,7 +323,9 @@ const processPDF = async (data, session) => {
     // Use the user's defaultVersion (which can be empty)
     activeReportVersion = user.reports?.defaultVersion || "";
   }
-  
+
+  let activeGenShareGraphValue = data.options?.graph || "";
+
   // Input validation
   if (!data.file) {
     errorStatus = 'Input error: Required "file" missing';
@@ -351,6 +356,16 @@ const processPDF = async (data, session) => {
     contentType: data.file.mimetype
   });
 
+  // Add supplementary files if present
+  if (data.supplementary_file) {
+    const supplementaryStream = fs.createReadStream(data.supplementary_file.path);
+    formData.append('supplementary_file', supplementaryStream, {
+      filename: data.supplementary_file.originalname,
+      contentType: data.supplementary_file.mimetype
+    });
+    session.addLog(`Added supplementary files: ${data.supplementary_file.originalname} (${data.supplementary_file.size} bytes)`);
+  }
+
   // Add options with decision_tree_path for the request only
   const requestOptions = {
     ...options,
@@ -364,13 +379,23 @@ const processPDF = async (data, session) => {
   session.addLog(`URL: ${processPDFConfig.url}`);
 
   // Store GenShare request data
-  session.setGenshareRequest({
+  const genshareRequestData = {
     ...requestOptions,
     file: {
       filename: data.file.originalname,
       contentType: data.file.mimetype
     }
-  });
+  };
+
+  // Add supplementary files info to request data if present
+  if (data.supplementary_file) {
+    genshareRequestData.supplementary_file = {
+      filename: data.supplementary_file.originalname,
+      contentType: data.supplementary_file.mimetype
+    };
+  }
+
+  session.setGenshareRequest(genshareRequestData);
 
   try {
     const response = await axios({
@@ -403,6 +428,22 @@ const processPDF = async (data, session) => {
         session.addLog(`GenShare versions don't match (${activeGenShareVersion} - ${responseGenShareVersion})`);
       }
     }
+
+    // Log the graph value returned
+    let responseGenShareGraphValue = response?.data?.graph_policy_traversal_data?.graph_type || "";
+
+    if (!responseGenShareGraphValue) {
+      session.addLog(`GenShare graph value returned not found`);
+    } else {
+      session.addLog(`GenShare graph value returned found: ${responseGenShareGraphValue}`);
+      if (activeGenShareGraphValue.indexOf(responseGenShareGraphValue) > -1) {
+        session.addLog(`GenShare graph values match: (${activeGenShareGraphValue} - ${responseGenShareGraphValue})`);
+      } else {
+        session.addLog(`GenShare graph values don't match (${activeGenShareGraphValue} - ${responseGenShareGraphValue})`);
+      }
+    }
+
+    activeGenShareGraphValue = responseGenShareGraphValue;
 
     session.addLog(`Received response from GenShare service with status: ${response.status}`);
 
@@ -460,6 +501,36 @@ const processPDF = async (data, session) => {
       }
     }
 
+    // Validate action_required field
+    const actionRequiredItem = response.data.response.find(item => item.name === "action_required");
+    if (actionRequiredItem && actionRequiredItem.value === "") {
+      const validationError = new Error('Snapshot response contains invalid action_required value (empty string)');
+      session.addLog('Error: action_required value is empty in Snapshot response');
+      errorStatus = 'Validation error: action_required is empty';
+      
+      // Log to summary sheet with error status ONLY if shouldLogToSummary is true
+      if (shouldLogToSummary) {
+        try {
+          await appendToSummary({
+            session,
+            errorStatus,
+            data,
+            genshareVersion: activeGenShareVersion,
+            reportURL,
+            graphValue: activeGenShareGraphValue,
+            reportVersion: activeReportVersion
+          });
+        } catch (summaryError) {
+          session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
+          console.error(`[${session.requestId}] Error logging validation error to summary:`, summaryError);
+        }
+      }
+      
+      // Throw error with 500 status
+      validationError.status = 500;
+      throw validationError;
+    }
+
     // Session data preparation is complete
     session.addLog('Response processing completed');
 
@@ -477,29 +548,35 @@ const processPDF = async (data, session) => {
       });
     }
 
-    // Log to summary sheet before returning the result
-    try {
-      await appendToSummary({
-        session,
-        errorStatus,
-        data,
-        genshareVersion: activeGenShareVersion,
-        reportURL
-      });
-    } catch (summaryError) {
-      session.addLog(`Error logging to summary: ${summaryError.message}`);
-      console.error(`[${session.requestId}] Error logging to summary:`, summaryError);
-      // Don't fail the process if summary logging fails
+    // Log to summary sheet before returning the result ONLY if shouldLogToSummary is true
+    if (shouldLogToSummary) {
+      try {
+        await appendToSummary({
+          session,
+          errorStatus,
+          data,
+          genshareVersion: activeGenShareVersion,
+          reportURL,
+          graphValue: activeGenShareGraphValue,
+          reportVersion: activeReportVersion
+        });
+      } catch (summaryError) {
+        session.addLog(`Error logging to summary: ${summaryError.message}`);
+        console.error(`[${session.requestId}] Error logging to summary:`, summaryError);
+        // Don't fail the process if summary logging fails
+      }
     }
 
-    // Return the processing result
+    // Return the processing result with additional metadata
     return {
       status: response.status,
       headers: response.headers,
       data: finalData,
       errorStatus,
       activeGenShareVersion,
-      reportURL
+      reportURL,
+      activeGenShareGraphValue, // Add this for caller to use
+      activeReportVersion       // Add this for caller to use
     };
   } catch (error) {
     // Set error status based on the type of error
@@ -513,18 +590,22 @@ const processPDF = async (data, session) => {
     session.addLog(`Error processing request: ${error.message}`);
     session.addLog(`Stack: ${error.stack}`);
 
-    // Try to log to summary sheet even in case of error
-    try {
-      await appendToSummary({
-        session,
-        errorStatus,
-        data,
-        genshareVersion: activeGenShareVersion || genshareConfig.defaultVersion,
-        reportURL: ""
-      });
-    } catch (summaryError) {
-      session.addLog(`Error logging error to summary: ${summaryError.message}`);
-      console.error(`[${session.requestId}] Error logging error to summary:`, summaryError);
+    // Log to summary sheet even in case of error ONLY if shouldLogToSummary is true
+    if (shouldLogToSummary) {
+      try {
+        await appendToSummary({
+          session,
+          errorStatus,
+          data,
+          genshareVersion: activeGenShareVersion || genshareConfig.defaultVersion,
+          reportURL: "",
+          graphValue: activeGenShareGraphValue,
+          reportVersion: activeReportVersion
+        });
+      } catch (summaryError) {
+        session.addLog(`Error logging error to summary: ${summaryError.message}`);
+        console.error(`[${session.requestId}] Error logging error to summary:`, summaryError);
+      }
     }
 
     // Re-throw the original error

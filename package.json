@@ -1,6 +1,6 @@
 {
   "name": "nodejs-rest-api",
-  "version": "3.1.0",
+  "version": "3.2.1",
   "description": "nodejs REST API to interact with GenShare",
   "main": "src/server.js",
   "engines": {
@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.804.0",
+    "archiver": "^7.0.1",
     "axios": "^1.9.0",
     "express": "^4.17.1",
     "express-rate-limit": "^5.2.6",
@@ -49,7 +50,7 @@
   "devDependencies": {
     "@commitlint/cli": "^19.6.1",
     "@commitlint/config-conventional": "^19.6.0",
-    "conventional-changelog-cli": "^5.0.0",
+    "conventional-changelog-cli": "^4.1.0",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.29.1",
