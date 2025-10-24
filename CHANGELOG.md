@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.3.0](https://github.com/DataSeer/snapshot-api/compare/v3.2.1...v3.3.0) (2025-10-24)
+
+
+### Features
+
+* sort response depending on user configuration ([7911b3c](https://github.com/DataSeer/snapshot-api/commits/7911b3c1ba19abb5047bbf619edff9d11c60a8e7))
+
+
+### Documentation
+
+* update README.md file ([e58e985](https://github.com/DataSeer/snapshot-api/commits/e58e9857950ff51bf82ef3cc461432e387cac5a1))
+* update USER_DOCUMENTATION.md file ([8f5b7a1](https://github.com/DataSeer/snapshot-api/commits/8f5b7a10c2906bab4492a2ae34bf198db9761604))
+* update USER_DOCUMENTATION.md file ([6f77a4a](https://github.com/DataSeer/snapshot-api/commits/6f77a4a2ce6b5960ec529b420be59a0fdde6f52d))
+
 ## [3.2.1](https://github.com/DataSeer/snapshot-api/compare/v3.2.0...v3.2.1) (2025-10-14)
 
 ### Bug Fixes
