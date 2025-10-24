@@ -86,44 +86,111 @@ const getResponse = (response = [], version) => {
 };
 
 /**
- * Filter GenShare response based on user's permissions
+ * Sort response data based on user's configuration
+ * @param {Array} responseData - Array of field objects to sort
+ * @param {Array} fieldOrder - Array of field names (with suffix) in desired order
+ * @returns {Array} - Sorted array
+ */
+function sortResponseData(responseData, fieldOrder) {
+  // If no response data or no sort settings, return as is
+  if (!responseData || !fieldOrder) {
+    return responseData;
+  }
+
+  // Create a deep copy to avoid modifying original
+  let data = JSON.parse(JSON.stringify(responseData));
+
+
+  if (!fieldOrder || fieldOrder.length === 0) {
+    return data;
+  }
+
+  // Create a map of field names to their order index
+  const orderMap = new Map();
+  fieldOrder.forEach((fieldName, index) => {
+    orderMap.set(fieldName, index);
+  });
+
+  return data.sort((a, b) => {
+    const orderA = orderMap.has(a.name) ? orderMap.get(a.name) : Infinity;
+    const orderB = orderMap.has(b.name) ? orderMap.get(b.name) : Infinity;
+    
+    // If both have defined order, sort by order
+    if (orderA !== Infinity && orderB !== Infinity) {
+      return orderA - orderB;
+    }
+    
+    // If only one has defined order, it comes first
+    if (orderA !== Infinity) return -1;
+    if (orderB !== Infinity) return 1;
+    
+    // If neither has defined order, maintain original order
+    return 0;
+  });
+}
+
+/**
+ * Filter response data based on user's configuration
+ * @param {Array} responseData - Array of field objects to filter
+ * @param {Array} availableFields - Array of available field names (with suffix)
+ * @param {Array} restrictedFields - Array of restricted field names (with suffix)
+ * @returns {Array} - Filtered array
+ */
+function filterResponseData(responseData, availableFields, restrictedFields) {
+  // If no response data return as is
+  if (!responseData) {
+    return responseData;
+  }
+
+  // If no filter restrictions, return full response
+  if ((!availableFields || availableFields.length === 0) && 
+      (!restrictedFields || restrictedFields.length === 0)) {
+    return responseData;
+  }
+
+  // Create a deep copy to avoid modifying original
+  let data = JSON.parse(JSON.stringify(responseData));
+
+  // Filter the response array
+  if (Array.isArray(data)) {
+    if (availableFields && availableFields.length > 0) {
+      // Include only available fields
+      return data.filter(item => 
+        availableFields.includes(item.name)
+      );
+    } else if (restrictedFields && restrictedFields.length > 0) {
+      // Exclude restricted fields
+      return data.filter(item => 
+        !restrictedFields.includes(item.name)
+      );
+    }
+  } else {
+    return responseData;
+  }
+}
+
+/**
+ * Filter, sort and clean GenShare response based on user's permissions
  * @param {Object} responseData - Response property of the full GenShare response
  * @param {Object} user - User object with filter settings
  * @returns {Object} - Filtered response
  */
-const filterResponseForUser = (responseData, user) => {
+const filterAndSortResponseForUser = (responseData, user) => {
   // If no response data or no filter settings, return as is
   if (!responseData || !user.genshare) {
     return cleanSnapshotFieldsName(responseData);
   }
 
-  const { availableFields, restrictedFields } = user.genshare;
+  const { availableFields, restrictedFields, fieldOrder } = user.genshare;
 
-  // If no filter restrictions, return full response
-  if ((!availableFields || availableFields.length === 0) && 
-      (!restrictedFields || restrictedFields.length === 0)) {
-    return cleanSnapshotFieldsName(responseData);
-  }
+  // Filter data based on filter config
+  const filteredResponse = filterResponseData(responseData, availableFields, restrictedFields);
 
-  // Create a deep copy to avoid modifying original
-  let filteredResponse = JSON.parse(JSON.stringify(responseData));
+  // Sort data based on field order
+  const sortedAndFilteredResponse = sortResponseData(filteredResponse, fieldOrder);
 
-  // Filter the response array
-  if (Array.isArray(filteredResponse)) {
-    if (availableFields && availableFields.length > 0) {
-      // Include only available fields
-      filteredResponse = filteredResponse.filter(item => 
-        availableFields.includes(item.name)
-      );
-    } else if (restrictedFields && restrictedFields.length > 0) {
-      // Exclude restricted fields
-      filteredResponse = filteredResponse.filter(item => 
-        !restrictedFields.includes(item.name)
-      );
-    }
-  }
-
-  return cleanSnapshotFieldsName(filteredResponse);
+  // Clean field names
+  return cleanSnapshotFieldsName(sortedAndFilteredResponse);
 };
 
 /**
@@ -535,7 +602,7 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
     session.addLog('Response processing completed');
 
     // Apply user-specific filtering to the response
-    const filteredData = filterResponseForUser(response.data.response, user);
+    const filteredData = filterAndSortResponseForUser(response.data.response, user);
 
     // Add report_url if possible
     let finalData = filteredData;
@@ -617,7 +684,7 @@ module.exports = {
   getGenShareHealth,
   processPDF,
   appendToSummary,
-  filterResponseForUser,
+  filterAndSortResponseForUser,
   getPath,
   getResponse
 };

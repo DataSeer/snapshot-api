@@ -213,7 +213,7 @@ Here is the list of all available fields
 | computer_gen | Was shareable computer code generated? | Boolean | Was shareable computer code generated? |
 | computer_si | Is any computer code shared as Supplemental Material? | Boolean | Is any computer code shared as Supplemental Material? |
 | computer_online | Is any computer code shared online? | Boolean | Is any computer code shared online? |
-| data_share_in_ms_or_si | Is the DAS stating that 'All data are in the manuscript and/or supporting information files? | Boolean | Is the DAS stating that 'All data are in the manuscript and/or supporting information files? |
+| data_in_ms_or_si | Is the DAS stating that 'All data are in the manuscript and/or supporting information files? | Boolean | Is the DAS stating that 'All data are in the manuscript and/or supporting information files? |
 | data_share_si | Check for the minimal dataset in the Supporting Information files. | Boolean | Check for the minimal dataset in the Supporting Information files. |
 | cumulated_score | Cumulated score from snapshot | Integer | Cumulated score from snapshot |
 | warrants_code_online | URL(s) and PID(s) for any online code sharing locations | Array<String> | URL(s) and PID(s) for any online code sharing locations |
@@ -289,7 +289,7 @@ Here is the list of all available fields
       "value": true || false || "N/A"
     },
     {
-      "name": "das_in_si",
+      "name": "data_in_si",
       "description": "Does the DAS say that the data are shared in the 'Supplementary material' section?",
       "value": true || false || "N/A"
     },
@@ -324,7 +324,7 @@ Here is the list of all available fields
       "value": true || false || "N/A"
     },
     {
-      "name": "das_exemption_reasons",
+      "name": "exemption_reasons",
       "description": "List of the reasons did authors gave for their exemption claim.",
       "value": ["..."]
     },
@@ -424,7 +424,7 @@ Here is the list of all available fields
       "value": "..."
     },
     {
-      "name": "data_share_in_ms_or_si",
+      "name": "data_in_ms_or_si",
       "description": "Is the DAS stating that 'All data are in the manuscript and/or supporting information files?",
       "value": true || false || "N/A"
     },
