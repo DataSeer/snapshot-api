@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.4.0](https://github.com/DataSeer/snapshot-api/compare/v3.3.0...v3.4.0) (2025-11-04)
+
+
+### Features
+
+* update genshare options management ('graph' -> 'editorial_policy', add 'journal_name') ([f1d9b0b](https://github.com/DataSeer/snapshot-api/commits/f1d9b0b3c7e020d08c2e0527ed0c6edf1565dae9))
+
 ## [3.3.0](https://github.com/DataSeer/snapshot-api/compare/v3.2.1...v3.3.0) (2025-10-24)
 
 
