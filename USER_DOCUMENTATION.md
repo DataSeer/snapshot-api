@@ -93,13 +93,17 @@ The `options` parameter is a JSON object with following properties:
   rejected by the API with error code 400.
 - `article_id` (required): specify the article ID of the document sent, the API will return 400 if the ID is empty or
   null
-- `das` (optional): specify the DAS of the document sent
+- `das` (optional): specify the DAS of the document sent. If provided, the value will be stored in `das_custom_ms` & `das_custom_presence_ms` will be set to `true`. If not provided, `N/A` will be stored in `das_custom_ms` & `das_custom_presence_ms` will be set to `false`.
+- `journal_name` (optional): specify the name of the journal. If not provided, `N/A` will be stored in `journal_name`.
+- `editorial_policy` (optional): specify the editorial policy requested for this document (e.g. `TFOD`, `SURR`, `PLOS`). A list of available values will be attached to your API key, and a default value will be assigned in case of error (or absence).  
 
 ```json
 {
      "article_id": "KWG1234",
      "document_type": "article",
-     "das": "The DAS content of my article"
+     "das": "The DAS content of my article",
+     "journal_name": "My Journal",
+     "editorial_policy": "TFOD"
 }
 ```
 
@@ -119,7 +123,7 @@ Using curl with main PDF only:
 ```bash
 curl -X POST -H "Authorization: Bearer <your_token>" \
      -F "file=@path/to/your/file.pdf" \
-     -F 'options={"article_id": "KWG1234", "document_type": "article"}' \
+     -F 'options={"article_id": "KWG1234", "document_type": "article", "journal_name": "My Journal", "editorial_policy": "TFOD"}' \
      https://snapshot.dataseer.ai/processPDF
 ```
 
@@ -129,7 +133,7 @@ Using curl with PDF and supplementary files:
 curl -X POST -H "Authorization: Bearer <your_token>" \
      -F "file=@path/to/your/file.pdf" \
      -F "supplementary_file=@path/to/supplementary.zip" \
-     -F 'options={"article_id": "KWG1234", "document_type": "article"}' \
+     -F 'options={"article_id": "KWG1234", "document_type": "article", "journal_name": "My Journal", "editorial_policy": "TFOD"}' \
      https://snapshot.dataseer.ai/processPDF
 ```
 
@@ -251,6 +255,11 @@ Here is the list of all available fields
     {
       "name": "abstract",
       "description": "Abstract of the article",
+      "value": "..."
+    },
+    {
+      "name": "journal_name",
+      "description": "The name of the journal",
       "value": "..."
     },
     {
