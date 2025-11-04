@@ -95,7 +95,12 @@ The `options` parameter is a JSON object with following properties:
   null
 - `das` (optional): specify the DAS of the document sent. If provided, the value will be stored in `das_custom_ms` & `das_custom_presence_ms` will be set to `true`. If not provided, `N/A` will be stored in `das_custom_ms` & `das_custom_presence_ms` will be set to `false`.
 - `journal_name` (optional): specify the name of the journal. If not provided, `N/A` will be stored in `journal_name`.
-- `editorial_policy` (optional): specify the editorial policy requested for this document (e.g. `TFOD`, `SURR`, `PLOS`). A list of available values will be attached to your API key, and a default value will be assigned in case of error (or absence).  
+- `editorial_policy` (optional): specify the editorial policy requested for this document (e.g. `TFOD`, `SURR`, `PLOS`). A list of available values will be attached to your API key, and a default value will be assigned in case of error (or absence).
+- `submission_number` (optional): An identifier of the submission. Will be returned as is.
+- `filename` (optional): The name of the file. Will be returned as is.
+- `article_title` (optional): Title of the article. Will be returned as is.
+- `subject_area` (optional): Subject area. Will be returned as is.
+- `abstract` (optional): Abstract of the article. Will be returned as is.
 
 ```json
 {
@@ -103,7 +108,12 @@ The `options` parameter is a JSON object with following properties:
      "document_type": "article",
      "das": "The DAS content of my article",
      "journal_name": "My Journal",
-     "editorial_policy": "TFOD"
+     "editorial_policy": "TFOD",
+     "submission_number": "...",
+     "filename": "article.pdf",
+     "article_title": "...",
+     "subject_area": ["subject_area1", "subject_area2"],
+     "abstract": "..."
 }
 ```
 
