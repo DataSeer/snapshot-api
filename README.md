@@ -192,6 +192,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
     "genshare": {
       "authorizedVersions": ["v1.0.0", "v2.0.0"],
       "defaultVersion": "v1.0.0",
+      "fieldOrder": [],
       "availableFields": [],
       "restrictedFields": []
     },
@@ -210,6 +211,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
     "genshare": {
       "authorizedVersions": ["v1.0.0"],
       "defaultVersion": "v1.0.0",
+      "fieldOrder": [],
       "availableFields": [],
       "restrictedFields": []
     },
@@ -351,6 +353,114 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
   }
 }
 ```
+
+### Response Filtering and Sorting
+
+The API provides granular control over GenShare response data through user-specific filtering and sorting configurations. This allows different clients to receive customized response formats tailored to their needs.
+
+#### Configuration Options
+
+Each user in `conf/users.json` can configure their GenShare response handling through three properties:
+```json
+{
+  "username": {
+    "genshare": {
+      "availableFields": [],      // Whitelist: only include these fields
+      "restrictedFields": [],     // Blacklist: exclude these fields
+      "fieldOrder": []            // Custom sort order for response fields
+    }
+  }
+}
+```
+
+#### Field Filtering
+
+Two mutually exclusive filtering modes are available:
+
+1. **Whitelist Mode** (`availableFields`):
+   - Only fields listed in `availableFields` will be included in the response
+   - Use this when you want to explicitly control which fields are returned
+   - Example: `["article_id__gs", "title__gs", "authors__gs"]`
+
+2. **Blacklist Mode** (`restrictedFields`):
+   - All fields except those listed in `restrictedFields` will be included
+   - Use this when you want to exclude specific sensitive fields
+   - Example: `["data_on_request__gs", "data_url__gs"]`
+
+> **Note**: Field names in `availableFields` and `restrictedFields` must include the `__gs` suffix (internal field naming convention).
+
+#### Response Sorting
+
+The `fieldOrder` property allows you to customize the order in which fields appear in the response:
+```json
+{
+  "genshare": {
+    "fieldOrder": [
+      "article_id__gs",
+      "title__gs",
+      "authors__gs",
+      "publication_date__gs",
+      "das_presence__gs"
+    ]
+  }
+}
+```
+
+**Sorting Behavior:**
+- Fields listed in `fieldOrder` appear first, in the specified order
+- Fields not listed in `fieldOrder` appear after, maintaining their original order
+- Sorting is applied to internal field names (with `__gs` suffix)
+- Field name cleanup happens after sorting, so clients receive clean field names
+
+#### Processing Pipeline
+
+The response goes through the following pipeline:
+
+1. **Filtering**: Apply whitelist or blacklist rules based on user configuration
+2. **Sorting**: Reorder fields according to `fieldOrder` configuration
+3. **Field Name Cleanup**: Remove internal suffixes (e.g., `__gs`) for client consumption
+4. **Report Link Addition**: Append `report_link` field if applicable
+
+#### Example Configuration
+```json
+{
+  "client-example": {
+    "token": "...",
+    "genshare": {
+      "authorizedVersions": ["v81.5.0"],
+      "defaultVersion": "v81.5.0",
+      "availableFields": [],
+      "restrictedFields": [
+        "data_on_request__gs",
+        "das_in_si__gs",
+        "data_url__gs",
+        "non-functional_urls__gs"
+      ],
+      "fieldOrder": [
+        "article_id__gs",
+        "title__gs",
+        "authors__gs",
+        "publication_date__gs",
+        "das_presence__gs",
+        "data_availability__gs"
+      ]
+    }
+  }
+}
+```
+
+This configuration will:
+1. Exclude the four restricted fields
+2. Return remaining fields with `article_id` first, followed by `title`, `authors`, etc.
+3. Any other fields not in `fieldOrder` will appear after, in their original order
+4. All field names will have their `__gs` suffix removed in the final response
+
+#### Implementation Details
+
+- **Function**: `filterAndSortResponseForUser()` in `src/utils/genshareManager.js`
+- **Helper**: `sortResponseData()` handles the sorting logic
+- **Validation**: Empty or missing `fieldOrder` arrays are handled gracefully
+- **Performance**: Sorting uses a Map-based approach for O(n log n) complexity
 
 ### Graph Configuration
 

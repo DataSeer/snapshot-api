@@ -93,13 +93,27 @@ The `options` parameter is a JSON object with following properties:
   rejected by the API with error code 400.
 - `article_id` (required): specify the article ID of the document sent, the API will return 400 if the ID is empty or
   null
-- `das` (optional): specify the DAS of the document sent
+- `das` (optional): specify the DAS of the document sent. If provided, the value will be stored in `das_custom_ms` & `das_custom_presence_ms` will be set to `true`. If not provided, `N/A` will be stored in `das_custom_ms` & `das_custom_presence_ms` will be set to `false`.
+- `journal_name` (optional): specify the name of the journal. If not provided, `N/A` will be stored in `journal_name`.
+- `editorial_policy` (optional): specify the editorial policy requested for this document (e.g. `TFOD`, `SURR`, `PLOS`). A list of available values will be attached to your API key, and a default value will be assigned in case of error (or absence).
+- `submission_number` (optional): An identifier of the submission. Will be returned as is.
+- `filename` (optional): The name of the file. Will be returned as is.
+- `article_title` (optional): Title of the article. Will be returned as is.
+- `subject_area` (optional): Subject area. Will be returned as is.
+- `abstract` (optional): Abstract of the article. Will be returned as is.
 
 ```json
 {
      "article_id": "KWG1234",
      "document_type": "article",
-     "das": "The DAS content of my article"
+     "das": "The DAS content of my article",
+     "journal_name": "My Journal",
+     "editorial_policy": "TFOD",
+     "submission_number": "...",
+     "filename": "article.pdf",
+     "article_title": "...",
+     "subject_area": ["subject_area1", "subject_area2"],
+     "abstract": "..."
 }
 ```
 
@@ -119,7 +133,7 @@ Using curl with main PDF only:
 ```bash
 curl -X POST -H "Authorization: Bearer <your_token>" \
      -F "file=@path/to/your/file.pdf" \
-     -F 'options={"article_id": "KWG1234", "document_type": "article"}' \
+     -F 'options={"article_id": "KWG1234", "document_type": "article", "journal_name": "My Journal", "editorial_policy": "TFOD"}' \
      https://snapshot.dataseer.ai/processPDF
 ```
 
@@ -129,7 +143,7 @@ Using curl with PDF and supplementary files:
 curl -X POST -H "Authorization: Bearer <your_token>" \
      -F "file=@path/to/your/file.pdf" \
      -F "supplementary_file=@path/to/supplementary.zip" \
-     -F 'options={"article_id": "KWG1234", "document_type": "article"}' \
+     -F 'options={"article_id": "KWG1234", "document_type": "article", "journal_name": "My Journal", "editorial_policy": "TFOD"}' \
      https://snapshot.dataseer.ai/processPDF
 ```
 
@@ -213,7 +227,7 @@ Here is the list of all available fields
 | computer_gen | Was shareable computer code generated? | Boolean | Was shareable computer code generated? |
 | computer_si | Is any computer code shared as Supplemental Material? | Boolean | Is any computer code shared as Supplemental Material? |
 | computer_online | Is any computer code shared online? | Boolean | Is any computer code shared online? |
-| data_share_in_ms_or_si | Is the DAS stating that 'All data are in the manuscript and/or supporting information files? | Boolean | Is the DAS stating that 'All data are in the manuscript and/or supporting information files? |
+| data_in_ms_or_si | Is the DAS stating that 'All data are in the manuscript and/or supporting information files? | Boolean | Is the DAS stating that 'All data are in the manuscript and/or supporting information files? |
 | data_share_si | Check for the minimal dataset in the Supporting Information files. | Boolean | Check for the minimal dataset in the Supporting Information files. |
 | cumulated_score | Cumulated score from snapshot | Integer | Cumulated score from snapshot |
 | warrants_code_online | URL(s) and PID(s) for any online code sharing locations | Array<String> | URL(s) and PID(s) for any online code sharing locations |
@@ -254,6 +268,11 @@ Here is the list of all available fields
       "value": "..."
     },
     {
+      "name": "journal_name",
+      "description": "The name of the journal",
+      "value": "..."
+    },
+    {
       "name": "editorial_policy",
       "description": "Editorial policy to use",
       "value": "..."
@@ -289,7 +308,7 @@ Here is the list of all available fields
       "value": true || false || "N/A"
     },
     {
-      "name": "das_in_si",
+      "name": "data_in_si",
       "description": "Does the DAS say that the data are shared in the 'Supplementary material' section?",
       "value": true || false || "N/A"
     },
@@ -324,7 +343,7 @@ Here is the list of all available fields
       "value": true || false || "N/A"
     },
     {
-      "name": "das_exemption_reasons",
+      "name": "exemption_reasons",
       "description": "List of the reasons did authors gave for their exemption claim.",
       "value": ["..."]
     },
@@ -424,7 +443,7 @@ Here is the list of all available fields
       "value": "..."
     },
     {
-      "name": "data_share_in_ms_or_si",
+      "name": "data_in_ms_or_si",
       "description": "Is the DAS stating that 'All data are in the manuscript and/or supporting information files?",
       "value": true || false || "N/A"
     },

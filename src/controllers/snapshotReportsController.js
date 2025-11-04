@@ -1,6 +1,6 @@
 // File: src/controllers/snapshotReportsController.js
 const { getGenshareResponseFile } = require('../utils/s3Storage');
-const { filterResponseForUser } = require('../utils/genshareManager');
+const { filterAndSortResponseForUser } = require('../utils/genshareManager');
 const { getUserById } = require('../utils/userManager');
 const requestsManager = require('../utils/requestsManager');
 
@@ -80,7 +80,7 @@ const getGenshareData = async (req, res) => {
     }
 
     // Apply filtering based on the original user's permissions
-    const filteredData = filterResponseForUser(responseData, originalUser);
+    const filteredData = filterAndSortResponseForUser(responseData, originalUser);
 
     // Return the filtered data with metadata
     res.json({
