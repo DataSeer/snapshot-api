@@ -524,14 +524,14 @@ const processEmSubmissionJob = async (job) => {
         article_id: data.document_id,
         document_type: data.document_type,
         article_title: data.article_title,
-        editorial_policy: data.publication_code, // "publication_code" (from EM) is the "editorial_policy" parameter (in Snapshot) used for the DAS exemption process
+        journal_name: data.publication_code, // "publication_code" from EM is the "journal_name" parameter in Snapshot
         das: data.das_value,
       };
       
       // Add graph value to options if available
       if (data.graph_value) {
-        genshareOptions.graph = data.graph_value;
-        session.addLog(`Including graph value in GenShare options: "${data.graph_value}"`);
+        genshareOptions.editorial_policy = data.graph_value;
+        session.addLog(`Including editorial_policy value in GenShare options: "${data.graph_value}"`);
       }
       
       // Add report value to options if available

@@ -219,6 +219,55 @@ const cleanSnapshotFieldsName = (responseData) => {
 };
 
 /**
+ * Filter and validate options based on user's configuration
+ * @param {Object} options - Options object to filter
+ * @param {Object} user - User object with genshare configuration
+ * @param {Object} session - Session object
+ * @returns {Object} - Filtered options object
+ */
+function filterOptions(options, user, session) {
+  // If no options or no user config, return options as is
+  if (!options || !user?.genshare?.options) {
+    return options;
+  }
+
+  // Create a copy to avoid modifying the original
+  const filteredOptions = { ...options };
+
+  // Get the options configuration from user
+  const optionsConfig = user.genshare.options;
+
+  // Iterate through each property in the options config
+  Object.keys(optionsConfig).forEach(optionKey => {
+    const config = optionsConfig[optionKey];
+    
+    // Skip if config doesn't have the required structure
+    if (!config || !Array.isArray(config.available) || typeof config.default !== 'string') {
+      return;
+    }
+
+    // Check if this option exists in the provided options
+    if (optionKey in filteredOptions) {
+      const value = filteredOptions[optionKey];
+      
+      // If the value is not in the available list, use the default
+      if (!config.available.includes(value)) {
+        filteredOptions[optionKey] = config.default;
+        session.addLog(`GenShare options "${optionKey}" with value "${value}" is not available; default value: "${config.default}" will be used instead`);
+      }
+    } else {
+      // If the option is not provided and there's a default, set it
+      if (config.default) {
+        filteredOptions[optionKey] = config.default;
+        session.addLog(`GenShare options "${optionKey}" not provided; default value: "${config.default}" will be used instead`);
+      }
+    }
+  });
+
+  return filteredOptions;
+}
+
+/**
  * Logs session data to Google Sheets
  * @param {Object} options - Options containing session, error status, and request
  * @returns {Promise<void>}
@@ -391,7 +440,7 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
     activeReportVersion = user.reports?.defaultVersion || "";
   }
 
-  let activeGenShareGraphValue = data.options?.graph || "";
+  let activeGenShareGraphValue = data.options?.editorial_policy || "";
 
   // Input validation
   if (!data.file) {
@@ -433,9 +482,12 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
     session.addLog(`Added supplementary files: ${data.supplementary_file.originalname} (${data.supplementary_file.size} bytes)`);
   }
 
+  // Filter options sent by the user 
+  const filteredOptions = filterOptions(options, user, session);
+
   // Add options with decision_tree_path for the request only
   const requestOptions = {
-    ...options,
+    ...filteredOptions,
     decision_tree_path: true,
     debug: true
   };

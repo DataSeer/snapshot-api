@@ -1,38 +1,74 @@
 {
   "admin": {
-    "token": "XXXX",
-    "client_secret": "admin_client_secret",
+    "token": "xxx",
+    "client_secret": "xxx",
     "rateLimit": {
       "max": 200,
       "windowMs": 0
     },
     "genshare": {
-      "authorizedVersions": ["v1.0.0", "v2.0.0"],
-      "defaultVersion": "v1.0.0",
+      "authorizedVersions": [
+        "v81.5.0"
+      ],
+      "defaultVersion": "v81.5.0",
+      "fieldOrder": [],
       "availableFields": [],
-      "restrictedFields": []
+      "restrictedFields": [
+        "data_on_request__gs",
+        "data_in_si__gs",
+        "data_url__gs",
+        "non-functional_urls__gs"
+      ],
+      "options": {
+        "editorial_policy": {
+          "available": ["PLOS", "TFOD", "SURR"],
+          "default": "TFOD"
+        }
+      }
     },
     "reports": {
-      "authorizedVersions": ["v1.0.0", "v2.0.0"],
-      "defaultVersion": "v1.0.0"
+      "authorizedVersions": [
+        "Admin (v0.1)",
+        "PLOS (v0.1)",
+        "Generic (v0.1)",
+        "PLOS (v0.2)",
+        "TFOD (v0.2)"
+      ],
+      "defaultVersion": "Admin (v0.1)"
     }
   },
   "test": {
-    "token": "XXXX",
-    "client_secret": "test_client_secret",
+    "token": "xxx",
+    "client_secret": "xxx",
     "rateLimit": {
       "max": 100,
       "windowMs": 900000
     },
     "genshare": {
-      "authorizedVersions": ["v1.0.0"],
-      "defaultVersion": "v1.0.0",
-      "availableFields": ["property1", "property2", "property3"],
-      "restrictedFields": ["property4"]
+      "authorizedVersions": [
+        "v81.5.0"
+      ],
+      "defaultVersion": "",
+      "fieldOrder": [],
+      "availableFields": [],
+      "restrictedFields": [
+        "data_on_request__gs",
+        "data_in_si__gs",
+        "data_url__gs",
+        "non-functional_urls__gs"
+      ],
+      "options": {
+        "editorial_policy": {
+          "available": ["PLOS", "TFOD", "SURR"],
+          "default": "TFOD"
+        }
+      }
     },
     "reports": {
-      "authorizedVersions": [],
-      "defaultVersion": ""
+      "authorizedVersions": [
+        "Generic (v0.1)"
+      ],
+      "defaultVersion": "Generic (v0.1)"
     }
   }
 }
