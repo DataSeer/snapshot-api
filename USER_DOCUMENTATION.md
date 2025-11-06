@@ -233,8 +233,6 @@ Here is the list of all available fields
 | warrants_code_online | URL(s) and PID(s) for any online code sharing locations | Array<String> | URL(s) and PID(s) for any online code sharing locations |
 | warrants_code_online | URL(s) and PID(s) for any online code sharing locations | Array<String> | URL(s) and PID(s) for any online code sharing locations |
 | claims_no_data_shared | Claims no data shared | Boolean | Claims no data shared |
-| data_in_reference | Map of Data Availability URLs to whether the same URL is also cited in References | Dictionary<String, Boolean> | Whether each Data Availability URL also appears in the References section |
-| accepted_license | Map of repository name/database to a list of normalized data license names | Dictionary<String, Array<String>> | Licenses detected per repository |
 
 ```json
 {
@@ -458,21 +456,6 @@ Here is the list of all available fields
       "name": "claims_no_data_shared",
       "description": "Claims no data shared",
       "value": true || false || "N/A"
-    },
-    {
-      "name": "data_in_reference",
-      "description": "Mapping of Data Availability URLs to whether they are also cited in References",
-      "value": {
-        "link": false || true, "..." : false || true
-      }
-    },
-    {
-      "name": "accepted_license",
-      "description": "Map of repository name/database to a list of normalized data license names",
-      "value": {
-        "data repository": ["..."],
-        "...":["..."]
-      }
     }
   ]
 }
