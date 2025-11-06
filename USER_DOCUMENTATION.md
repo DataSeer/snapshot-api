@@ -464,14 +464,15 @@ Here is the list of all available fields
       "name": "data_in_reference",
       "description": "Mapping of Data Availability URLs to whether they are also cited in References",
       "value": {
-        "link": false || true, "..." : false || true
+        "link": false || true, 
+        "..." : false || true
       }
     },
     {
       "name": "accepted_license",
       "description": "Map of repository name/database to a list of normalized data license names",
       "value": {
-        "data repository": ["..."],
+        "data repository": ["license name"],
         "...":["..."]
       }
     }
