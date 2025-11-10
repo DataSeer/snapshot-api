@@ -13,7 +13,8 @@ const {
 } = require('../controllers/requestsController');
 const { 
   authenticateEditorialManager, 
-  revokeTokenEditorialManager
+  revokeTokenEditorialManager,
+  validateScholarOneWebhook
 } = require('../controllers/authController');
 const { 
   postSubmissions: emPostSubmissions,
@@ -23,6 +24,16 @@ const {
   getJobStatus: emGetJobStatus,
   retryJob: emRetryJob
 } = require('../controllers/emController');
+const {
+  postSubmissions: scholaronePostSubmissions,
+  postCancelUpload: scholaronePostCancelUpload,
+  getJobStatus: scholaroneGetJobStatus,
+  retryJob: scholaroneRetryJob,
+} = require('../controllers/scholaroneController');
+const {
+  receiveNotification: scholaroneReceiveNotification,
+  getNotificationStatus: scholaroneGetNotificationStatus
+} = require('../controllers/scholaroneNotificationsController');
 const {
   postSubmissions: postMailSubmissions,
   getJobStatus: getMailJobStatus,
@@ -114,6 +125,22 @@ authenticatedRouter.post('/editorial-manager/retry/:reportId', emRetryJob);
 authenticatedRouter.post('/snapshot-mails/submissions', upload.any(), postMailSubmissions);
 authenticatedRouter.get('/snapshot-mails/jobs/:requestId', getMailJobStatus);
 authenticatedRouter.post('/snapshot-mails/retry/:requestId', retryMailJob);
+
+// ScholarOne endpoints
+authenticatedRouter.post('/scholarone/submissions', scholaronePostSubmissions);
+authenticatedRouter.post('/scholarone/cancel', scholaronePostCancelUpload);
+authenticatedRouter.get('/scholarone/jobs/:requestId', scholaroneGetJobStatus);
+authenticatedRouter.post('/scholarone/retry/:requestId', scholaroneRetryJob);
+
+// ScholarOne Notifications webhook (uses special authentication)
+unauthenticatedRouter.get(
+  '/scholarone/notifications',
+  validateScholarOneWebhook,
+  scholaroneReceiveNotification
+);
+
+// ScholarOne Notifications status endpoint (uses normal authentication)
+authenticatedRouter.get('/scholarone/notifications/status', scholaroneGetNotificationStatus);
 
 // Snapshot Reports endpoints
 authenticatedRouter.get('/snapshot-reports/:requestId/genshare', getGenshareData);

@@ -7,6 +7,7 @@ const config = require('./config');
 const { initDatabase, refreshRequestsFromS3 } = require('./utils/requestsManager');
 const jwtManager = require('./utils/jwtManager');
 const queueManager = require('./utils/queueManager');
+const scholaroneManager = require('./utils/scholaroneManager');
 
 const app = express();
 
@@ -34,6 +35,11 @@ const startServer = async () => {
     console.log('Initializing queue manager...');
     await queueManager.startJobProcessor();
     console.log('Queue manager initialized successfully');
+    
+    // Start ScholarOne periodic polling (if enabled)
+    console.log('Starting ScholarOne periodic polling...');
+    scholaroneManager.startPeriodicPolling();
+    console.log('ScholarOne periodic polling started');
     
     // Setup periodic token cleanup (every hour)
     setInterval(async () => {
