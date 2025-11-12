@@ -370,9 +370,9 @@ const processSubmission = async (submissionData, userId, session) => {
     // Define completion callback
     const onJobComplete = async (error) => {
       if (error) {
-        await handleProcessScholaroneSubmissionJobCompletion(requestId, error);
+        await handleProcessScholaroneSubmissionJobFailure(requestId, error);
       } else {
-        await handleProcessScholaroneSubmissionJobFailure(requestId);
+        await handleProcessScholaroneSubmissionJobCompletion(requestId);
       }
     };
     
