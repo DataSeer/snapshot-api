@@ -602,7 +602,7 @@ const processScholaroneSubmissionJob = async (job) => {
         errorStatus,
         data: {
           file: mainFile?.originalname,
-          user: { id: data.user_id }
+          user: { id: data.userId }
         },
         genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
         reportURL,
@@ -647,7 +647,7 @@ const processScholaroneSubmissionJob = async (job) => {
         errorStatus,
         data: {
           file: mainFile?.originalname,
-          user: { id: data.user_id }
+          user: { id: data.userId }
         },
         genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
         reportURL,
