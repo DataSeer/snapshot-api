@@ -2,7 +2,11 @@
 const config = require('../config');
 const { validateClientCredentials } = require('../utils/userManager');
 const { checkUserPermission } = require('../utils/permissionsManager');
+const scholaroneNotificationsManager = require('../utils/scholaroneNotificationsManager');
 const jwtManager = require('../utils/jwtManager');
+
+// Load ScholarOne configuration
+const scholaroneConfig = require(config.scholaroneConfigPath);
 
 /**
  * Generic authentication function that can be customized for different auth systems
@@ -291,11 +295,67 @@ const revokeTokenEditorialManager = async (req, res) => {
   return revokeToken(options, req, res);
 };
 
+/**
+ * Validate ScholarOne webhook authentication
+ * Uses IP whitelist and shared secret validation
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
+const validateScholarOneWebhook = async (req, res, next) => {
+  
+  try {
+    // Get source IP
+    const sourceIp = req.ip || req.connection.remoteAddress;
+    
+    // Validate source IP
+    const isIpValid = scholaroneNotificationsManager.validateSourceIp(sourceIp);
+    
+    if (!isIpValid) {
+      console.error(`Unauthorized webhook request from IP: ${sourceIp}`);
+      return res.status(403).json({
+        error: 'access_denied',
+        error_description: 'IP address not allowed'
+      });
+    }
+    
+    // Validate signature if provided
+    const signature = req.headers['x-scholarone-signature'];
+    
+    if (signature) {
+      const isSignatureValid = scholaroneNotificationsManager.validateNotificationSignature(
+        req.query,
+        signature
+      );
+      
+      if (!isSignatureValid) {
+        console.error('Invalid webhook signature');
+        return res.status(403).json({
+          error: 'access_denied',
+          error_description: 'Invalid signature'
+        });
+      }
+    }
+    
+    // Set the user as ScholarOne
+    req.user = { id: scholaroneConfig.userId };
+    next();
+  } catch (error) {
+    console.error('Error validating ScholarOne webhook:', error);
+    return res.status(500).json({
+      error: 'server_error',
+      error_description: 'Authentication validation failed'
+    });
+  }
+};
+
 module.exports = {
   // Generic functions
   authenticate,
   revokeToken,
   // Implementation specific handlers
   authenticateEditorialManager,
-  revokeTokenEditorialManager
+  revokeTokenEditorialManager,
+  // ScholarOne webhook handlers
+  validateScholarOneWebhook
 };

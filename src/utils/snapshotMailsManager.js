@@ -157,7 +157,7 @@ const processSubmission = async (data, session) => {
     // Pass the processMailSubmissionJob as the processor function and completion callback
     await queueManager.enqueueJob(
       requestId, 
-      'mail_submission', 
+      queueManager.JobType.MAIL_SUBMISSION,
       queueData,
       undefined, // Use default max retries
       undefined, // Use default priority

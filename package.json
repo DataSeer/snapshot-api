@@ -23,7 +23,12 @@
     "release": "standard-version",
     "db:init": "node scripts/maintenance/initDB.js init",
     "db:refresh": "node scripts/maintenance/initDB.js refresh",
-    "db:check": "node scripts/maintenance/initDB.js check"
+    "db:check": "node scripts/maintenance/initDB.js check",
+    "db:check-notification": "node scripts/maintenance/initDB.js check-scholarone-notifications",
+    "db:list-notifications": "node scripts/maintenance/initDB.js list-scholarone-notifications",
+    "scholarone:hold:on": "node scripts/toggle_scholarone_notifications_hold.js on",
+    "scholarone:hold:off": "node scripts/toggle_scholarone_notifications_hold.js off",
+    "scholarone:hold:status": "node scripts/toggle_scholarone_notifications_hold.js status"
   },
   "lint-staged": {
     "*.js": "eslint --fix"

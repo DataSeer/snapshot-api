@@ -1,0 +1,88 @@
+{
+  "userId": "scholarone",
+  "api": {
+    "baseURL": "https://mc-beta-api.manuscriptcentral.com",
+    "username": "DATASEER_API_TEST",
+    "password": "your_password_here",
+    "timeout": 30000,
+    "endpoints": {
+      "submissionFullMetadata": "/api/s1m/v11/submissions/full/metadata/submissionids",
+      "submissionsByDateRange": "/api/s1m/v4/submissions/full/idsByDate"
+    }
+  },
+  "sites": {
+    "salesdemo1": {
+      "site_name": "salesdemo1",
+      "enabled": true,
+      "polling_enabled": true,
+      "polling_interval": 30,
+      "polling_days_back": 7,
+      "graph": {
+        "available": ["PLOS", "TFOD", "SURR"],
+        "default": "TFOD",
+        "custom": {
+          "dataseer_test": "TFOD",
+          "pwattest": "TFOD"
+        }
+      },
+      "report": {
+        "available": ["PLOS (v0.1)", "TFOD (v0.1)", "PLOS (v0.2)", "TFOD (v0.2)", "Generic (v0.1)"],
+        "default": "TFOD (v0.2)",
+        "custom": {
+          "dataseer_test": "TFOD (v0.2)",
+          "pwattest": "PLOS (v0.2)"
+        }
+      }
+    }
+  },
+  "workflow": {
+    "retrieve_method": "notification",
+    "process_timeout": 600000,
+    "max_retries": 3
+  },
+  "notifications": {
+    "enabled": true,
+    "endpoint_on_hold": false,
+    "shared_secret": "your-shared-secret-here",
+    "allowed_ips": [
+      "127.0.0.1",
+      "::1"
+    ],
+    "types": {
+      "manuscript_submission": {
+        "enabled": true,
+        "allowRetryOnDuplicate": false,
+        "events": [
+          "Author_Submit_Manuscript_Firl",
+          "Author_Submit_Manuscript_Orig",
+          "Author_Submit_Manuscript_Invi",
+          "Author_Submit_Manuscript_Revi",
+          "Author_Submit_Manuscript_Resu"
+        ]
+      },
+      "manuscript_status": {
+        "enabled": false,
+        "allowRetryOnDuplicate": true,
+        "events": [
+          "Admin_Unsubmit_Manuscript",
+          "Admin_Withdraw_Manuscript"
+        ]
+      },
+      "decision": {
+        "enabled": false,
+        "allowRetryOnDuplicate": true,
+        "events": []
+      },
+      "task_status": {
+        "enabled": false,
+        "allowRetryOnDuplicate": true,
+        "events": []
+      },
+      "transfer": {
+        "enabled": false,
+        "allowRetryOnDuplicate": true,
+        "events": []
+      }
+    }
+  }
+}

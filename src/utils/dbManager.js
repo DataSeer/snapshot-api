@@ -109,6 +109,83 @@ const initDatabase = async () => {
       });
     });
     
+    // Create the scholarone-submissions table if it doesn't exist
+    await new Promise((resolve, reject) => {
+      db.run(`CREATE TABLE IF NOT EXISTS "scholarone-submissions" (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        request_id TEXT NOT NULL UNIQUE,
+        site_name TEXT NOT NULL,
+        submission_id TEXT NOT NULL,
+        canceled_at DATETIME DEFAULT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`, (err) => {
+        if (err) {
+          console.error('Error creating scholarone-submissions table:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    // Create scholarone-notifications table
+    await new Promise((resolve, reject) => {
+      db.run(`CREATE TABLE IF NOT EXISTS "scholarone-notifications" (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_uuid TEXT NOT NULL UNIQUE,
+        notification_service_version TEXT NOT NULL,
+        site_name TEXT NOT NULL,
+        journal_name TEXT NOT NULL,
+        event_date TEXT NOT NULL,
+        subscription_id INTEGER NOT NULL,
+        subscription_name TEXT NOT NULL,
+        subscription_type TEXT NOT NULL,
+        document_id INTEGER,
+        submission_id TEXT,
+        document_status_name TEXT,
+        submission_title TEXT,
+        system_event_name TEXT,
+        request_id TEXT,
+        processed INTEGER DEFAULT 0,
+        processed_at DATETIME,
+        payload TEXT NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`, (err) => {
+        if (err) {
+          console.error('Error creating scholarone-notifications table:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    // Create index on message_uuid for fast lookups
+    await new Promise((resolve, reject) => {
+      db.run(`CREATE INDEX IF NOT EXISTS idx_scholarone_notifications_message_uuid 
+              ON "scholarone-notifications"(message_uuid)`, (err) => {
+        if (err) {
+          console.error('Error creating index on scholarone-notifications:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    // Create index on submission_id for fast lookups
+    await new Promise((resolve, reject) => {
+      db.run(`CREATE INDEX IF NOT EXISTS idx_scholarone_notifications_submission_id 
+              ON "scholarone-notifications"(submission_id)`, (err) => {
+        if (err) {
+          console.error('Error creating index on scholarone-notifications:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+    
     // Create the snapshot-mails-submissions table if it doesn't exist
     await new Promise((resolve, reject) => {
       db.run(`CREATE TABLE IF NOT EXISTS "snapshot-mails-submissions" (
@@ -1044,6 +1121,152 @@ const cancelEmSubmission = async (requestId) => {
 };
 
 /*
+ * SCHOLARONE SUBMISSIONS METHODS
+ */
+
+/**
+ * Store a new ScholarOne submission
+ * @param {string} requestId - The request ID
+ * @param {string} siteName - The site name
+ * @param {string} submissionId - The submission ID
+ * @returns {Promise<number>} - ID of the inserted record
+ */
+const storeScholaroneSubmission = async (requestId, siteName, submissionId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        `INSERT INTO "scholarone-submissions" (request_id, site_name, submission_id)
+         VALUES (?, ?, ?)`,
+        [requestId, siteName, submissionId],
+        function(err) {
+          if (err) reject(err);
+          else resolve(this.lastID);
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error storing ScholarOne submission:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get ScholarOne submission by request ID
+ * @param {string} requestId - The request ID
+ * @returns {Promise<Object|null>} - Submission record or null if not found
+ */
+const getScholaroneSubmissionByRequestId = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT * FROM "scholarone-submissions" WHERE request_id = ?`,
+        [requestId],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row || null);
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting ScholarOne submission by request ID:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get ScholarOne submission by submission ID
+ * @param {string} submissionId - The submission ID
+ * @returns {Promise<Object|null>} - Submission record or null if not found
+ */
+const getScholaroneSubmissionBySubmissionId = async (submissionId) => {
+  try {
+    const db = await getDBConnection();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT * FROM "scholarone-submissions" WHERE submission_id = ? ORDER BY created_at DESC LIMIT 1`,
+        [submissionId],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row || null);
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting ScholarOne submission by submission ID:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update canceled_at timestamp for a ScholarOne submission
+ * @param {string} requestId - The request ID
+ * @returns {Promise<boolean>} - True if submission was found and updated
+ */
+const cancelScholaroneSubmission = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+    const now = new Date().toISOString();
+    
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE "scholarone-submissions"
+         SET canceled_at = ?
+         WHERE request_id = ?`,
+        [now, requestId],
+        function(err) {
+          if (err) reject(err);
+          else resolve(this.changes > 0);
+        }
+      );
+    });
+    
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error canceling ScholarOne submission:', error);
+    throw error;
+  }
+};
+
+/*
  * SNAPSHOT MAILS SUBMISSIONS METHODS
  */
 
@@ -1615,6 +1838,169 @@ const cleanupOldJobs = async (daysOld = 30) => {
   }
 };
 
+/**
+ * Get ScholarOne notification by message UUID
+ * @param {string} messageUUID - The message UUID to search for
+ * @returns {Promise<Object|null>} The notification record or null if not found
+ */
+const getScholaroneNotificationByMessageUUID = async (messageUUID) => {
+  const db = await getDBConnection();
+  
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT * FROM "scholarone-notifications" WHERE message_uuid = ?`,
+      [messageUUID],
+      (err, row) => {
+        if (err) {
+          db.close();
+          reject(err);
+        } else {
+          db.close();
+          resolve(row || null);
+        }
+      }
+    );
+  });
+};
+
+/**
+ * Insert a new ScholarOne notification record
+ * @param {Object} notificationData - The notification data
+ * @returns {Promise<number>} The ID of the inserted record
+ */
+const insertScholaroneNotification = async (notificationData) => {
+  const db = await getDBConnection();
+  
+  const {
+    messageUUID,
+    notificationServiceVersion,
+    siteName,
+    journalName,
+    eventDate,
+    subscriptionId,
+    subscriptionName,
+    subscriptionType,
+    documentId,
+    submissionId,
+    documentStatusName,
+    submissionTitle,
+    systemEventName,
+    requestId,
+    processed,
+    processedAt,
+    payload
+  } = notificationData;
+  
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO "scholarone-notifications" (
+        message_uuid,
+        notification_service_version,
+        site_name,
+        journal_name,
+        event_date,
+        subscription_id,
+        subscription_name,
+        subscription_type,
+        document_id,
+        submission_id,
+        document_status_name,
+        submission_title,
+        system_event_name,
+        request_id,
+        processed,
+        processed_at,
+        payload,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [
+        messageUUID,
+        notificationServiceVersion,
+        siteName,
+        journalName,
+        eventDate,
+        subscriptionId,
+        subscriptionName,
+        subscriptionType,
+        documentId || null,
+        submissionId || null,
+        documentStatusName || null,
+        submissionTitle || null,
+        systemEventName || null,
+        requestId || null,
+        processed ? 1 : 0,
+        processedAt || null,
+        payload
+      ],
+      function(err) {
+        if (err) {
+          db.close();
+          reject(err);
+        } else {
+          db.close();
+          resolve(this.lastID);
+        }
+      }
+    );
+  });
+};
+
+/**
+ * Update ScholarOne notification processed status
+ * @param {string} messageUUID - The message UUID
+ * @param {boolean} processed - Whether the notification was processed
+ * @param {string} requestId - The request ID if processing was initiated
+ * @returns {Promise<void>}
+ */
+const updateScholaroneNotificationProcessed = async (messageUUID, processed, requestId = null) => {
+  const db = await getDBConnection();
+  
+  return new Promise((resolve, reject) => {
+    db.run(
+      `UPDATE "scholarone-notifications" 
+       SET processed = ?, processed_at = CURRENT_TIMESTAMP, request_id = ?
+       WHERE message_uuid = ?`,
+      [processed ? 1 : 0, requestId, messageUUID],
+      (err) => {
+        if (err) {
+          db.close();
+          reject(err);
+        } else {
+          db.close();
+          resolve();
+        }
+      }
+    );
+  });
+};
+
+/**
+ * Get all ScholarOne notifications for a submission ID
+ * @param {string} submissionId - The submission ID
+ * @returns {Promise<Array>} Array of notification records
+ */
+const getScholaroneNotificationsBySubmissionId = async (submissionId) => {
+  const db = await getDBConnection();
+  
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT * FROM "scholarone-notifications" 
+       WHERE submission_id = ? 
+       ORDER BY created_at DESC`,
+      [submissionId],
+      (err, rows) => {
+        if (err) {
+          db.close();
+          reject(err);
+        } else {
+          db.close();
+          resolve(rows || []);
+        }
+      }
+    );
+  });
+};
+
 module.exports = {
   initDatabase,
   getDBConnection,
@@ -1648,6 +2034,18 @@ module.exports = {
   getEmSubmissionByRequestId,
   cancelEmSubmission,
 
+  // ScholarOne submissions methods
+  storeScholaroneSubmission,
+  getScholaroneSubmissionByRequestId,
+  getScholaroneSubmissionBySubmissionId,
+  cancelScholaroneSubmission,
+  
+  // ScholarOne Notifications methods
+  getScholaroneNotificationByMessageUUID,
+  insertScholaroneNotification,
+  updateScholaroneNotificationProcessed,
+  getScholaroneNotificationsBySubmissionId,
+  
   // Snapshot Mails submissions methods
   storeSnapshotMailsSubmission,
   getSnapshotMailsSubmissionByRequestId,
