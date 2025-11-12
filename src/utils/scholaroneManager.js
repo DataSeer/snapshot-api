@@ -233,7 +233,20 @@ const getSubmissionsByDateRange = async (siteName, fromTime, toTime) => {
   const data = await makeAuthenticatedRequest(endpoint, params);
   
   if (data?.Response?.status === 'SUCCESS') {
-    return data.Response.result.submission || [];
+    if (data.Response.result === '') {
+       // case there is no submission returned
+      return [];
+    } else if (typeof data.Response.result.submission === 'object') {
+      // case there is only one submission returned
+      return [data.Response.result.submission];
+    }
+    else if (Array.isArray(data.Response.result.submission)) {
+      // case there are more than one submissions returned
+      return data.Response.result.submission;
+    } else {
+      // case not managed
+      return [];
+    }
   }
   
   if (data?.Response?.status === 'FAILURE') {
@@ -314,8 +327,8 @@ const processSubmission = async (submissionData, userId, session) => {
   await fs.mkdir(TMP_DIR, { recursive: true }).catch(() => {});
 
   try {
-    const siteName = submissionData.site_name;
-    const submissionId = submissionData.submission_id;
+    const siteName = submissionData.siteName;
+    const submissionId = submissionData.submissionId;
     const requestId = session.requestId; // Use the session's request ID
     
     session.addLog(`Processing ScholarOne submission for site: ${siteName}`);
@@ -423,9 +436,16 @@ const processScholaroneSubmissionJob = async (job) => {
     }
     
     session.addLog(`[Job] Metadata retrieved successfully`);
+
+    let submissionFiles = [];
+    if (Array.isArray(submissionsFullMetadata.submissionFiles)) {
+      submissionFiles = submissionsFullMetadata.submissionFiles;
+    } else if (typeof submissionsFullMetadata.submissionFiles === 'object') {
+      submissionFiles = [submissionsFullMetadata.submissionFiles];
+    }
     
     // Find the main document
-    const mainDocument = submissionsFullMetadata.submissionFiles?.find(
+    const mainDocument = submissionFiles?.find(
       doc => doc.fileDesignation === "Main Document" && doc.docLink 
     );
     
@@ -462,7 +482,7 @@ const processScholaroneSubmissionJob = async (job) => {
     
     // Download supplementary files
     const supplementaryFiles = [];
-    const suppDocuments = submissionsFullMetadata.submissionFiles?.filter(
+    const suppDocuments = submissionFiles?.filter(
       doc => doc.fileDesignation === "Supplementary File" && doc.docLink
     ) || [];
     
@@ -835,10 +855,11 @@ const pollForSubmissions = async (siteName) => {
       }
       
       // Create a processing session for the polled submission
-      const session = new ProcessingSession(`scholarone_${siteName}`);
+      const userId = scholaroneConfig.userId;
+      const session = new ProcessingSession(userId);
       session.setOrigin('external', 'scholarone-polling');
       
-      await processSubmission({ ...submission, siteName }, `scholarone_${siteName}`, session);
+      await processSubmission({ ...submission, siteName }, userId, session);
       queuedCount++;
     }
     

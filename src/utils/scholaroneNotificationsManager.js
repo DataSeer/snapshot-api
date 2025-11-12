@@ -278,8 +278,8 @@ const processNotification = async (notificationData, userId, session = null) => 
   
   // Prepare submission data for scholaroneManager
   const submissionData = {
-    site_name: siteName,
-    submission_id: submissionId
+    siteName,
+    submissionId
   };
   
   // Process the submission through scholaroneManager
