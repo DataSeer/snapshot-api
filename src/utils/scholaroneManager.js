@@ -236,13 +236,12 @@ const getSubmissionsByDateRange = async (siteName, fromTime, toTime) => {
     if (data.Response.result === '') {
        // case there is no submission returned
       return [];
+    } else if (Array.isArray(data.Response.result.submission)) {
+      // case there are more than one submissions returned
+      return data.Response.result.submission;
     } else if (typeof data.Response.result.submission === 'object') {
       // case there is only one submission returned
       return [data.Response.result.submission];
-    }
-    else if (Array.isArray(data.Response.result.submission)) {
-      // case there are more than one submissions returned
-      return data.Response.result.submission;
     } else {
       // case not managed
       return [];
