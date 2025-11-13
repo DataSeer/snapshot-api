@@ -296,6 +296,24 @@ const revokeTokenEditorialManager = async (req, res) => {
 };
 
 /**
+ * Get the real client IP address from the request
+ * Handles proxy scenarios (nginx reverse proxy)
+ * 
+ * @param {Object} req - Express request object
+ * @returns {string} - Client IP address
+ */
+const getClientIp = (req) => {
+  // With trust proxy enabled, req.ip should contain the real client IP
+  // But we also check headers as fallback
+  return req.ip || 
+         req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+         req.headers['x-real-ip'] ||
+         req.connection.remoteAddress ||
+         req.socket.remoteAddress ||
+         'unknown';
+};
+
+/**
  * Validate ScholarOne webhook authentication
  * Uses IP whitelist and shared secret validation
  * @param {Object} req - Express request object
@@ -305,19 +323,23 @@ const revokeTokenEditorialManager = async (req, res) => {
 const validateScholarOneWebhook = async (req, res, next) => {
   
   try {
-    // Get source IP
-    const sourceIp = req.ip || req.connection.remoteAddress;
+    // Get source IP - handles proxy scenarios correctly
+    const sourceIp = getClientIp(req);
+    
+    console.log(`[ScholarOne Webhook] Request from IP: ${sourceIp}`);
     
     // Validate source IP
     const isIpValid = scholaroneNotificationsManager.validateSourceIp(sourceIp);
     
     if (!isIpValid) {
-      console.error(`Unauthorized webhook request from IP: ${sourceIp}`);
+      console.error(`[ScholarOne Webhook] REJECTED - Unauthorized IP: ${sourceIp}`);
       return res.status(403).json({
         error: 'access_denied',
         error_description: 'IP address not allowed'
       });
     }
+    
+    console.log(`[ScholarOne Webhook] IP validated successfully: ${sourceIp}`);
     
     // Validate signature if provided
     const signature = req.headers['x-scholarone-signature'];
@@ -329,19 +351,23 @@ const validateScholarOneWebhook = async (req, res, next) => {
       );
       
       if (!isSignatureValid) {
-        console.error('Invalid webhook signature');
+        console.error(`[ScholarOne Webhook] REJECTED - Invalid signature from IP: ${sourceIp}`);
         return res.status(403).json({
           error: 'access_denied',
           error_description: 'Invalid signature'
         });
       }
+      
+      console.log(`[ScholarOne Webhook] Signature validated successfully`);
+    } else {
+      console.log(`[ScholarOne Webhook] No signature provided (signature validation skipped)`);
     }
     
     // Set the user as ScholarOne
     req.user = { id: scholaroneConfig.userId };
     next();
   } catch (error) {
-    console.error('Error validating ScholarOne webhook:', error);
+    console.error('[ScholarOne Webhook] Validation error:', error);
     return res.status(500).json({
       error: 'server_error',
       error_description: 'Authentication validation failed'
@@ -357,5 +383,7 @@ module.exports = {
   authenticateEditorialManager,
   revokeTokenEditorialManager,
   // ScholarOne webhook handlers
-  validateScholarOneWebhook
+  validateScholarOneWebhook,
+  // Utility functions
+  getClientIp
 };
