@@ -1,6 +1,7 @@
 // File: src/utils/genshareManager.js
 const packageJson = require('../../package.json');
 const fs = require('fs');
+const path = require('path');
 const axios = require('axios');
 const FormData = require('form-data');
 const config = require('../config');
@@ -11,6 +12,74 @@ const snapshotReportsManager = require('./snapshotReportsManager');
 
 // Load the genshare configuration
 const genshareConfig = require(config.genshareConfigPath);
+
+/**
+ * Validates that a file is actually a PDF by checking its magic bytes
+ * @param {Object} file - File object with path and originalname
+ * @returns {Promise<Object>} - Validation result with valid flag and reason
+ */
+const validatePDFFile = async (file) => {
+  // 1. Check file extension
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (ext !== '.pdf') {
+    return {
+      valid: false,
+      reason: `Invalid file extension: "${ext}". Expected ".pdf"`
+    };
+  }
+  
+  // 2. Check actual file content (magic bytes)
+  // PDFs must start with "%PDF-" (bytes: 25 50 44 46 2D)
+  try {
+    const buffer = await fs.promises.readFile(file.path);
+    
+    // Check if file is empty
+    if (buffer.length === 0) {
+      return {
+        valid: false,
+        reason: 'File is empty'
+      };
+    }
+    
+    // Check if file is too small to be a valid PDF (minimum is ~9 bytes for header)
+    if (buffer.length < 5) {
+      return {
+        valid: false,
+        reason: 'File is too small to be a valid PDF'
+      };
+    }
+    
+    // Read the first 5 bytes and convert to string
+    const header = buffer.slice(0, 5).toString('ascii');
+    
+    if (!header.startsWith('%PDF-')) {
+      return {
+        valid: false,
+        reason: `File does not appear to be a valid PDF (invalid file signature: "${header}")`
+      };
+    }
+    
+    // Optional: Check for PDF version (e.g., %PDF-1.4, %PDF-1.7, %PDF-2.0)
+    const versionMatch = buffer.slice(0, 10).toString('ascii').match(/%PDF-(\d+\.\d+)/);
+    if (!versionMatch) {
+      return {
+        valid: false,
+        reason: 'File has PDF signature but missing valid version number'
+      };
+    }
+    
+  } catch (error) {
+    return {
+      valid: false,
+      reason: `Could not read file: ${error.message}`
+    };
+  }
+  
+  return { 
+    valid: true,
+    reason: 'Valid PDF file'
+  };
+};
 
 /**
  * Gets path data from response for Google Sheets integration
@@ -449,6 +518,39 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
     throw new Error('Required "file" missing.');
   }
 
+  // Validate PDF file
+  session.addLog('Validating PDF file...');
+  const validationResult = await validatePDFFile(data.file);
+  
+  if (!validationResult.valid) {
+    errorStatus = `File validation error: ${validationResult.reason}`;
+    session.addLog(`Error: ${validationResult.reason}`);
+    
+    // Log to summary sheet with error status ONLY if shouldLogToSummary is true
+    if (shouldLogToSummary) {
+      try {
+        await appendToSummary({
+          session,
+          errorStatus,
+          data,
+          genshareVersion: activeGenShareVersion || genshareConfig.defaultVersion,
+          reportURL: "",
+          graphValue: "",
+          reportVersion: ""
+        });
+      } catch (summaryError) {
+        session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
+        console.error(`[${session.requestId}] Error logging validation error to summary:`, summaryError);
+      }
+    }
+    
+    const validationError = new Error(validationResult.reason);
+    validationError.status = 400; // Bad Request
+    throw validationError;
+  }
+  
+  session.addLog('PDF file validation passed');
+
   // Initialize GenShare with the active version
   session.initGenShare(activeGenShareVersion);
 
@@ -738,5 +840,6 @@ module.exports = {
   appendToSummary,
   filterAndSortResponseForUser,
   getPath,
-  getResponse
+  getResponse,
+  validatePDFFile
 };

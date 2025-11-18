@@ -411,10 +411,10 @@ const processScholaroneSubmissionJob = async (job) => {
   // Variables for summary logging
   let errorStatus = "No";
   let reportURL = "";
-  let graphValue = data.graph_value || "";
-  let reportVersion = data.report || "";
+  let graphValue = data.graphValue || "";
+  let reportVersion = data.reportValue || "";
 
-  let mainFile = {};
+  let mainFile = null;
   
   // Create a new ProcessingSession with the existing request ID
   const session = new ProcessingSession(data.userId, job.request_id);
@@ -473,10 +473,27 @@ const processScholaroneSubmissionJob = async (job) => {
     mainFile = {
       path: mainTempPath,
       originalname: mainDocument.systemFileName,
-      mimetype: mainDocument.mimeType || 'application/pdf',
+      mimetype: mainDocument.mimeType || '',
       size: mainBuffer.length
     };
     
+    // ===== VALIDATE PDF BEFORE ADDING TO SESSION =====
+    session.addLog('[Job] Validating main document as PDF...');
+    const validationResult = await genshareManager.validatePDFFile(mainFile);
+    
+    if (!validationResult.valid) {
+      errorStatus = `File validation error: ${validationResult.reason}`;
+      session.addLog(`[Job] Error: ${validationResult.reason}`);
+      
+      const validationError = new Error(validationResult.reason);
+      validationError.status = 400;
+      throw validationError;
+    }
+    
+    session.addLog('[Job] PDF validation passed');
+    // ===== END VALIDATION =====
+    
+    // Now it's safe to add to session
     session.addFile(mainFile, 'scholarone');
     
     // Download supplementary files
@@ -584,10 +601,12 @@ const processScholaroneSubmissionJob = async (job) => {
       throw genshareError; // Re-throw to be caught by outer try/catch
     }
     
-    session.addLog(`[Job] GenShare processing completed with status: ${genshareResult.status}`);
+    session.addLog(`[Job] GenShare processing completed successfully`);
     
-    // Save session data to S3
+    // ===== SAVE SESSION BEFORE CLEANUP =====
     await session.saveToS3();
+    session.addLog(`[Job] Session data saved to S3`);
+    // ===== END SAVE SESSION =====
     
     // Update database with report data if available
     if (session.report) {
@@ -600,7 +619,7 @@ const processScholaroneSubmissionJob = async (job) => {
         session,
         errorStatus,
         data: {
-          file: mainFile?.originalname,
+          file: mainFile,
           user: { id: data.userId }
         },
         genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
@@ -613,14 +632,14 @@ const processScholaroneSubmissionJob = async (job) => {
       console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
     }
     
-    // Clean up temporary files
-    if (tempFilePaths?.length) {
-      for (const filePath of tempFilePaths) {
-        await fs.unlink(filePath).catch(err => {
-          console.error(`[ScholarOne] Error deleting temporary file ${filePath}:`, err.message);
-        });
-      }
+    // ===== CLEAN UP AFTER EVERYTHING IS DONE =====
+    session.addLog(`[Job] Cleaning up ${tempFilePaths.length} temporary file(s)`);
+    for (const filePath of tempFilePaths) {
+      await fs.unlink(filePath).catch(err => {
+        console.error(`[ScholarOne] Error deleting temporary file ${filePath}:`, err.message);
+      });
     }
+    // ===== END CLEANUP =====
     
     session.addLog(`[Job] Job completed successfully`);
     
@@ -631,13 +650,22 @@ const processScholaroneSubmissionJob = async (job) => {
     
   } catch (error) {
     // Log error
-    session.addLog(`Error in background processing: ${error.message}`);
-    session.addLog(`Stack: ${error.stack}`);
+    session.addLog(`[Job] Error in background processing: ${error.message}`);
     
     // Set error status if not already set
     if (errorStatus === "No") {
       errorStatus = `Job Error: ${error.message}`;
     }
+    
+    // ===== SAVE SESSION BEFORE CLEANUP (even on error) =====
+    try {
+      await session.saveToS3();
+      session.addLog(`[Job] Session data saved to S3 (with error)`);
+    } catch (s3Error) {
+      console.error(`[ScholarOne] Error saving session data for ${job.request_id}:`, s3Error);
+      session.addLog(`[Job] Error saving session to S3: ${s3Error.message}`);
+    }
+    // ===== END SAVE SESSION =====
     
     // Log to summary sheet ONCE at the end - ERROR case
     try {
@@ -645,7 +673,7 @@ const processScholaroneSubmissionJob = async (job) => {
         session,
         errorStatus,
         data: {
-          file: mainFile?.originalname,
+          file: mainFile,
           user: { id: data.userId }
         },
         genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
@@ -658,20 +686,14 @@ const processScholaroneSubmissionJob = async (job) => {
       console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
     }
     
-    // Clean up temporary files
-    if (tempFilePaths?.length) {
-      for (const filePath of tempFilePaths) {
-        await fs.unlink(filePath).catch(err => {
-          console.error(`[ScholarOne] Error deleting temporary file ${filePath}:`, err.message);
-        });
-      }
+    // ===== CLEAN UP AFTER EVERYTHING IS DONE (even on error) =====
+    session.addLog(`[Job] Cleaning up ${tempFilePaths.length} temporary file(s) after error`);
+    for (const filePath of tempFilePaths) {
+      await fs.unlink(filePath).catch(err => {
+        console.error(`[ScholarOne] Error deleting temporary file ${filePath}:`, err.message);
+      });
     }
-    
-    try {
-      await session.saveToS3();
-    } catch (s3Error) {
-      console.error(`[ScholarOne] Error saving session data for ${job.request_id}:`, s3Error);
-    }
+    // ===== END CLEANUP =====
     
     throw error;
   }
