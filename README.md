@@ -17,6 +17,7 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - [Deployment](#deployment)
 - [Security](#security)
 - [Editorial Manager Integration](#editorial-manager-integration)
+- [ScholarOne Integration](#scholarone-integration)
 - [Snapshot Mails Integration](#snapshot-mails-integration)
 - [Dependencies](#dependencies)
 
@@ -36,6 +37,7 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - **DS Logs generation from S3 data** with proper CSV formatting and special character handling
 - Health monitoring for all integrated services
 - Editorial Manager API integration for submissions handling
+- **ScholarOne API integration** for manuscript submissions with webhook notifications
 - **Snapshot Mails integration** for email-based PDF submissions
 - **Job status tracking and retry mechanism** with exponential backoff
 - **Event-driven job completion callbacks** for reliable external notifications
@@ -46,7 +48,7 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 
 ## Prerequisites
 
-- Node.js (>= 14.x)
+- Node.js (>= 20.0.0)
 - Docker for containerization (optional)
 - AWS Account (for S3 storage)
 - Google Cloud Account (for Google Sheets API)
@@ -109,11 +111,11 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 ```json
 // conf/queueManager.json
 {
-  "maxConcurrentJobs": 3,           // Maximum number of jobs processed simultaneously
+  "maxConcurrentJobs": 2,           // Maximum number of jobs processed simultaneously
   "maxRetries": 3,                  // Default maximum retries for failed jobs
   "retryDelayBase": 2,              // Base for exponential backoff (seconds)
   "retryDelayMultiplier": 1000,     // Multiplier for retry delay (milliseconds)
-  "processorInterval": 5000,        // Interval to check for new jobs (milliseconds)
+  "processorInterval": 60000,       // Interval to check for new jobs (milliseconds)
   "jobPriorities": {
     "LOW": 1,
     "NORMAL": 5,
@@ -227,30 +229,16 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 ```json
 // conf/reports.json
 {
-  "defaultVersion": "Report v1",
+  "defaultVersion": "",
   "versions": {
-    "Report v1": {
-      "googleSheets": {
-        "folder": {
-          "default": "google_drive_folder_id"
-        },
-        "template": {
-          "default": "spreadsheet_template_id"
-        },
-        "permissions": {
-          "default": "reader"
-        },
-        "sheets": {
-          "Sheet1": {
-            "cells": {
-              "A1": "article_id",
-              "B1": "das_presence"
-            }
-          }
-        }
+    "Report (v0.1)": {
+      "snapshot-reports": {
+        "url": "http://localhost:4000/api/reports/create-url",
+        "method": "POST",
+        "apiKey": "api-key-for-snapshot-reports"
       },
       "JSON": {
-        "availableFields": [],
+        "availableFields": ["key1", "key2", "key3"],
         "restrictedFields": []
       }
     }
@@ -277,9 +265,9 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
         "blocked": []
       }
     },
-    "/reports/search": {
+    "/requests/search": {
       "GET": {
-        "description": "Search for reports",
+        "description": "Search for reports by article_id or request_id",
         "allowed": ["admin"],
         "blocked": []
       }
@@ -291,17 +279,10 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
         "blocked": []
       }
     },
-    "/snapshot-mails/jobs": {
-      "GET": {
-        "description": "Check job status for email submissions",
-        "allowed": ["snapshot-mails"],
-        "blocked": []
-      }
-    },
-    "/snapshot-mails/test-notification": {
+    "/scholarone/submissions": {
       "POST": {
-        "description": "Test notification system",
-        "allowed": ["snapshot-mails"],
+        "description": "Process ScholarOne manuscript submissions",
+        "allowed": ["scholarone"],
         "blocked": []
       }
     }
@@ -335,7 +316,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
   },
   "das_triggers": [
     "data availability",
-    "data and code availability statement", 
+    "data and code availability statement",
     "data availability statement",
     "code availability",
     "data access",
@@ -347,8 +328,15 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
     "default": "SURR",
     "custom": {
       "dataseer_test": "SURR",
-      "journal_xyz": "PLOS",
-      "nature_communications": "TFOD"
+      "journal_xyz": "PLOS"
+    }
+  },
+  "report": {
+    "available": ["PLOS (v0.1)", "PLOS (v0.2)", "TFOD (v0.1)", "TFOD (v0.2)", "Generic (v0.1)"],
+    "default": "TFOD (v0.2)",
+    "custom": {
+      "dataseer_test": "TFOD (v0.2)",
+      "pwattest": "PLOS (v0.2)"
     }
   }
 }
@@ -462,9 +450,28 @@ This configuration will:
 - **Validation**: Empty or missing `fieldOrder` arrays are handled gracefully
 - **Performance**: Sorting uses a Map-based approach for O(n log n) complexity
 
+### Report Configuration
+
+Both Editorial Manager and ScholarOne configurations support publication-specific report templates:
+
+#### Report Configuration Properties:
+
+- **`available`** (array): List of valid report versions that can be used
+- **`default`** (string): Default report version used when no custom mapping exists for a publication code
+- **`custom`** (object): Publication code-specific mappings where:
+  - **Key**: Publication code from submission
+  - **Value**: Report version to use for that publication
+
+Available report versions:
+- `PLOS (v0.1)` - PLOS report template version 0.1
+- `PLOS (v0.2)` - PLOS report template version 0.2
+- `TFOD (v0.1)` - TFOD report template version 0.1
+- `TFOD (v0.2)` - TFOD report template version 0.2
+- `Generic (v0.1)` - Generic report template version 0.1
+
 ### Graph Configuration
 
-The Editorial Manager configuration now supports publication-specific graph parameters that are sent to GenShare for processing:
+The Editorial Manager and ScholarOne configurations support publication-specific graph parameters that are sent to GenShare for processing:
 
 #### Graph Configuration Properties:
 
@@ -512,7 +519,72 @@ The system provides comprehensive logging for graph configuration:
 - Tracks when graph values are sent to GenShare
 - Handles configuration errors gracefully with fallback behavior
 
-10. **Google Sheets Credentials:**
+10. **ScholarOne Configuration:**
+```json
+// conf/scholarone.json
+{
+  "userId": "scholarone",
+  "api": {
+    "baseURL": "https://mc-beta-api.manuscriptcentral.com",
+    "username": "API_USERNAME",
+    "password": "your_password_here",
+    "timeout": 30000,
+    "endpoints": {
+      "submissionFullMetadata": "/api/s1m/v11/submissions/full/metadata/submissionids",
+      "submissionsByDateRange": "/api/s1m/v4/submissions/full/idsByDate"
+    }
+  },
+  "sites": {
+    "site_name": {
+      "site_name": "site_name",
+      "enabled": true,
+      "polling_enabled": true,
+      "polling_interval": 30,
+      "polling_days_back": 7,
+      "graph": {
+        "available": ["PLOS", "TFOD", "SURR"],
+        "default": "TFOD",
+        "custom": {
+          "dataseer_test": "TFOD"
+        }
+      },
+      "report": {
+        "available": ["PLOS (v0.1)", "TFOD (v0.1)", "PLOS (v0.2)", "TFOD (v0.2)", "Generic (v0.1)"],
+        "default": "TFOD (v0.2)",
+        "custom": {
+          "dataseer_test": "TFOD (v0.2)"
+        }
+      }
+    }
+  },
+  "workflow": {
+    "retrieve_method": "notification",
+    "process_timeout": 600000,
+    "max_retries": 3
+  },
+  "notifications": {
+    "enabled": true,
+    "endpoint_on_hold": false,
+    "shared_secret": "your-shared-secret-here",
+    "allowed_ips": ["127.0.0.1", "::1"],
+    "types": {
+      "manuscript_submission": {
+        "enabled": true,
+        "allowRetryOnDuplicate": false,
+        "events": [
+          "Author_Submit_Manuscript_Firl",
+          "Author_Submit_Manuscript_Orig",
+          "Author_Submit_Manuscript_Invi",
+          "Author_Submit_Manuscript_Revi",
+          "Author_Submit_Manuscript_Resu"
+        ]
+      }
+    }
+  }
+}
+```
+
+11. **Google Sheets Credentials:**
 ```json
 // conf/googleSheets.credentials.json
 {
@@ -545,7 +617,7 @@ GET    /ping                             - Health check all services
 
 # Core functionality
 POST   /processPDF                       - Process a PDF file (asynchronous)
-GET    /reports/search                   - Search for reports by article_id or request_id
+GET    /requests/search                  - Search for reports by article_id or request_id
 POST   /requests/refresh                 - Refresh article-request ID mapping from S3
 
 # Service health checks
@@ -558,13 +630,21 @@ POST   /editorial-manager/submissions    - Handle submissions from Editorial Man
 POST   /editorial-manager/cancel         - Cancel an in-progress submission
 POST   /editorial-manager/reports        - Get report data
 POST   /editorial-manager/reportLink     - Get report URL from token
-GET    /editorial-manager/job-status     - Get job status by report ID
-POST   /editorial-manager/retry          - Retry a failed job
+GET    /editorial-manager/jobs/:reportId - Get job status by report ID
+POST   /editorial-manager/retry/:reportId - Retry a failed job
+
+# ScholarOne integration
+POST   /scholarone/submissions           - Handle submissions from ScholarOne (asynchronous)
+POST   /scholarone/cancel                - Cancel an in-progress submission
+GET    /scholarone/jobs/:requestId       - Get job status by request ID
+POST   /scholarone/retry/:requestId      - Retry a failed job
+GET    /scholarone/notifications         - Webhook endpoint for ScholarOne notifications
+GET    /scholarone/notifications/status  - Get ScholarOne notification configuration status
 
 # Snapshot Mails integration
 POST   /snapshot-mails/submissions       - Handle email-based PDF submissions (asynchronous)
 GET    /snapshot-mails/jobs/:requestId   - Get job status for email submissions
-POST   /snapshot-mails/test-notification - Test notification system
+POST   /snapshot-mails/retry/:requestId  - Retry a failed email submission job
 
 # Snapshot Reports endpoints
 GET    /snapshot-reports/:requestId/genshare - Get GenShare data for a request
@@ -604,11 +684,11 @@ The API includes a robust asynchronous job queue system for background processin
 
 ```json
 {
-  "maxConcurrentJobs": 3,        // Process up to 3 jobs simultaneously
+  "maxConcurrentJobs": 2,        // Process up to 2 jobs simultaneously
   "maxRetries": 3,               // Retry failed jobs up to 3 times
   "retryDelayBase": 2,           // Exponential backoff base (2^retry_count)
   "retryDelayMultiplier": 1000,  // Multiply delay by this value (milliseconds)
-  "processorInterval": 5000      // Check for new jobs every 5 seconds
+  "processorInterval": 60000     // Check for new jobs every 60 seconds
 }
 ```
 
@@ -616,14 +696,12 @@ The API includes a robust asynchronous job queue system for background processin
 
 ```bash
 # Check job status
-curl -G http://localhost:3000/editorial-manager/job-status \
-  -H "Authorization: Bearer <your-token>" \
-  --data-urlencode "report_id=12345678901234567890123456789012"
+curl -G http://localhost:3000/editorial-manager/jobs/12345678901234567890123456789012 \
+  -H "Authorization: Bearer <your-token>"
 
 # Retry a failed job
-curl -X POST http://localhost:3000/editorial-manager/retry \
-  -H "Authorization: Bearer <your-token>" \
-  -d "report_id=12345678901234567890123456789012"
+curl -X POST http://localhost:3000/editorial-manager/retry/12345678901234567890123456789012 \
+  -H "Authorization: Bearer <your-token>"
 ```
 
 ## Authentication Flow
@@ -730,9 +808,8 @@ supplementary.zip
 
 ```bash
 # Check processing status
-curl -G http://localhost:3000/editorial-manager/job-status \
-  -H "Authorization: Bearer <your-token>" \
-  --data-urlencode "report_id=12345678901234567890123456789012"
+curl -G http://localhost:3000/editorial-manager/jobs/12345678901234567890123456789012 \
+  -H "Authorization: Bearer <your-token>"
 
 # Response examples:
 # {
@@ -762,9 +839,8 @@ curl -G http://localhost:3000/editorial-manager/job-status \
 
 ```bash
 # Retry a failed job
-curl -X POST http://localhost:3000/editorial-manager/retry \
-  -H "Authorization: Bearer <your-token>" \
-  -d "report_id=12345678901234567890123456789012"
+curl -X POST http://localhost:3000/editorial-manager/retry/12345678901234567890123456789012 \
+  -H "Authorization: Bearer <your-token>"
 
 # Response:
 # {
@@ -778,12 +854,12 @@ curl -X POST http://localhost:3000/editorial-manager/retry \
 
 ```bash
 # By article ID
-curl -G http://localhost:3000/reports/search \
+curl -G http://localhost:3000/requests/search \
   -H "Authorization: Bearer <your-token>" \
   --data-urlencode "article_id=ARTICLE123"
 
 # By request ID
-curl -G http://localhost:3000/reports/search \
+curl -G http://localhost:3000/requests/search \
   -H "Authorization: Bearer <your-token>" \
   --data-urlencode "request_id=12345678901234567890123456789012"
 ```
@@ -808,9 +884,8 @@ curl -X POST http://localhost:3000/editorial-manager/submissions \
 # }
 
 # Check job status
-curl -G http://localhost:3000/editorial-manager/job-status \
-  -H "Authorization: Bearer <your-token>" \
-  --data-urlencode "report_id=12345678901234567890123456789012"
+curl -G http://localhost:3000/editorial-manager/jobs/12345678901234567890123456789012 \
+  -H "Authorization: Bearer <your-token>"
 
 # Get a report (only available when job is completed)
 curl -X POST http://localhost:3000/editorial-manager/reports \
@@ -982,11 +1057,30 @@ npm run db:refresh
 # Check article requests
 npm run db:check user123 ARTICLE123
 
+# Check specific ScholarOne notification in database
+npm run db:check-notification
+
+# List all ScholarOne notifications
+npm run db:list-notifications
+
 # View job queue status
 npm run queue:status
 
 # Clean up old completed jobs
 npm run queue:cleanup
+```
+
+### ScholarOne Management
+
+```bash
+# Put ScholarOne notifications on hold (queue at ScholarOne)
+npm run scholarone:hold:on
+
+# Resume ScholarOne notifications processing
+npm run scholarone:hold:off
+
+# Check ScholarOne notification configuration status
+npm run scholarone:hold:status
 ```
 
 ### DS Logs Generation
@@ -1041,7 +1135,8 @@ npm run analyze-queue-logs
 snapshot-api/
 ├── conf/                  # Configuration files
 │   ├── queueManager.json  # Queue system configuration
-│   ├── em.json           # Editorial Manager config (includes graph settings)
+│   ├── em.json           # Editorial Manager config (includes graph and report settings)
+│   ├── scholarone.json   # ScholarOne config (includes API, sites, notifications)
 │   └── ...               # Other config files
 ├── log/                   # Log files
 ├── output/                # Generated files (DS logs, reports, etc.)
@@ -1051,23 +1146,25 @@ snapshot-api/
 │   ├── manage_genshare_versions.js
 │   ├── manage_permissions.js
 │   ├── manage_users.js
-│   ├── queue_status.js    # Queue monitoring script
-│   ├── refresh_ds_logs.js # NEW: DS logs generation script
+│   ├── refresh_ds_logs.js # DS logs generation script
 │   ├── sync_version.js
-│   └── test_csv_handling.js # NEW: CSV handling test script
-├── sqlite/                # SQLite database (includes job queue)
+│   ├── test_scholarone_api.js # ScholarOne API testing script
+│   └── toggle_scholarone_notifications_hold.js # ScholarOne notification hold management
+├── sqlite/                # SQLite database (includes job queue and notifications)
 ├── src/
 │   ├── controllers/       # Request handlers
 │   │   ├── apiController.js
 │   │   ├── authController.js
 │   │   ├── datastetController.js
-│   │   ├── emController.js      # Updated with queue integration
+│   │   ├── emController.js      # Editorial Manager with queue integration
 │   │   ├── genshareController.js
 │   │   ├── grobidController.js
 │   │   ├── healthController.js
-│   │   ├── reportsController.js
 │   │   ├── requestsController.js
+│   │   ├── scholaroneController.js # ScholarOne submissions controller
+│   │   ├── scholaroneNotificationsController.js # ScholarOne webhook controller
 │   │   ├── snapshotMailsController.js # Snapshot mails controller
+│   │   ├── snapshotReportsController.js # Snapshot reports controller
 │   │   └── versionsController.js
 │   ├── middleware/        # Express middleware
 │   │   ├── auth.js
@@ -1084,10 +1181,12 @@ snapshot-api/
 │   │   ├── permissionsManager.js
 │   │   ├── queueManager.js      # Job queue system
 │   │   ├── rateLimiter.js
-│   │   ├── reportsManager.js
 │   │   ├── requestsManager.js
 │   │   ├── s3Storage.js
+│   │   ├── scholaroneManager.js # ScholarOne submissions manager
+│   │   ├── scholaroneNotificationsManager.js # ScholarOne notifications manager
 │   │   ├── snapshotMailsManager.js # Snapshot mails manager
+│   │   ├── snapshotReportsManager.js # Snapshot reports manager
 │   │   ├── userManager.js
 │   │   └── versions.js
 │   ├── config.js          # Application configuration
@@ -1184,7 +1283,10 @@ For production deployments with graph configuration:
 - **Job isolation**: Each job runs independently with proper error handling
 - **Database transaction safety**: Queue operations use proper database transactions
 - **Email authorization**: Only authorized email addresses can submit via snapshot-mails
-- **Graph configuration validation**: Graph values are validated against allowed values
+- **ScholarOne webhook security**: HMAC signature verification with shared secret
+- **IP whitelisting**: ScholarOne webhook endpoints validate source IP addresses
+- **Notification hold mechanism**: Ability to pause webhook processing during maintenance
+- **Graph and report configuration validation**: Values are validated against allowed configurations
 
 ## Editorial Manager Integration
 
@@ -1224,6 +1326,138 @@ The API includes special endpoints for integration with Editorial Manager with f
 - **Better Resource Management**: Configurable concurrency prevents system overload
 - **Automatic Retry**: Failed jobs are retried automatically
 - **Status Tracking**: Full visibility into job progress and outcomes
+
+## ScholarOne Integration
+
+The API includes comprehensive integration with ScholarOne (Manuscript Central) for automated manuscript processing with webhook notifications:
+
+### Features
+
+- **Direct Submissions**: Manual submission processing via API endpoint
+- **Webhook Notifications**: Automatic processing triggered by ScholarOne events
+- **Site-Specific Configuration**: Per-site settings for graph and report templates
+- **Asynchronous Processing**: All submissions processed in background queue
+- **Notification Hold**: Ability to pause webhook processing during maintenance
+- **Job Status Tracking**: Real-time status updates and retry capabilities
+- **Multi-Site Support**: Configure different settings for different ScholarOne sites
+
+### ScholarOne Workflow
+
+1. **ScholarOne sends webhook notification** when manuscript is submitted
+2. **API validates webhook signature** using shared secret and allowed IPs
+3. **API checks if endpoint is on hold** - if yes, ScholarOne queues the notification
+4. **API retrieves manuscript metadata** from ScholarOne API
+5. **API downloads PDF** from ScholarOne
+6. **API selects graph and report** based on site configuration
+7. **API processes submission** asynchronously in background queue
+8. **GenShare analyzes** the manuscript with selected graph parameter
+9. **Report is generated** using configured report template
+
+### ScholarOne API Endpoints
+
+```bash
+# Submit a manuscript directly (bypassing webhook)
+curl -X POST http://localhost:3000/scholarone/submissions \
+  -H "Authorization: Bearer <your-token>" \
+  -d "site_name=site_name" \
+  -d "submission_id=S1M-2025-001"
+
+# Response:
+# {
+#   "status": "Success",
+#   "request_id": "12345678901234567890123456789012"
+# }
+
+# Check job status
+curl -G http://localhost:3000/scholarone/jobs/12345678901234567890123456789012 \
+  -H "Authorization: Bearer <your-token>"
+
+# Retry a failed job
+curl -X POST http://localhost:3000/scholarone/retry/12345678901234567890123456789012 \
+  -H "Authorization: Bearer <your-token>"
+
+# Cancel a submission
+curl -X POST http://localhost:3000/scholarone/cancel \
+  -H "Authorization: Bearer <your-token>" \
+  -d "request_id=12345678901234567890123456789012"
+
+# Get notification configuration status
+curl -G http://localhost:3000/scholarone/notifications/status \
+  -H "Authorization: Bearer <your-token>"
+```
+
+### ScholarOne Configuration
+
+The ScholarOne integration requires configuration in `conf/scholarone.json`:
+
+#### API Configuration
+- **baseURL**: ScholarOne API base URL
+- **username**: API username
+- **password**: API password
+- **endpoints**: API endpoint paths for submission metadata and date range queries
+
+#### Site Configuration
+Each site can have its own configuration:
+- **enabled**: Enable/disable processing for this site
+- **polling_enabled**: Enable periodic polling for new submissions
+- **polling_interval**: Minutes between polling checks
+- **polling_days_back**: How many days back to check for submissions
+- **graph**: Site-specific graph configuration (same as Editorial Manager)
+- **report**: Site-specific report template configuration
+
+#### Notification Configuration
+- **enabled**: Master enable/disable for webhook notifications
+- **endpoint_on_hold**: Temporarily pause webhook processing (ScholarOne will queue)
+- **shared_secret**: HMAC signature verification secret
+- **allowed_ips**: IP whitelist for webhook requests
+- **types**: Configure which notification types to process
+
+#### Notification Types
+- **manuscript_submission**: New manuscript submissions
+  - Events: `Author_Submit_Manuscript_Orig`, `Author_Submit_Manuscript_Revi`, etc.
+- **manuscript_status**: Status changes (withdrawals, unsubmits)
+- **decision**: Editorial decisions
+- **task_status**: Task completion events
+- **transfer**: Journal transfer events
+
+### ScholarOne Notification Hold Management
+
+Use these commands to control webhook processing during maintenance:
+
+```bash
+# Put endpoint on hold (ScholarOne queues notifications)
+npm run scholarone:hold:on
+
+# Resume processing (ScholarOne delivers queued notifications)
+npm run scholarone:hold:off
+
+# Check current status
+npm run scholarone:hold:status
+```
+
+When on hold:
+- ScholarOne queues webhook notifications instead of delivering them
+- No processing occurs
+- Useful during maintenance or deployments
+- When lifted, ScholarOne automatically delivers queued notifications
+
+### Database Commands
+
+```bash
+# Check specific notification in database
+npm run db:check-notification
+
+# List all ScholarOne notifications
+npm run db:list-notifications
+```
+
+### Asynchronous Benefits for ScholarOne
+
+- **Immediate Webhook Response**: Quick acknowledgment to ScholarOne
+- **Reliable Processing**: Jobs continue even if ScholarOne disconnects
+- **Automatic Retry**: Failed processing jobs are retried automatically
+- **Configurable Concurrency**: Prevent system overload during high submission volumes
+- **Status Tracking**: Full visibility into processing progress
 
 ## Snapshot Mails Integration
 
