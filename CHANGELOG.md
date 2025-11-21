@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.5.0](https://github.com/DataSeer/snapshot-api/compare/v3.4.0...v3.5.0) (2025-11-21)
+
+
+### Features
+
+* add PDF validation in the genshare processPDF function ([bb3db98](https://github.com/DataSeer/snapshot-api/commits/bb3db987c1682b5417670408d1a92b91d639822f))
+* implement ScholarOne API & Notification System ([081e92e](https://github.com/DataSeer/snapshot-api/commits/081e92e97e751640909121cb6c01cd2dedc6497e))
+* implement ScholarOne API & Notification System ([e410838](https://github.com/DataSeer/snapshot-api/commits/e410838419ecbc71789d787f84c57477c4dfde25))
+* implement ScholarOne API & Notification System ([c6e9353](https://github.com/DataSeer/snapshot-api/commits/c6e9353aa14189d1934bea5f0faa51dbd9ac46ee))
+* manage KWG editorial policy when it is missing ([06dec14](https://github.com/DataSeer/snapshot-api/commits/06dec14ad014b8b4b9bfcf9ae5d5205ba1122443))
+* update IP address management ([3540e8f](https://github.com/DataSeer/snapshot-api/commits/3540e8faecb34df87dedac37fe66fb3361f1eec7))
+
+
+### Bug Fixes
+
+* fix getSubmissionsByDateRange() fucntion ([7bb53cb](https://github.com/DataSeer/snapshot-api/commits/7bb53cbc7fb592a99bb6489070ef25bb867ae62a))
+* manage case the main file is not a PDF & fix error management ([2354731](https://github.com/DataSeer/snapshot-api/commits/235473178e5dc0130674efea76d4c2fbb0d06ca4))
+* replace 'user_id' by 'userId' in the 'genshareManager.appendToSummary()' data ([9b3574f](https://github.com/DataSeer/snapshot-api/commits/9b3574fa84319da0cb25076ab811de067a896eae))
+
+
+### Documentation
+
+* update README.md ([3dc7f29](https://github.com/DataSeer/snapshot-api/commits/3dc7f29f97d6d15c58a34de493d9b6af637df5c4))
+* update USER_DOCUMENTATION.md ([648ca79](https://github.com/DataSeer/snapshot-api/commits/648ca794f4aec69d606b54c27ae61e6b2b1ef42b))
+* update USER_DOCUMENTATION.md add data_in_reference and accepted_license fields ([a2ee5c2](https://github.com/DataSeer/snapshot-api/commits/a2ee5c2007081e7e39704d0801be7c3897a7f6a8))
+* update USER_DOCUMENTATION.md change some details about data_in_reference and accepted_license ([e6d13e0](https://github.com/DataSeer/snapshot-api/commits/e6d13e05c26337160f2559b9405f2b6be80ab989))
+
 ## [3.4.0](https://github.com/DataSeer/snapshot-api/compare/v3.3.0...v3.4.0) (2025-11-04)
 
 

@@ -5,6 +5,50 @@ const { ProcessingSession } = require('../utils/s3Storage');
 const { getUserById } = require('../utils/userManager');
 
 /**
+ * Add editorial_policy to options based on article_id prefix for specific users
+ * @param {Object} options - Options object to modify
+ * @param {string} userId - User ID
+ * @param {ProcessingSession} session - Session for logging
+ * @returns {Object} - Modified options object
+ */
+function addEditorialPolicyForUser(options, userId, session) {
+  // Only apply for user "KWG"
+  if (userId !== 'KWG') {
+    return options;
+  }
+
+  // Check if article_id exists in options
+  if (!options.article_id || typeof options.article_id !== 'string') {
+    return options;
+  }
+
+  // Check if editorial_policy exists in options
+  if (typeof options.editorial_policy === 'string' && options.editorial_policy) {
+    return options;
+  }
+
+  const articleId = options.article_id;
+  const prefix = articleId.substring(0, 4);
+
+  // Determine editorial_policy based on prefix
+  let editorialPolicy = null;
+  
+  if (prefix === 'QAEF') {
+    editorialPolicy = 'SURR';
+  } else if (prefix === 'QAEN') {
+    editorialPolicy = 'TFOD';
+  }
+
+  // Add editorial_policy if determined
+  if (editorialPolicy) {
+    options.editorial_policy = editorialPolicy;
+    session.addLog(`Added editorial_policy: ${editorialPolicy} based on article_id prefix: ${prefix}`);
+  }
+
+  return options;
+}
+
+/**
  * Check health of all GenShare versions or a specific version
  * @param {Object} req - Express request
  * @param {Object} res - Express response
@@ -111,6 +155,9 @@ module.exports.processPDF = async (req, res) => {
         session.addLog(`Warning: Error parsing options: ${parseError.message}`);
       }
     }
+    
+    // Add editorial_policy for specific users based on article_id
+    parsedOptions = addEditorialPolicyForUser(parsedOptions, req.user.id, session);
     
     const processingData = {
       file: mainFile,

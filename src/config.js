@@ -12,6 +12,7 @@ module.exports = {
   reportsConfigPath: path.join(__dirname, '../conf/reports.json'),
   usersPath: path.join(__dirname, '../conf/users.json'),
   emConfigPath: path.join(__dirname, '../conf/em.json'),
+  scholaroneConfigPath: path.join(__dirname, '../conf/scholarone.json'),
   snapshotMailsConfigPath: path.join(__dirname, '../conf/snapshotMails.json'),
   queueManagerConfigPath: path.join(__dirname, '../conf/queueManager.json')
 };

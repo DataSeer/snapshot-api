@@ -7,8 +7,14 @@ const config = require('./config');
 const { initDatabase, refreshRequestsFromS3 } = require('./utils/requestsManager');
 const jwtManager = require('./utils/jwtManager');
 const queueManager = require('./utils/queueManager');
+const scholaroneManager = require('./utils/scholaroneManager');
 
 const app = express();
+
+// Trust proxy configuration - Required to get real client IP behind nginx
+// Since nginx is running on localhost, we trust the first proxy
+// This allows Express to read X-Forwarded-For and X-Real-IP headers
+app.set('trust proxy', 1);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -34,6 +40,11 @@ const startServer = async () => {
     console.log('Initializing queue manager...');
     await queueManager.startJobProcessor();
     console.log('Queue manager initialized successfully');
+    
+    // Start ScholarOne periodic polling (if enabled)
+    console.log('Starting ScholarOne periodic polling...');
+    scholaroneManager.startPeriodicPolling();
+    console.log('ScholarOne periodic polling started');
     
     // Setup periodic token cleanup (every hour)
     setInterval(async () => {

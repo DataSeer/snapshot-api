@@ -407,8 +407,8 @@ const processSubmission = async (data, session) => {
     
     // Pass the processEmSubmissionJob as the processor function and completion callback
     await queueManager.enqueueJob(
-      reportId, 
-      'em_submission', 
+      reportId,
+      queueManager.JobType.EM_SUBMISSION,
       queueData,
       undefined, // Use default max retries
       undefined, // Use default priority
