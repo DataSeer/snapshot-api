@@ -56,6 +56,37 @@ async function appendToSheet(data, version) {
 }
 
 /**
+ * Appends data to a user-specific Google Sheet
+ * @param {Array} data - Array of data to append to the sheet
+ * @param {Object} userSheetConfig - User's Google Sheets configuration
+ * @param {string} userSheetConfig.spreadsheetId - The spreadsheet ID
+ * @param {string} userSheetConfig.sheetName - The sheet name
+ * @returns {Promise<Object>} - Google Sheets API response
+ */
+async function appendToUserSheet(data, userSheetConfig) {
+  try {
+    if (!userSheetConfig || !userSheetConfig.spreadsheetId || !userSheetConfig.sheetName) {
+      throw new Error('Invalid user Google Sheets configuration: missing spreadsheetId or sheetName');
+    }
+
+    const response = await sheetsService.spreadsheets.values.append({
+      spreadsheetId: userSheetConfig.spreadsheetId,
+      range: userSheetConfig.sheetName,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'OVERWRITE',
+      requestBody: {
+        values: [data]
+      }
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error(`Error appending to user Google Sheet (${userSheetConfig?.spreadsheetId}):`, error);
+    throw error;
+  }
+}
+
+/**
  * Creates a copy of a template file and fills it with provided data
  * @param {Object} options - Configuration options
  * @param {string} options.spreadsheetId - Google ID of the template file to copy
@@ -180,7 +211,8 @@ function convertToGoogleSheetsDuration(milliseconds) {
 }
 
 module.exports = { 
-  appendToSheet, 
+  appendToSheet,
+  appendToUserSheet,
   createReport,
   convertToGoogleSheetsDate, 
   convertToGoogleSheetsTime, 

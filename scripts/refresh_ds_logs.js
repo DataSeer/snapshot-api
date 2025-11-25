@@ -3,8 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const Papa = require('papaparse');
 const { getAllGenshareRequestsFiles, getGenshareResponseFile } = require('../src/utils/s3Storage');
-const { getPath, getResponse } = require('../src/utils/genshareManager');
-const { convertToGoogleSheetsDate, convertToGoogleSheetsTime, convertToGoogleSheetsDuration } = require('../src/utils/googleSheets');
+const { buildSummaryRowData, getSummaryHeaders } = require('../src/utils/genshareManager');
 const config = require('../src/config');
 
 // Load the genshare configuration
@@ -23,15 +22,20 @@ const processRequestForCSV = async (requestFile) => {
     let errorStatus = "No";
     let genshareVersion = "unknown";
     let filename = "N/A";
-    let response = [];
-    let path = [];
+    let responseData = [];
+    let pathData = [];
     let sessionDuration = 0;
     let snapshotAPIVersion = "";
+    let reportVersion = "";
+    let reportURL = "";
+    let graphValue = "";
     
     // Extract basic info from request content
     if (content) {
       filename = content.file?.originalname || content.filename || "N/A";
       genshareVersion = content.genshareVersion || genshareConfig.defaultVersion;
+      reportVersion = content.report || "";
+      graphValue = content.editorial_policy || "";
     }
     
     // Try to get GenShare response data
@@ -46,17 +50,17 @@ const processRequestForCSV = async (requestFile) => {
         
         // Extract response data if available
         if (genshareResponse.data && genshareResponse.data.response) {
-          const responseData = genshareResponse.data.response;
-          const pathData = genshareResponse.data.path;
-          const version = genshareResponse.data.version || genshareVersion;
-          
-          // Use existing functions to format data for Google Sheets
-          response = getResponse(responseData, version);
-          path = getPath(pathData, version);
+          responseData = genshareResponse.data.response;
+          pathData = genshareResponse.data.path;
           
           // Update version if we got it from response
           if (genshareResponse.data.version) {
             genshareVersion = genshareResponse.data.version;
+          }
+          
+          // Get graph value from response if available
+          if (genshareResponse.data.graph_policy_traversal_data?.graph_type) {
+            graphValue = genshareResponse.data.graph_policy_traversal_data.graph_type;
           }
         } else {
           // No response data means there was likely an error
@@ -72,27 +76,32 @@ const processRequestForCSV = async (requestFile) => {
       console.warn(`Could not access response file for ${requestId}: ${responseError.message}`);
     }
     
-    // Calculate session info based on timestamps
+    // Calculate request date
     const requestDate = new Date(lastModified);
     
     // Generate S3 URL for the request
     const s3Url = `https://s3.console.aws.amazon.com/s3/buckets/${config.s3?.bucketName || 'snapshot-api-dev'}?region=${config.s3?.region || 'us-east-1'}&bucketType=general&prefix=${config.s3?.s3Folder || 'snapshot-api-dev'}/${userId}/${requestId}/`;
     
-    // Create CSV row data with proper sanitization
-    const csvRow = [
-      `=HYPERLINK("${s3Url}","${requestId}")`, // Query ID with S3 link
-      sanitizeCSVValue(snapshotAPIVersion),     // Snapshot API version
-      sanitizeCSVValue(genshareVersion),        // GenShare version
-      sanitizeCSVValue(errorStatus),            // Error status
-      sanitizeCSVValue(convertToGoogleSheetsDate(requestDate)), // Date
-      sanitizeCSVValue(convertToGoogleSheetsTime(requestDate)), // Time
-      sanitizeCSVValue(convertToGoogleSheetsDuration(sessionDuration)), // Session duration
-      sanitizeCSVValue(userId),                 // User ID
-      sanitizeCSVValue(filename),               // PDF filename or "No file"
-      sanitizeCSVValue("")                      // Report URL (empty for now)
-    ].concat(response.map(sanitizeCSVValue)).concat(path.map(sanitizeCSVValue));
+    // Use the centralized buildSummaryRowData function
+    const csvRow = buildSummaryRowData({
+      requestId,
+      s3Url,
+      snapshotAPIVersion,
+      genshareVersion,
+      errorStatus,
+      date: requestDate,
+      duration: sessionDuration,
+      userId,
+      filename,
+      reportVersion,
+      reportURL,
+      graphValue,
+      responseData,
+      pathData
+    });
     
-    return csvRow;
+    // Sanitize all values in the row
+    return csvRow.map(sanitizeCSVValue);
     
   } catch (error) {
     console.error(`Error processing request ${requestFile.requestId}:`, error);
@@ -101,18 +110,24 @@ const processRequestForCSV = async (requestFile) => {
     const requestDate = new Date(requestFile.lastModified);
     const s3Url = `https://s3.console.aws.amazon.com/s3/buckets/snapshot-api-dev?region=us-east-1&bucketType=general&prefix=snapshot-api-dev/${requestFile.userId}/${requestFile.requestId}/`;
     
-    return [
-      `=HYPERLINK("${s3Url}","${requestFile.requestId}")`,
-      sanitizeCSVValue(""),
-      sanitizeCSVValue("unknown"),
-      sanitizeCSVValue("Processing Error"),
-      sanitizeCSVValue(convertToGoogleSheetsDate(requestDate)),
-      sanitizeCSVValue(convertToGoogleSheetsTime(requestDate)),
-      sanitizeCSVValue("0"),
-      sanitizeCSVValue(requestFile.userId),
-      sanitizeCSVValue("N/A"),
-      sanitizeCSVValue("")
-    ];
+    const errorRow = buildSummaryRowData({
+      requestId: requestFile.requestId,
+      s3Url,
+      snapshotAPIVersion: "",
+      genshareVersion: "unknown",
+      errorStatus: "Processing Error",
+      date: requestDate,
+      duration: 0,
+      userId: requestFile.userId,
+      filename: "N/A",
+      reportVersion: "",
+      reportURL: "",
+      graphValue: "",
+      responseData: [],
+      pathData: []
+    });
+    
+    return errorRow.map(sanitizeCSVValue);
   }
 };
 
@@ -147,34 +162,6 @@ const sanitizeCSVValue = (value) => {
   stringValue = stringValue.trim();
   
   return stringValue;
-};
-
-/**
- * Generate CSV headers based on GenShare version configuration
- * @param {string} version - GenShare version
- * @returns {Array} - CSV headers
- */
-const generateCSVHeaders = (version) => {
-  const versionConfig = genshareConfig.versions[version] || genshareConfig.versions[genshareConfig.defaultVersion];
-  
-  const baseHeaders = [
-    "Query ID",
-    "Snapshot API Version", 
-    "GenShare Version",
-    "Error",
-    "Date",
-    "Time", 
-    "Duration",
-    "User ID",
-    "Filename",
-    "Report URL"
-  ];
-  
-  // Add response mapping headers
-  const responseHeaders = Object.keys(versionConfig.responseMapping?.getResponse || {});
-  const pathHeaders = versionConfig.responseMapping?.getPath || [];
-  
-  return baseHeaders.concat(responseHeaders).concat(pathHeaders);
 };
 
 /**
@@ -222,8 +209,8 @@ const refreshDSLogs = async () => {
       return;
     }
     
-    // Generate headers (using default version for now)
-    const headers = generateCSVHeaders(genshareConfig.defaultVersion);
+    // Generate headers using the centralized function
+    const headers = getSummaryHeaders(genshareConfig.defaultVersion);
     console.log(`Generated ${headers.length} CSV headers`);
     
     // Process each request file
@@ -294,7 +281,6 @@ const refreshDSLogs = async () => {
 module.exports = {
   refreshDSLogs,
   processRequestForCSV,
-  generateCSVHeaders,
   arrayToCSV,
   sanitizeCSVValue
 };
