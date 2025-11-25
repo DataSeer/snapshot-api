@@ -3,6 +3,15 @@ const fs = require('fs');
 const config = require('../config');
 
 /**
+ * Get all users from the configuration
+ * @returns {Object} Object containing all users with their configurations
+ */
+const getAllUsers = () => {
+  const users = JSON.parse(fs.readFileSync(config.usersPath, 'utf8'));
+  return users;
+};
+
+/**
  * Get user by ID with all user data
  * @param {string} userId - The user ID to retrieve
  * @returns {Object} User object with user data
@@ -94,6 +103,7 @@ const getUserResponseFieldRestrictions = (userId) => {
 };
 
 module.exports = { 
+  getAllUsers,
   getUserById, 
   updateUser, 
   validateClientCredentials,

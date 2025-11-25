@@ -301,7 +301,8 @@ const processMailSubmissionJob = async (job) => {
         genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
         reportURL,
         graphValue,
-        reportVersion
+        reportVersion,
+        articleId: data.keywords?.article_id || ""
       });
     } catch (summaryError) {
       session.addLog(`Error logging to summary: ${summaryError.message}`);
@@ -353,7 +354,8 @@ const processMailSubmissionJob = async (job) => {
         genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
         reportURL,
         graphValue,
-        reportVersion
+        reportVersion,
+        articleId: data.keywords?.article_id || ""
       });
     } catch (summaryError) {
       session.addLog(`Error logging to summary: ${summaryError.message}`);

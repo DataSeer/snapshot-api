@@ -1,6 +1,7 @@
 // File: src/controllers/emController.js
 const fs = require('fs').promises;
 const emManager = require('../utils/emManager');
+const genshareManager = require('../utils/genshareManager');
 const { ProcessingSession } = require('../utils/s3Storage');
 
 /**
@@ -94,6 +95,26 @@ module.exports.postSubmissions = async (req, res) => {
       status: "Error",
       error_message: error.message
     });
+    
+    // Append error to summary (Google Sheets logging)
+    try {      
+      await genshareManager.appendToSummary({
+        session,
+        errorStatus: error.message,
+        data: {
+          file: { originalname: "N/A" },
+          user: { id: req.user.id }
+        },
+        genshareVersion: session.getGenshareVersion() || null,
+        reportURL: "",
+        graphValue: "",
+        reportVersion: "",
+        articleId: ""
+      });
+    } catch (appendError) {
+      session.addLog(`Error appending to summary: ${appendError.message}`);
+      console.error(`[${session.requestId}] Error appending to summary:`, appendError);
+    }
     
     try {
       // Save session data with error information

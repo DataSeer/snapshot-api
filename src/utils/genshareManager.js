@@ -5,7 +5,7 @@ const path = require('path');
 const axios = require('axios');
 const FormData = require('form-data');
 const config = require('../config');
-const { appendToSheet, convertToGoogleSheetsDate, convertToGoogleSheetsTime, convertToGoogleSheetsDuration } = require('./googleSheets');
+const { appendToSheet, appendToUserSheet, convertToGoogleSheetsDate, convertToGoogleSheetsTime, convertToGoogleSheetsDuration } = require('./googleSheets');
 const { getUserById } = require('./userManager');
 const requestsManager = require('./requestsManager');
 const snapshotReportsManager = require('./snapshotReportsManager');
@@ -336,46 +336,288 @@ function filterOptions(options, user, session) {
   return filteredOptions;
 }
 
+// ============================================================================
+// CSV DATA BUILDING FUNCTIONS
+// ============================================================================
+
+/**
+ * Build CSV row data for the main summary sheet (appendToSheet)
+ * @param {Object} options - Data options
+ * @param {string} options.requestId - Request ID
+ * @param {string} options.s3Url - S3 URL for the request
+ * @param {string} options.snapshotAPIVersion - Snapshot API version
+ * @param {string} options.genshareVersion - GenShare version
+ * @param {string} options.errorStatus - Error status string
+ * @param {Date} options.date - Date of the request
+ * @param {number} options.duration - Session duration in milliseconds
+ * @param {string} options.userId - User ID
+ * @param {string} options.filename - PDF filename
+ * @param {string} options.reportVersion - Report version
+ * @param {string} options.reportURL - Report URL
+ * @param {string} options.graphValue - Graph/editorial policy value
+ * @param {string} options.articleId - Article ID
+ * @param {Array} options.responseData - GenShare response data array
+ * @param {Array} options.pathData - GenShare path data array
+ * @returns {Array} - CSV row data array
+ */
+const buildSummaryRowData = (options) => {
+  const {
+    requestId,
+    s3Url,
+    snapshotAPIVersion = "",
+    genshareVersion,
+    errorStatus = "No",
+    date,
+    duration = 0,
+    userId,
+    filename = "N/A",
+    reportVersion = "",
+    reportURL = "",
+    graphValue = "",
+    articleId = "",
+    responseData = [],
+    pathData = []
+  } = options;
+
+  // Format response and path data using existing functions
+  const response = getResponse(responseData, genshareVersion);
+  const pathFormatted = getPath(pathData, genshareVersion);
+
+  // Build the row data
+  const rowData = [
+    s3Url ? `=HYPERLINK("${s3Url}","${requestId}")` : requestId, // Query ID with S3 link
+    snapshotAPIVersion,                          // Snapshot API version
+    genshareVersion || "",                       // GenShare version
+    errorStatus,                                 // Error status
+    convertToGoogleSheetsDate(date),             // Date
+    convertToGoogleSheetsTime(date),             // Time
+    convertToGoogleSheetsDuration(duration),     // Session duration
+    userId,                                      // User ID
+    filename,                                    // PDF filename or "N/A"
+    reportVersion,                               // Report version
+    reportURL,                                   // Report URL
+    graphValue,                                  // Graph value
+    articleId                                    // Article ID
+  ].concat(response).concat(pathFormatted);
+
+  return rowData;
+};
+
+/**
+ * Generate CSV headers for the main summary sheet
+ * @param {string} version - GenShare version
+ * @returns {Array} - CSV headers array
+ */
+const getSummaryHeaders = (version) => {
+  const versionConfig = genshareConfig.versions[version] || genshareConfig.versions[genshareConfig.defaultVersion];
+  
+  const baseHeaders = [
+    "Request ID",
+    "Snapshot API Version", 
+    "GenShare Version",
+    "Error",
+    "Date",
+    "Time", 
+    "Duration",
+    "User ID",
+    "Filename",
+    "Report Version",
+    "Report URL",
+    "Graph Value"
+  ];
+  
+  // Add response mapping headers
+  const responseHeaders = Object.keys(versionConfig.responseMapping?.getResponse || {});
+  const pathHeaders = versionConfig.responseMapping?.getPath || [];
+  
+  return baseHeaders.concat(responseHeaders).concat(pathHeaders);
+};
+
+/**
+ * Build CSV row data for user-specific sheet (appendToUserSheet)
+ * @param {Object} options - Data options
+ * @param {string} options.requestId - Request ID
+ * @param {Date} options.date - Date of the request
+ * @param {string} options.filename - PDF filename
+ * @param {string} options.genshareVersion - GenShare version
+ * @param {string} options.reportVersion - Report version
+ * @param {string} options.reportURL - Report URL
+ * @param {string} options.graphValue - Graph/editorial policy value
+ * @param {string} options.articleId - Article ID
+ * @param {Array} options.filteredData - Filtered response data array (already filtered for user)
+ * @returns {Array} - CSV row data array
+ */
+const buildUserLogRowData = (options) => {
+  const {
+    requestId,
+    date,
+    filename = "N/A",
+    genshareVersion = "",
+    reportVersion = "",
+    reportURL = "",
+    graphValue = "",
+    articleId = "",
+    filteredData = []
+  } = options;
+
+  // Build the base row data
+  const rowData = [
+    requestId,                                   // Request ID
+    convertToGoogleSheetsDate(date),             // Date
+    convertToGoogleSheetsTime(date),             // Time
+    filename,                                    // PDF filename
+    genshareVersion,                             // GenShare version
+    reportVersion,                               // Report version
+    reportURL,                                   // Report URL
+    graphValue,                                  // Graph/editorial policy value
+    articleId                                    // Article ID
+  ];
+
+  // Add filtered response field values only (not names)
+  if (Array.isArray(filteredData)) {
+    for (const item of filteredData) {
+      if (item && item.name !== undefined && item.value !== undefined) {
+        // Convert array values to string
+        const value = typeof item.value === "string" ? item.value.toString() : JSON.stringify(item.value, null, 2);
+        rowData.push(value);
+      }
+    }
+  }
+
+  return rowData;
+};
+
+/**
+ * Generate CSV headers for user-specific sheet
+ * @param {Array} filteredData - Sample filtered data to extract field names (optional)
+ * @returns {Array} - CSV headers array
+ */
+const getUserLogHeaders = (filteredData = []) => {
+  const baseHeaders = [
+    "Request ID",
+    "Date",
+    "Time",
+    "Filename",
+    "GenShare Version",
+    "Report Version",
+    "Report URL",
+    "Graph Value"
+  ];
+
+  // Add field names from filtered data if provided
+  if (Array.isArray(filteredData) && filteredData.length > 0) {
+    for (const item of filteredData) {
+      if (item && item.name !== undefined) {
+        baseHeaders.push(item.name);
+      }
+    }
+  }
+
+  return baseHeaders;
+};
+
+// ============================================================================
+// LOGGING FUNCTIONS
+// ============================================================================
+
 /**
  * Logs session data to Google Sheets
  * @param {Object} options - Options containing session, error status, and request
  * @returns {Promise<void>}
  */
-const appendToSummary = async ({ session, errorStatus, data, genshareVersion, reportURL, graphValue, reportVersion }) => {
+const appendToSummary = async ({ session, errorStatus, data, genshareVersion, reportURL, graphValue, reportVersion, articleId }) => {
   try {
-    // Safely get the filename, defaulting to "No file" if not available
+    // Safely get the filename, defaulting to "N/A" if not available
     const filename = data.file?.originalname || "N/A";
     
     // Get the response info from the genshare response in the session
     const genshareResponse = session.genshare?.response;
-    let response = getResponse(genshareResponse?.data?.response, genshareVersion);
-    
-    // Get the Path info
-    let path = getPath(genshareResponse?.data?.path, genshareVersion);
     
     // Current date
     const now = new Date();
     
+    // Build the row data using the centralized function
+    const rowData = buildSummaryRowData({
+      requestId: session.requestId,
+      s3Url: session.url,
+      snapshotAPIVersion: session.getSnapshotAPIVersion(),
+      genshareVersion: session.getGenshareVersion() || genshareVersion,
+      errorStatus,
+      date: now,
+      duration: session.getDuration(),
+      userId: data.user.id,
+      filename,
+      reportVersion: reportVersion || "",
+      reportURL: reportURL || "",
+      graphValue: graphValue || "",
+      articleId: articleId || "",
+      responseData: genshareResponse?.data?.response,
+      pathData: genshareResponse?.data?.path
+    });
+    
     // Log to Google Sheets for this specific version
-    await appendToSheet([
-      `=HYPERLINK("${session.url}","${session.requestId}")`, // Query ID with S3 link
-      session.getSnapshotAPIVersion(),                       // Snapshot API version
-      session.getGenshareVersion(),                          // GenShare version
-      errorStatus,                                           // Error status
-      convertToGoogleSheetsDate(now),                        // Date
-      convertToGoogleSheetsTime(now),                        // Time
-      convertToGoogleSheetsDuration(session.getDuration()),  // Session duration
-      data.user.id,                                          // User ID
-      filename,                                              // PDF filename or "No file"
-      reportVersion || "",                                   // Report value from GenShare request,
-      reportURL,                                             // Report URL
-      graphValue || ""                                       // Graph value from GenShare request
-    ].concat(response).concat(path), genshareVersion);
+    await appendToSheet(rowData, genshareVersion);
     
     session.addLog('Logged to Google Sheets successfully');
   } catch (sheetsError) {
     session.addLog(`Error logging to Google Sheets: ${sheetsError.message}`);
     console.error(`[${session.requestId}] Error logging to Google Sheets:`, sheetsError);
+  }
+};
+
+/**
+ * Logs filtered response data to user-specific Google Sheets
+ * @param {Object} options - Options containing session, user, and filtered data
+ * @param {Object} options.session - Processing session for logging
+ * @param {Object} options.user - User object with googleSheets configuration
+ * @param {Array} options.filteredData - Filtered response data array
+ * @param {string} options.reportURL - Report URL (optional)
+ * @param {string} options.filename - Original filename
+ * @param {string} options.genshareVersion - GenShare version used
+ * @param {string} options.reportVersion - Report version used
+ * @param {string} options.graphValue - Graph/editorial policy value
+ * @returns {Promise<void>}
+ */
+const appendToUserLog = async ({ session, user, filteredData, reportURL, filename, genshareVersion, reportVersion, graphValue, articleId }) => {
+  try {
+    // Check if user has Google Sheets logging enabled
+    if (!user.googleSheets || !user.googleSheets.enabled) {
+      session.addLog('[User Sheets] User Google Sheets logging is disabled or not configured');
+      return;
+    }
+
+    const userSheetConfig = user.googleSheets;
+
+    // Validate configuration
+    if (!userSheetConfig.spreadsheetId || !userSheetConfig.sheetName) {
+      session.addLog('[User Sheets] Invalid user Google Sheets configuration: missing spreadsheetId or sheetName');
+      return;
+    }
+
+    // Current date
+    const now = new Date();
+
+    // Build the row data using the centralized function
+    const rowData = buildUserLogRowData({
+      requestId: session.requestId,
+      date: now,
+      filename: filename || "N/A",
+      genshareVersion: genshareVersion || "",
+      reportVersion: reportVersion || "",
+      reportURL: reportURL || "",
+      graphValue: graphValue || "",
+      articleId: articleId || "",
+      filteredData
+    });
+
+    // Append to user's Google Sheet
+    await appendToUserSheet(rowData, userSheetConfig);
+
+    session.addLog(`[User Sheets] Logged to user Google Sheet successfully (${userSheetConfig.spreadsheetId})`);
+  } catch (sheetsError) {
+    session.addLog(`[User Sheets] Error logging to user Google Sheet: ${sheetsError.message}`);
+    console.error(`[${session.requestId}] Error logging to user Google Sheet:`, sheetsError);
+    // Don't throw - user sheet logging failure shouldn't fail the request
   }
 };
 
@@ -536,7 +778,8 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
           genshareVersion: activeGenShareVersion || genshareConfig.defaultVersion,
           reportURL: "",
           graphValue: "",
-          reportVersion: ""
+          reportVersion: "",
+          articleId: data.options?.article_id || ""
         });
       } catch (summaryError) {
         session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
@@ -739,7 +982,8 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
             genshareVersion: activeGenShareVersion,
             reportURL,
             graphValue: activeGenShareGraphValue,
-            reportVersion: activeReportVersion
+            reportVersion: activeReportVersion,
+            articleId: articleId || ""
           });
         } catch (summaryError) {
           session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
@@ -779,13 +1023,33 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
           genshareVersion: activeGenShareVersion,
           reportURL,
           graphValue: activeGenShareGraphValue,
-          reportVersion: activeReportVersion
+          reportVersion: activeReportVersion,
+          articleId: articleId || ""
         });
       } catch (summaryError) {
         session.addLog(`Error logging to summary: ${summaryError.message}`);
         console.error(`[${session.requestId}] Error logging to summary:`, summaryError);
         // Don't fail the process if summary logging fails
       }
+    }
+
+    // Log to user-specific Google Sheets (always attempt if configured)
+    try {
+      await appendToUserLog({
+        session,
+        user,
+        filteredData: finalData,
+        reportURL,
+        filename: data.file?.originalname,
+        genshareVersion: activeGenShareVersion,
+        reportVersion: activeReportVersion,
+        graphValue: activeGenShareGraphValue,
+        articleId: articleId || ""
+      });
+    } catch (userLogError) {
+      session.addLog(`Error logging to user sheet: ${userLogError.message}`);
+      console.error(`[${session.requestId}] Error logging to user sheet:`, userLogError);
+      // Don't fail the process if user sheet logging fails
     }
 
     // Return the processing result with additional metadata
@@ -821,7 +1085,8 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
           genshareVersion: activeGenShareVersion || genshareConfig.defaultVersion,
           reportURL: "",
           graphValue: activeGenShareGraphValue,
-          reportVersion: activeReportVersion
+          reportVersion: activeReportVersion,
+          articleId: data.options?.article_id || ""
         });
       } catch (summaryError) {
         session.addLog(`Error logging error to summary: ${summaryError.message}`);
@@ -835,11 +1100,25 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
 };
 
 module.exports = {
+  // Main functions
   getGenShareHealth,
   processPDF,
+  
+  // Logging functions
   appendToSummary,
+  appendToUserLog,
+  
+  // CSV data building functions (for scripts)
+  buildSummaryRowData,
+  getSummaryHeaders,
+  buildUserLogRowData,
+  getUserLogHeaders,
+  
+  // Data transformation functions
   filterAndSortResponseForUser,
   getPath,
   getResponse,
+  
+  // Validation
   validatePDFFile
 };

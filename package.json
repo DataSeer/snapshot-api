@@ -14,6 +14,7 @@
     "manage-genshare": "node scripts/manage_genshare_versions.js",
     "analyze-logs": "node scripts/analyze_logs.js",
     "refresh-ds-logs": "node scripts/refresh_ds_logs.js",
+    "refresh-user-logs": "node scripts/refresh_user_logs.js",
     "lint": "eslint . --ext .js",
     "lint:fix": "eslint . --ext .js --fix",
     "prepare": "husky install",

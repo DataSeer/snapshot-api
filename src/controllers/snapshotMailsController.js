@@ -1,6 +1,7 @@
 // File: src/controllers/snapshotMailsController.js
 const fs = require('fs').promises;
 const snapshotMailsManager = require('../utils/snapshotMailsManager');
+const genshareManager = require('../utils/genshareManager');
 const { ProcessingSession } = require('../utils/s3Storage');
 
 /**
@@ -114,6 +115,40 @@ module.exports.postSubmissions = async (req, res) => {
       status: "Error",
       error_message: error.message
     });
+    
+    // Append error to summary (Google Sheets logging)
+    try {
+      // Parse submission data to get article_id from user_parameters if available
+      let submissionData = {};
+      if (req.body.submission_data) {
+        try {
+          submissionData = typeof req.body.submission_data === 'string' 
+            ? JSON.parse(req.body.submission_data) 
+            : req.body.submission_data;
+        } catch (parseError) {
+          submissionData = {};
+        }
+      }
+      
+      const userParameters = submissionData.user_parameters || {};
+      
+      await genshareManager.appendToSummary({
+        session,
+        errorStatus: error.message,
+        data: {
+          file: { originalname: "N/A" },
+          user: { id: req.user.id }
+        },
+        genshareVersion: session.getGenshareVersion() || null,
+        reportURL: "",
+        graphValue: userParameters.editorial_policy || "",
+        reportVersion: "",
+        articleId: userParameters.article_id || ""
+      });
+    } catch (appendError) {
+      session.addLog(`Error appending to summary: ${appendError.message}`);
+      console.error(`[${session.requestId}] Error appending to summary:`, appendError);
+    }
     
     try {
       // Save session data with error information
