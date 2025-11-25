@@ -355,6 +355,7 @@ function filterOptions(options, user, session) {
  * @param {string} options.reportVersion - Report version
  * @param {string} options.reportURL - Report URL
  * @param {string} options.graphValue - Graph/editorial policy value
+ * @param {string} options.articleId - Article ID
  * @param {Array} options.responseData - GenShare response data array
  * @param {Array} options.pathData - GenShare path data array
  * @returns {Array} - CSV row data array
@@ -373,6 +374,7 @@ const buildSummaryRowData = (options) => {
     reportVersion = "",
     reportURL = "",
     graphValue = "",
+    articleId = "",
     responseData = [],
     pathData = []
   } = options;
@@ -394,7 +396,8 @@ const buildSummaryRowData = (options) => {
     filename,                                    // PDF filename or "N/A"
     reportVersion,                               // Report version
     reportURL,                                   // Report URL
-    graphValue                                   // Graph value
+    graphValue,                                  // Graph value
+    articleId                                    // Article ID
   ].concat(response).concat(pathFormatted);
 
   return rowData;
@@ -440,6 +443,7 @@ const getSummaryHeaders = (version) => {
  * @param {string} options.reportVersion - Report version
  * @param {string} options.reportURL - Report URL
  * @param {string} options.graphValue - Graph/editorial policy value
+ * @param {string} options.articleId - Article ID
  * @param {Array} options.filteredData - Filtered response data array (already filtered for user)
  * @returns {Array} - CSV row data array
  */
@@ -452,6 +456,7 @@ const buildUserLogRowData = (options) => {
     reportVersion = "",
     reportURL = "",
     graphValue = "",
+    articleId = "",
     filteredData = []
   } = options;
 
@@ -464,7 +469,8 @@ const buildUserLogRowData = (options) => {
     genshareVersion,                             // GenShare version
     reportVersion,                               // Report version
     reportURL,                                   // Report URL
-    graphValue                                   // Graph/editorial policy value
+    graphValue,                                  // Graph/editorial policy value
+    articleId                                    // Article ID
   ];
 
   // Add filtered response field values only (not names)
@@ -519,7 +525,7 @@ const getUserLogHeaders = (filteredData = []) => {
  * @param {Object} options - Options containing session, error status, and request
  * @returns {Promise<void>}
  */
-const appendToSummary = async ({ session, errorStatus, data, genshareVersion, reportURL, graphValue, reportVersion }) => {
+const appendToSummary = async ({ session, errorStatus, data, genshareVersion, reportURL, graphValue, reportVersion, articleId }) => {
   try {
     // Safely get the filename, defaulting to "N/A" if not available
     const filename = data.file?.originalname || "N/A";
@@ -544,6 +550,7 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersion, re
       reportVersion: reportVersion || "",
       reportURL: reportURL || "",
       graphValue: graphValue || "",
+      articleId: articleId || "",
       responseData: genshareResponse?.data?.response,
       pathData: genshareResponse?.data?.path
     });
@@ -571,7 +578,7 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersion, re
  * @param {string} options.graphValue - Graph/editorial policy value
  * @returns {Promise<void>}
  */
-const appendToUserLog = async ({ session, user, filteredData, reportURL, filename, genshareVersion, reportVersion, graphValue }) => {
+const appendToUserLog = async ({ session, user, filteredData, reportURL, filename, genshareVersion, reportVersion, graphValue, articleId }) => {
   try {
     // Check if user has Google Sheets logging enabled
     if (!user.googleSheets || !user.googleSheets.enabled) {
@@ -599,6 +606,7 @@ const appendToUserLog = async ({ session, user, filteredData, reportURL, filenam
       reportVersion: reportVersion || "",
       reportURL: reportURL || "",
       graphValue: graphValue || "",
+      articleId: articleId || "",
       filteredData
     });
 
@@ -770,7 +778,8 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
           genshareVersion: activeGenShareVersion || genshareConfig.defaultVersion,
           reportURL: "",
           graphValue: "",
-          reportVersion: ""
+          reportVersion: "",
+          articleId: data.options?.article_id || ""
         });
       } catch (summaryError) {
         session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
@@ -973,7 +982,8 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
             genshareVersion: activeGenShareVersion,
             reportURL,
             graphValue: activeGenShareGraphValue,
-            reportVersion: activeReportVersion
+            reportVersion: activeReportVersion,
+            articleId: articleId || ""
           });
         } catch (summaryError) {
           session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
@@ -1013,7 +1023,8 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
           genshareVersion: activeGenShareVersion,
           reportURL,
           graphValue: activeGenShareGraphValue,
-          reportVersion: activeReportVersion
+          reportVersion: activeReportVersion,
+          articleId: articleId || ""
         });
       } catch (summaryError) {
         session.addLog(`Error logging to summary: ${summaryError.message}`);
@@ -1032,7 +1043,8 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
         filename: data.file?.originalname,
         genshareVersion: activeGenShareVersion,
         reportVersion: activeReportVersion,
-        graphValue: activeGenShareGraphValue
+        graphValue: activeGenShareGraphValue,
+        articleId: articleId || ""
       });
     } catch (userLogError) {
       session.addLog(`Error logging to user sheet: ${userLogError.message}`);
@@ -1073,7 +1085,8 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
           genshareVersion: activeGenShareVersion || genshareConfig.defaultVersion,
           reportURL: "",
           graphValue: activeGenShareGraphValue,
-          reportVersion: activeReportVersion
+          reportVersion: activeReportVersion,
+          articleId: data.options?.article_id || ""
         });
       } catch (summaryError) {
         session.addLog(`Error logging error to summary: ${summaryError.message}`);

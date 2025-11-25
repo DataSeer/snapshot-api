@@ -207,6 +207,38 @@ module.exports.processPDF = async (req, res) => {
     session.addLog(`Error processing request: ${error.message}`);
     session.addLog(`Stack: ${error.stack}`);
 
+    // Append error to summary (Google Sheets logging)
+    try {
+      // Parse options to get article_id if available
+      let parsedOptions = {};
+      if (req.body.options) {
+        try {
+          parsedOptions = typeof req.body.options === 'string' 
+            ? JSON.parse(req.body.options) 
+            : req.body.options;
+        } catch (parseError) {
+          parsedOptions = {};
+        }
+      }
+      
+      await genshareManager.appendToSummary({
+        session,
+        errorStatus: error.message,
+        data: {
+          file: { originalname: "N/A" },
+          user: { id: req.user.id }
+        },
+        genshareVersion: session.getGenshareVersion() || null,
+        reportURL: "",
+        graphValue: parsedOptions.editorial_policy || "",
+        reportVersion: "",
+        articleId: parsedOptions.article_id || ""
+      });
+    } catch (appendError) {
+      session.addLog(`Error appending to summary: ${appendError.message}`);
+      console.error(`[${session.requestId}] Error appending to summary:`, appendError);
+    }
+
     try {
       // Store error response
       session.setAPIResponse({
