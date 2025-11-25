@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const Papa = require('papaparse');
 const { getAllGenshareRequestsFiles, getGenshareResponseFile } = require('../src/utils/s3Storage');
-const { buildUserLogRowData, getUserLogHeaders, filterAndSortResponseForUser } = require('../src/utils/genshareManager');
+const { buildUserLogRowData, filterAndSortResponseForUser } = require('../src/utils/genshareManager');
 const { getUserById, getAllUsers } = require('../src/utils/userManager');
 const config = require('../src/config');
 
@@ -36,6 +36,7 @@ const processRequestForUserCSV = async (requestFile, user) => {
     let reportVersion = "";
     let graphValue = "";
     let reportURL = "";
+    let articleId = "";
     let filteredData = [];
     
     // Extract basic info from request content
@@ -71,6 +72,12 @@ const processRequestForUserCSV = async (requestFile, user) => {
         if (reportLinkItem) {
           reportURL = reportLinkItem.value || "";
         }
+        
+        // Add article_id if available (check in response data)
+        const articleIdItem = responseData.find(item => item.name === "article_id");
+        if (articleIdItem) {
+          articleId = articleIdItem.value || "";
+        }
       }
     } catch (responseError) {
       console.warn(`Could not access response file for ${requestId}: ${responseError.message}`);
@@ -89,7 +96,8 @@ const processRequestForUserCSV = async (requestFile, user) => {
       reportVersion,
       reportURL,
       graphValue,
-      filteredData
+      filteredData,
+      articleId
     });
     
     // Sanitize all values and return
@@ -111,7 +119,8 @@ const processRequestForUserCSV = async (requestFile, user) => {
       reportVersion: "",
       reportURL: "",
       graphValue: "",
-      filteredData: []
+      filteredData: [],
+      articleId: ""
     });
     
     return {
@@ -203,6 +212,81 @@ const getUsersWithSheetsEnabled = () => {
 };
 
 /**
+ * Generate headers from user configuration and collected field names
+ * @param {Object} user - User object with genshare configuration
+ * @param {Set} allFieldNames - Set of all unique field names found across requests
+ * @returns {Array} - CSV headers array
+ */
+const generateHeadersFromUserConfig = (user, allFieldNames) => {
+  const baseHeaders = [
+    "Request ID",
+    "Date",
+    "Time",
+    "Filename",
+    "GenShare Version",
+    "Report Version",
+    "Report URL",
+    "Graph Value",
+    "Article ID"
+  ];
+  
+  // Convert Set to Array for processing
+  const fieldNamesArray = Array.from(allFieldNames);
+  
+  // If user has fieldOrder configuration, use it to sort the fields
+  if (user.genshare && user.genshare.fieldOrder && Array.isArray(user.genshare.fieldOrder)) {
+    const fieldOrder = user.genshare.fieldOrder;
+    
+    // Create a map for quick lookup
+    const orderMap = new Map();
+    fieldOrder.forEach((fieldName, index) => {
+      orderMap.set(fieldName, index);
+    });
+    
+    // Sort field names according to fieldOrder
+    const sortedFields = fieldNamesArray.sort((a, b) => {
+      const orderA = orderMap.has(a) ? orderMap.get(a) : Infinity;
+      const orderB = orderMap.has(b) ? orderMap.get(b) : Infinity;
+      
+      if (orderA !== Infinity && orderB !== Infinity) {
+        return orderA - orderB;
+      }
+      
+      if (orderA !== Infinity) return -1;
+      if (orderB !== Infinity) return 1;
+      
+      // If neither has defined order, maintain alphabetical order
+      return a.localeCompare(b);
+    });
+    
+    return baseHeaders.concat(sortedFields);
+  }
+  
+  // If no fieldOrder, just use alphabetical order
+  return baseHeaders.concat(fieldNamesArray.sort());
+};
+
+/**
+ * Pad a row to match the expected number of columns based on headers
+ * @param {Array} row - Row data array
+ * @param {number} expectedLength - Expected number of columns
+ * @returns {Array} - Padded row data
+ */
+const padRowToMatchHeaders = (row, expectedLength) => {
+  if (row.length >= expectedLength) {
+    return row;
+  }
+  
+  // Pad with empty strings to match header length
+  const paddedRow = [...row];
+  while (paddedRow.length < expectedLength) {
+    paddedRow.push('');
+  }
+  
+  return paddedRow;
+};
+
+/**
  * Refresh logs for a specific user
  * @param {Object} user - User object
  * @param {Array} requestFiles - All request files from S3
@@ -231,7 +315,9 @@ const refreshLogsForUser = async (user, requestFiles, outputDir) => {
   const csvRows = [];
   let processedCount = 0;
   let errorCount = 0;
-  let sampleFilteredData = null; // To generate headers
+  
+  // Collect ALL unique field names across all requests
+  const allFieldNames = new Set();
   
   for (const requestFile of userRequestFiles) {
     try {
@@ -241,9 +327,13 @@ const refreshLogsForUser = async (user, requestFiles, outputDir) => {
         csvRows.push(result.row);
         processedCount++;
         
-        // Keep track of filtered data for header generation
-        if (!sampleFilteredData && result.filteredData && result.filteredData.length > 0) {
-          sampleFilteredData = result.filteredData;
+        // Collect all unique field names from this request's filtered data
+        if (result.filteredData && Array.isArray(result.filteredData)) {
+          for (const item of result.filteredData) {
+            if (item && item.name !== undefined) {
+              allFieldNames.add(item.name);
+            }
+          }
         }
       }
       
@@ -258,6 +348,7 @@ const refreshLogsForUser = async (user, requestFiles, outputDir) => {
   }
   
   console.log(`  Processing complete. Processed: ${processedCount}, Errors: ${errorCount}`);
+  console.log(`  Collected ${allFieldNames.size} unique field names across all requests`);
   
   if (csvRows.length === 0) {
     console.log(`  No data to export for user ${user.id}. Skipping CSV generation.`);
@@ -270,11 +361,15 @@ const refreshLogsForUser = async (user, requestFiles, outputDir) => {
     };
   }
   
-  // Generate headers using centralized function with sample filtered data
-  const headers = getUserLogHeaders(sampleFilteredData);
+  // Generate headers using user configuration and all collected field names
+  const headers = generateHeadersFromUserConfig(user, allFieldNames);
+  console.log(`  Generated ${headers.length} headers (${headers.length - 9} data fields)`);
+  
+  // Pad all rows to match header length (in case some rows are missing fields)
+  const paddedRows = csvRows.map(row => padRowToMatchHeaders(row, headers.length));
   
   // Add headers to the beginning of data
-  const csvData = [headers, ...csvRows];
+  const csvData = [headers, ...paddedRows];
   
   // Convert to CSV format
   const csvContent = arrayToCSV(csvData);
@@ -404,7 +499,9 @@ module.exports = {
   getUsersWithSheetsEnabled,
   refreshLogsForUser,
   arrayToCSV,
-  sanitizeCSVValue
+  sanitizeCSVValue,
+  generateHeadersFromUserConfig,
+  padRowToMatchHeaders
 };
 
 // Run if called directly

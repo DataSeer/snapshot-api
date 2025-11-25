@@ -501,7 +501,8 @@ const getUserLogHeaders = (filteredData = []) => {
     "GenShare Version",
     "Report Version",
     "Report URL",
-    "Graph Value"
+    "Graph Value",
+    "Article ID"
   ];
 
   // Add field names from filtered data if provided
