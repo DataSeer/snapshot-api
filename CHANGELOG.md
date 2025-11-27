@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.6.1](https://github.com/DataSeer/snapshot-api/compare/v3.5.1...v3.6.1) (2025-11-27)
+
+## [3.6.0](https://github.com/DataSeer/snapshot-api/compare/v3.5.0...v3.6.0) (2025-11-25)
+
+
+### Features
+
+* add Google Sheets logs for users ([59977f6](https://github.com/DataSeer/snapshot-api/commits/59977f653fea90968c9fb7e3ecb7fa60c032de50))
+* improve Google Sheets logging (manage 'article_id' on errors) ([0541c7d](https://github.com/DataSeer/snapshot-api/commits/0541c7dbe1f68a94668c983e2f5c3c2720c9e974))
+
 ## [3.5.0](https://github.com/DataSeer/snapshot-api/compare/v3.4.0...v3.5.0) (2025-11-21)
 
 

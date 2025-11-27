@@ -44,6 +44,11 @@
       "max": 100,
       "windowMs": 900000
     },
+    "googleSheets": {
+      "enabled": true,
+      "spreadsheetId": "your_spreadsheet_id_here",
+      "sheetName": "SnapShot Response"
+    },
     "genshare": {
       "authorizedVersions": [
         "v81.5.0"

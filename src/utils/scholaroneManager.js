@@ -625,7 +625,8 @@ const processScholaroneSubmissionJob = async (job) => {
         genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
         reportURL,
         graphValue,
-        reportVersion
+        reportVersion,
+        articleId: genshareOptions.article_id
       });
     } catch (summaryError) {
       session.addLog(`Error logging to summary: ${summaryError.message}`);
@@ -679,7 +680,8 @@ const processScholaroneSubmissionJob = async (job) => {
         genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
         reportURL,
         graphValue,
-        reportVersion
+        reportVersion,
+        articleId: data.submissionId || ""
       });
     } catch (summaryError) {
       session.addLog(`Error logging to summary: ${summaryError.message}`);

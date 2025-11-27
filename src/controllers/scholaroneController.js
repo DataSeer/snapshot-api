@@ -1,5 +1,6 @@
 // File: src/controllers/scholaroneController.js
 const scholaroneManager = require('../utils/scholaroneManager');
+const genshareManager = require('../utils/genshareManager');
 const { ProcessingSession } = require('../utils/s3Storage');
 
 /**
@@ -92,6 +93,26 @@ module.exports.postSubmissions = async (req, res) => {
       status: "Error",
       error_message: error.message
     });
+    
+    // Append error to summary (Google Sheets logging)
+    try {
+      await genshareManager.appendToSummary({
+        session,
+        errorStatus: error.message,
+        data: {
+          file: { originalname: req.body.submission_id },
+          user: { id: req.user.id }
+        },
+        genshareVersion: session.getGenshareVersion() || null,
+        reportURL: "",
+        graphValue: "",
+        reportVersion: "",
+        articleId: req.body.submission_id || ""
+      });
+    } catch (appendError) {
+      session.addLog(`Error appending to summary: ${appendError.message}`);
+      console.error(`[${session.requestId}] Error appending to summary:`, appendError);
+    }
     
     try {
       // Save session data with error information
