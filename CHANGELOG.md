@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.6.1](https://github.com/DataSeer/snapshot-api/compare/v3.5.1...v3.6.1) (2025-11-27)
+
 ## [3.6.0](https://github.com/DataSeer/snapshot-api/compare/v3.5.0...v3.6.0) (2025-11-25)
 
 
