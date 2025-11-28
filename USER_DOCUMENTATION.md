@@ -220,8 +220,9 @@ Here is the list of all available fields
 | warrant_specialist | URL(s) and PID(s) for any specialist repositories | Array<String> | URL(s) and PID(s) for any specialist repositories |
 | data_url | Does the DAS contains one or more URLs? | Boolean | Does the DAS contain a URL? |
 | is_dryad | List of Non-functional repository URLs | Boolean | If there is a repository found in the manuscript text, is it Dryad? |
-| non-functional_urls | List of non functional URLs found in the DAS | Array<String> | List of non functional URLs found in the DAS |
-| das_urls | List of all URLs found in the DAS | Array<Object> | Each URL has two properties: “url” (string), “valid” (boolean) & "is_landing_page" (boolean) |
+| non-functional_urls | List of non functional URLs found in the manuscript | Array<String> | List of non functional URLs found in the manuscript |
+| das_urls | List of all URLs found in the DAS | Array<String> | List of URLs found in the DAS: “url” (string), “valid” (boolean) & "is_landing_page" (boolean) |
+| das_url_details | List of all URLs found in the DAS | Array<Object> | List of URLs found in the DAS. Each URL has additional properties: “url” (string), “valid” (boolean) & "is_landing_page" (boolean) |
 | das_dois | List of all DOIs found in the DAS | Array<String> | List of all DOIs found in the DAS |
 | data_on_accept | Does the DAS state that the data will be made available upon acceptance/publication? | Boolean | Does the DAS state that the data will be made available upon acceptance/publication? |
 | computer_gen | Was shareable computer code generated? | Boolean | Was shareable computer code generated? |
@@ -404,6 +405,17 @@ Here is the list of all available fields
       "name": "das_urls",
       "description": "List of all URLs found in the DAS",
       "value": ["..."]
+    },
+    {
+      "name": "das_url_details",
+      "description": "List of all URLs found in the DAS",
+      "value": [
+        {
+          "url": "...",
+          "valid": true || false,
+          "is_landing_page": true || false,
+        }
+      ]
     },
     {
       "name": "das_dois",
