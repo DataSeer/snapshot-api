@@ -14,6 +14,25 @@ const snapshotReportsManager = require('./snapshotReportsManager');
 const genshareConfig = require(config.genshareConfigPath);
 
 /**
+ * Get version configuration by alias (e.g., "latest", "previous")
+ * @param {string} versionAlias - The version alias to look up
+ * @returns {Object|null} - The version configuration object or null if not found
+ */
+const getVersionConfig = (versionAlias) => {
+  return genshareConfig.versions[versionAlias] || null;
+};
+
+/**
+ * Get the actual version number from an alias
+ * @param {string} versionAlias - The version alias (e.g., "latest")
+ * @returns {string} - The actual version number (e.g., "v81.3.0") or the alias if no version property exists
+ */
+const getActualVersion = (versionAlias) => {
+  const config = getVersionConfig(versionAlias);
+  return config?.version || versionAlias;
+};
+
+/**
  * Validates that a file is actually a PDF by checking its magic bytes
  * @param {Object} file - File object with path and originalname
  * @returns {Promise<Object>} - Validation result with valid flag and reason
@@ -87,9 +106,9 @@ const validatePDFFile = async (file) => {
  * @param {string} version - GenShare version to determine mapping
  * @returns {Array} - Formatted path data for Google Sheets
  */
-const getPath = (path = [], version) => {
-  // Get the mapping for the specific GenShare version
-  const versionConfig = genshareConfig.versions[version] || genshareConfig.versions[genshareConfig.defaultVersion];
+const getPath = (path = [], versionAlias) => {
+  // Get the mapping for the specific GenShare version alias
+  const versionConfig = getVersionConfig(versionAlias) || getVersionConfig(genshareConfig.defaultVersion);
   const headers = versionConfig.responseMapping.getPath || [];
   
   // Create a default array filled with empty strings
@@ -119,9 +138,9 @@ const getPath = (path = [], version) => {
  * @param {string} version - GenShare version to determine mapping
  * @returns {Array} - Formatted response data for Google Sheets
  */
-const getResponse = (response = [], version) => {
-  // Get the mapping for the specific GenShare version
-  const versionConfig = genshareConfig.versions[version] || genshareConfig.versions[genshareConfig.defaultVersion];
+const getResponse = (response = [], versionAlias) => {
+  // Get the mapping for the specific GenShare version alias
+  const versionConfig = getVersionConfig(versionAlias) || getVersionConfig(genshareConfig.defaultVersion);
   const mappingObj = versionConfig.responseMapping.getResponse || {};
   
   // Create a default array with appropriate length
@@ -346,7 +365,8 @@ function filterOptions(options, user, session) {
  * @param {string} options.requestId - Request ID
  * @param {string} options.s3Url - S3 URL for the request
  * @param {string} options.snapshotAPIVersion - Snapshot API version
- * @param {string} options.genshareVersion - GenShare version
+ * @param {string} options.genshareVersion - GenShare version returned by genshare (for display in logs)
+ * @param {string} options.genshareVersionAlias - GenShare version alias for internal config lookups only (e.g., "latest") - NOT included in row data
  * @param {string} options.errorStatus - Error status string
  * @param {Date} options.date - Date of the request
  * @param {number} options.duration - Session duration in milliseconds
@@ -358,7 +378,7 @@ function filterOptions(options, user, session) {
  * @param {string} options.articleId - Article ID
  * @param {Array} options.responseData - GenShare response data array
  * @param {Array} options.pathData - GenShare path data array
- * @returns {Array} - CSV row data array
+ * @returns {Array} - CSV row data array (contains only genshareVersion, not alias)
  */
 const buildSummaryRowData = (options) => {
   const {
@@ -366,6 +386,7 @@ const buildSummaryRowData = (options) => {
     s3Url,
     snapshotAPIVersion = "",
     genshareVersion,
+    genshareVersionAlias,
     errorStatus = "No",
     date,
     duration = 0,
@@ -379,15 +400,15 @@ const buildSummaryRowData = (options) => {
     pathData = []
   } = options;
 
-  // Format response and path data using existing functions
-  const response = getResponse(responseData, genshareVersion);
-  const pathFormatted = getPath(pathData, genshareVersion);
+  // Format response and path data using existing functions (use alias for config lookup)
+  const response = getResponse(responseData, genshareVersionAlias);
+  const pathFormatted = getPath(pathData, genshareVersionAlias);
 
   // Build the row data
   const rowData = [
     s3Url ? `=HYPERLINK("${s3Url}","${requestId}")` : requestId, // Query ID with S3 link
     snapshotAPIVersion,                          // Snapshot API version
-    genshareVersion || "",                       // GenShare version
+    genshareVersion || "",                       // GenShare version (returned by genshare)
     errorStatus,                                 // Error status
     convertToGoogleSheetsDate(date),             // Date
     convertToGoogleSheetsTime(date),             // Time
@@ -408,8 +429,8 @@ const buildSummaryRowData = (options) => {
  * @param {string} version - GenShare version
  * @returns {Array} - CSV headers array
  */
-const getSummaryHeaders = (version) => {
-  const versionConfig = genshareConfig.versions[version] || genshareConfig.versions[genshareConfig.defaultVersion];
+const getSummaryHeaders = (versionAlias) => {
+  const versionConfig = getVersionConfig(versionAlias) || getVersionConfig(genshareConfig.defaultVersion);
   
   const baseHeaders = [
     "Request ID",
@@ -524,25 +545,27 @@ const getUserLogHeaders = (filteredData = []) => {
 /**
  * Logs session data to Google Sheets
  * @param {Object} options - Options containing session, error status, and request
+ * @param {string} options.genshareVersionAlias - GenShare version alias for internal config lookups (e.g., "latest") - NOT logged, only used to find correct Google Sheets config
  * @returns {Promise<void>}
  */
-const appendToSummary = async ({ session, errorStatus, data, genshareVersion, reportURL, graphValue, reportVersion, articleId }) => {
+const appendToSummary = async ({ session, errorStatus, data, genshareVersionAlias, reportURL, graphValue, reportVersion, articleId }) => {
   try {
     // Safely get the filename, defaulting to "N/A" if not available
     const filename = data.file?.originalname || "N/A";
-    
+
     // Get the response info from the genshare response in the session
     const genshareResponse = session.genshare?.response;
-    
+
     // Current date
     const now = new Date();
-    
+
     // Build the row data using the centralized function
     const rowData = buildSummaryRowData({
       requestId: session.requestId,
       s3Url: session.url,
       snapshotAPIVersion: session.getSnapshotAPIVersion(),
-      genshareVersion: session.getGenshareVersion() || genshareVersion,
+      genshareVersion: session.getGenshareVersion() || getActualVersion(genshareVersionAlias),  // Version returned by genshare (stored in session)
+      genshareVersionAlias,  // Alias for config lookups
       errorStatus,
       date: now,
       duration: session.getDuration(),
@@ -555,10 +578,10 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersion, re
       responseData: genshareResponse?.data?.response,
       pathData: genshareResponse?.data?.path
     });
-    
-    // Log to Google Sheets for this specific version
-    await appendToSheet(rowData, genshareVersion);
-    
+
+    // Log to Google Sheets for this specific version (use alias for config lookup)
+    await appendToSheet(rowData, genshareVersionAlias);
+
     session.addLog('Logged to Google Sheets successfully');
   } catch (sheetsError) {
     session.addLog(`Error logging to Google Sheets: ${sheetsError.message}`);
@@ -574,12 +597,12 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersion, re
  * @param {Array} options.filteredData - Filtered response data array
  * @param {string} options.reportURL - Report URL (optional)
  * @param {string} options.filename - Original filename
- * @param {string} options.genshareVersion - GenShare version used
+ * @param {string} options.genshareVersionAlias - GenShare version alias for fallback (e.g., "latest")
  * @param {string} options.reportVersion - Report version used
  * @param {string} options.graphValue - Graph/editorial policy value
  * @returns {Promise<void>}
  */
-const appendToUserLog = async ({ session, user, filteredData, reportURL, filename, genshareVersion, reportVersion, graphValue, articleId }) => {
+const appendToUserLog = async ({ session, user, filteredData, reportURL, filename, genshareVersionAlias, reportVersion, graphValue, articleId }) => {
   try {
     // Check if user has Google Sheets logging enabled
     if (!user.googleSheets || !user.googleSheets.enabled) {
@@ -603,7 +626,7 @@ const appendToUserLog = async ({ session, user, filteredData, reportURL, filenam
       requestId: session.requestId,
       date: now,
       filename: filename || "N/A",
-      genshareVersion: genshareVersion || "",
+      genshareVersion: session.getGenshareVersion() || getActualVersion(genshareVersionAlias),  // Version returned by genshare (stored in session)
       reportVersion: reportVersion || "",
       reportURL: reportURL || "",
       graphValue: graphValue || "",
@@ -647,11 +670,11 @@ const getGenShareHealth = async (user, requestedVersion) => {
   // Check health for all authorized versions
   const healthResults = {};
   
-  await Promise.all(authorizedVersions.map(async (version) => {
+  await Promise.all(authorizedVersions.map(async (versionAlias) => {
     try {
-      const versionConfig = genshareConfig.versions[version];
+      const versionConfig = getVersionConfig(versionAlias);
       if (!versionConfig) {
-        healthResults[version] = { error: `Version ${version} not found in configuration` };
+        healthResults[versionAlias] = { error: `Version alias "${versionAlias}" not found in configuration` };
         return;
       }
       
@@ -663,15 +686,17 @@ const getGenShareHealth = async (user, requestedVersion) => {
           'Content-Type': 'application/json'
         }
       });
-      
-      healthResults[version] = {
+
+      healthResults[versionAlias] = {
         status: response.status,
-        data: response.data
+        data: response.data,
+        version: getActualVersion(versionAlias)
       };
     } catch (error) {
-      healthResults[version] = {
+      healthResults[versionAlias] = {
         error: error.message,
-        status: error.response?.status || 500
+        status: error.response?.status || 500,
+        version: getActualVersion(versionAlias)
       };
     }
   }));
@@ -723,9 +748,9 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
     }
   }
 
-  // Check if version exists in configuration
-  if (!genshareConfig.versions[activeGenShareVersion]) {
-    throw new Error(`Requested GenShare version '${activeGenShareVersion}' is not configured.`);
+  // Check if version alias exists in configuration
+  if (!getVersionConfig(activeGenShareVersion)) {
+    throw new Error(`Requested GenShare version alias "${activeGenShareVersion}" is not configured.`);
   }
 
   // Determine which report to use
@@ -776,7 +801,7 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
           session,
           errorStatus,
           data,
-          genshareVersion: activeGenShareVersion || genshareConfig.defaultVersion,
+          genshareVersionAlias: activeGenShareVersion || genshareConfig.defaultVersion,
           reportURL: "",
           graphValue: "",
           reportVersion: "",
@@ -801,13 +826,14 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
   // Ensure options exist
   let options = data.options || {};
 
+  // Get the configuration for the active version alias
+  const versionConfig = getVersionConfig(activeGenShareVersion);
+  const processPDFConfig = versionConfig.processPDF;
+  const actualVersion = getActualVersion(activeGenShareVersion);
+
   // Log initial request details
   session.addLog(`Request received from ${data.user.id}`);
-  session.addLog(`Using GenShare version: ${activeGenShareVersion}`);
-
-  // Get the configuration for the active version
-  const versionConfig = genshareConfig.versions[activeGenShareVersion];
-  const processPDFConfig = versionConfig.processPDF;
+  session.addLog(`Using GenShare version: ${activeGenShareVersion} (${actualVersion})`);
 
   const formData = new FormData();
   
@@ -834,13 +860,14 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
   // Add options with decision_tree_path for the request only
   const requestOptions = {
     ...filteredOptions,
+    request_id: session.requestId,
     decision_tree_path: true,
     debug: true
   };
   formData.append('options', JSON.stringify(requestOptions));
 
   // Log third-party service request
-  session.addLog(`Sending request to GenShare service (${activeGenShareVersion})`);
+  session.addLog(`Sending request to GenShare service: ${activeGenShareVersion} (${actualVersion})`);
   session.addLog(`URL: ${processPDFConfig.url}`);
 
   // Store GenShare request data
@@ -883,14 +910,20 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
     // Log successful response
     let responseGenShareVersion = response?.data?.version;
 
+    // Normalize the returned version (add 'v' prefix if missing)
+    if (responseGenShareVersion && !responseGenShareVersion.startsWith('v')) {
+      responseGenShareVersion = `v${responseGenShareVersion}`;
+    }
+
     if (!responseGenShareVersion) {
-      session.addLog(`GenShare version returned not found`);
+      session.addLog(`GenShare version returned not found`, 'WARN');
     } else {
-      session.addLog(`GenShare version returned found: ${responseGenShareVersion}`);
-      if (activeGenShareVersion.indexOf(responseGenShareVersion) > -1) {
-        session.addLog(`GenShare versions match: (${activeGenShareVersion} - ${responseGenShareVersion})`);
+      session.addLog(`GenShare version returned: ${responseGenShareVersion}`);
+      // Compare the actual version (not the alias) with the response version
+      if (actualVersion === responseGenShareVersion) {
+        session.addLog(`GenShare versions match: ${activeGenShareVersion} (${actualVersion}) - ${responseGenShareVersion}`);
       } else {
-        session.addLog(`GenShare versions don't match (${activeGenShareVersion} - ${responseGenShareVersion})`);
+        session.addLog(`GenShare versions don't match: ${activeGenShareVersion} (${actualVersion}) - ${responseGenShareVersion}`, 'WARN');
       }
     }
 
@@ -919,8 +952,8 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
       data: { ...response.data }
     });
 
-    // Set GenShare version in the processing session
-    session.setGenshareVersion(`${activeGenShareVersion}`);
+    // Set GenShare version in the processing session (use version returned by genshare, fallback to configured version)
+    session.setGenshareVersion(responseGenShareVersion || actualVersion);
 
     // If everything is fine (no error, activeReportVersion not empty and data available)
     // - create a snapshot-reports report
@@ -980,7 +1013,7 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
             session,
             errorStatus,
             data,
-            genshareVersion: activeGenShareVersion,
+            genshareVersionAlias: activeGenShareVersion,
             reportURL,
             graphValue: activeGenShareGraphValue,
             reportVersion: activeReportVersion,
@@ -991,7 +1024,7 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
           console.error(`[${session.requestId}] Error logging validation error to summary:`, summaryError);
         }
       }
-      
+
       // Throw error with 500 status
       validationError.status = 500;
       throw validationError;
@@ -1021,7 +1054,7 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
           session,
           errorStatus,
           data,
-          genshareVersion: activeGenShareVersion,
+          genshareVersionAlias: activeGenShareVersion,
           reportURL,
           graphValue: activeGenShareGraphValue,
           reportVersion: activeReportVersion,
@@ -1042,7 +1075,7 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
         filteredData: finalData,
         reportURL,
         filename: data.file?.originalname,
-        genshareVersion: activeGenShareVersion,
+        genshareVersionAlias: activeGenShareVersion,
         reportVersion: activeReportVersion,
         graphValue: activeGenShareGraphValue,
         articleId: articleId || ""
@@ -1083,7 +1116,7 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
           session,
           errorStatus,
           data,
-          genshareVersion: activeGenShareVersion || genshareConfig.defaultVersion,
+          genshareVersionAlias: activeGenShareVersion || genshareConfig.defaultVersion,
           reportURL: "",
           graphValue: activeGenShareGraphValue,
           reportVersion: activeReportVersion,
@@ -1104,22 +1137,26 @@ module.exports = {
   // Main functions
   getGenShareHealth,
   processPDF,
-  
+
   // Logging functions
   appendToSummary,
   appendToUserLog,
-  
+
   // CSV data building functions (for scripts)
   buildSummaryRowData,
   getSummaryHeaders,
   buildUserLogRowData,
   getUserLogHeaders,
-  
+
   // Data transformation functions
   filterAndSortResponseForUser,
   getPath,
   getResponse,
-  
+
+  // Version helpers
+  getVersionConfig,
+  getActualVersion,
+
   // Validation
   validatePDFFile
 };

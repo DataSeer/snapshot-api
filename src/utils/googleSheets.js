@@ -25,19 +25,19 @@ const driveService = google.drive({ version: 'v3', auth });
 /**
  * Appends data to a specific version's Google Sheet
  * @param {Array} data - Array of data to append to the sheet
- * @param {string} version - GenShare version to determine which sheet to use
+ * @param {string} versionAlias - GenShare version alias (e.g., "latest") to determine which sheet to use
  * @returns {Promise<Object>} - Google Sheets API response
  */
-async function appendToSheet(data, version) {
-  try {
-    // Get spreadsheet configuration for the specified version
-    const versionConfig = genshareConfig.versions[version] || genshareConfig.versions[genshareConfig.defaultVersion];
-    const sheetConfig = versionConfig.googleSheets;
-    
-    if (!sheetConfig || !sheetConfig.spreadsheetId || !sheetConfig.sheetName) {
-      throw new Error(`No Google Sheets configuration found for GenShare version ${version}`);
-    }
+async function appendToSheet(data, versionAlias) {
+  // Get spreadsheet configuration for the specified version alias
+  const versionConfig = genshareConfig.versions[versionAlias] || genshareConfig.versions[genshareConfig.defaultVersion];
+  const sheetConfig = versionConfig.googleSheets;
 
+  if (!sheetConfig || !sheetConfig.spreadsheetId || !sheetConfig.sheetName) {
+    throw new Error(`No Google Sheets configuration found for GenShare version ${versionAlias} (${versionConfig?.version})`);
+  }
+
+  try {
     const response = await sheetsService.spreadsheets.values.append({
       spreadsheetId: sheetConfig.spreadsheetId,
       range: sheetConfig.sheetName,
@@ -50,7 +50,7 @@ async function appendToSheet(data, version) {
 
     return response.data;
   } catch (error) {
-    console.error(`Error appending to Google Sheet for version ${version}:`, error);
+    console.error(`Error appending to Google Sheet for version ${versionAlias} (${versionConfig?.version}):`, error);
     throw error;
   }
 }
