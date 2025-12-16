@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.7.0](https://github.com/DataSeer/snapshot-api/compare/v3.6.1...v3.7.0) (2025-12-16)
+
+
+### Features
+
+* add genshare versions aliases ([7ac9889](https://github.com/DataSeer/snapshot-api/commits/7ac988993c3d6e5822c230a8003aa6ff8181cae6))
+
+
+### Bug Fixes
+
+* npm audit fix ([8def50e](https://github.com/DataSeer/snapshot-api/commits/8def50e01fcd46602174200f1c87898f87c66670))
+
+
+### Documentation
+
+* update user documentation (add 'das_url_details') ([0cc95c7](https://github.com/DataSeer/snapshot-api/commits/0cc95c7dd5cdef9e6180442672e2619499e6f199))
+
 ### [3.6.1](https://github.com/DataSeer/snapshot-api/compare/v3.5.1...v3.6.1) (2025-11-27)
 
 ## [3.6.0](https://github.com/DataSeer/snapshot-api/compare/v3.5.0...v3.6.0) (2025-11-25)
