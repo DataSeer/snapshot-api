@@ -1,7 +1,8 @@
 {
-  "defaultVersion": "v81.3.0",
+  "defaultVersion": "latest",
   "versions": {
-    "v81.2.1": {
+    "previous": {
+      "version": "v81.2.1",
       "processPDF": {
         "url": "http://localhost:5000/snapshot",
         "method": "POST",
@@ -39,7 +40,8 @@
         }
       }
     },
-    "v81.3.0": {
+    "latest": {
+      "version": "v81.3.0",
       "processPDF": {
         "url": "http://localhost:5001/snapshot",
         "method": "POST",

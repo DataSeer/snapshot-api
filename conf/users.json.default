@@ -8,9 +8,9 @@
     },
     "genshare": {
       "authorizedVersions": [
-        "v81.5.0"
+        "latest"
       ],
-      "defaultVersion": "v81.5.0",
+      "defaultVersion": "latest",
       "fieldOrder": [],
       "availableFields": [],
       "restrictedFields": [
@@ -51,7 +51,7 @@
     },
     "genshare": {
       "authorizedVersions": [
-        "v81.5.0"
+        "latest"
       ],
       "defaultVersion": "",
       "fieldOrder": [],
