@@ -14,17 +14,129 @@
         "blocked": []
       }
     },
-    "/reports/search": {
+    "/requests/search": {
       "GET": {
-        "description": "Get reports by request ID",
+        "description": "Search for requests",
         "allowed": ["admin"],
         "blocked": []
       }
     },
-    "/links/refresh": {
+    "/requests/refresh": {
       "POST": {
-        "description": "Refresh article ID links from S3",
+        "description": "Refresh article ID requests from S3",
         "allowed": ["admin"],
+        "blocked": []
+      }
+    },
+    "/snapshot-reports/:requestId/genshare": {
+      "GET": {
+        "description": "Search for requests",
+        "allowed": ["admin", "snapshot-reports"],
+        "blocked": []
+      }
+    },
+    "/snapshot-mails/submissions": {
+      "POST": {
+        "description": "Submissions API route for Snapshot Mails",
+        "allowed": ["admin", "snapshot-mails"],
+        "blocked": []
+      }
+    },
+    "/snapshot-mails/jobs/:requestId": {
+      "GET": {
+        "description": "Request ID API route for Snapshot Mails",
+        "allowed": ["admin", "snapshot-mails"],
+        "blocked": []
+      }
+    },
+    "/snapshot-mails/retry/:requestId": {
+      "POST": {
+        "description": "Retry API route for Snapshot Mails",
+        "allowed": ["admin", "snapshot-mails"],
+        "blocked": []
+      }
+    },
+    "/editorial-manager/authenticate": {
+      "POST": {
+        "description": "Authentication API route for Editorial Manager",
+        "allowed": ["admin", "editorial-manager"],
+        "blocked": []
+      }
+    },
+    "/editorial-manager/revokeToken": {
+      "POST": {
+        "description": "Revoke Token API route for Editorial Manager",
+        "allowed": ["admin", "editorial-manager"],
+        "blocked": []
+      }
+    },
+    "/editorial-manager/submissions": {
+      "POST": {
+        "description": "Submissions API route for Editorial Manager",
+        "allowed": ["admin", "editorial-manager"],
+        "blocked": []
+      }
+    },
+    "/editorial-manager/cancel": {
+      "POST": {
+        "description": "Cancel API route for Editorial Manager",
+        "allowed": ["admin", "editorial-manager"],
+        "blocked": []
+      }
+    },
+    "/editorial-manager/reports": {
+      "POST": {
+        "description": "Reports API route for Editorial Manager",
+        "allowed": ["admin", "editorial-manager"],
+        "blocked": []
+      }
+    },
+    "/editorial-manager/reportLink": {
+      "POST": {
+        "description": "Report Link API route for Editorial Manager",
+        "allowed": ["admin", "editorial-manager"],
+        "blocked": []
+      }
+    },
+    "/scholarone/submissions": {
+      "POST": {
+        "description": "Submissions API route for ScholarOne",
+        "allowed": ["admin", "scholarone"],
+        "blocked": []
+      }
+    },
+    "/scholarone/cancel": {
+      "POST": {
+        "description": "Cancel API route for ScholarOne",
+        "allowed": ["admin", "scholarone"],
+        "blocked": []
+      }
+    },
+    "/scholarone/jobs/:requestId": {
+      "GET": {
+        "description": "Request ID API route for ScholarOne",
+        "allowed": ["admin", "scholarone"],
+        "blocked": []
+      }
+    },
+    "/scholarone/retry/:requestId": {
+      "POST": {
+        "description": "Retry API route for ScholarOne",
+        "allowed": ["admin", "scholarone"],
+        "blocked": []
+      }
+    },
+    "/scholarone/notifications": {
+      "GET": {
+        "description": "Webhook endpoint for ScholarOne notifications",
+        "allowed": [],
+        "blocked": []
+      }
+    },
+    "/scholarone/notifications/status": {
+      "GET": {
+        "description": "Get ScholarOne notifications status",
+        "allowed": ["admin", "scholarone"],
         "blocked": []
       }
     },
@@ -53,6 +165,86 @@
       "GET": {
         "description": "Get status of DataStet services",
         "allowed": ["admin"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/users": {
+      "GET": {
+        "description": "Get all users (admin endpoint for snapshot-s3-manager)",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/users/:userId": {
+      "GET": {
+        "description": "Get a specific user",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      },
+      "PUT": {
+        "description": "Update complete user data",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/users/:userId/genshare": {
+      "PATCH": {
+        "description": "Update user genshare settings",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/users/:userId/reports": {
+      "PATCH": {
+        "description": "Update user reports settings",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/genshare/versions": {
+      "GET": {
+        "description": "Get all genshare versions",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/genshare/versions/:alias": {
+      "GET": {
+        "description": "Get a specific genshare version",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      },
+      "PATCH": {
+        "description": "Update a genshare version",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/genshare/default": {
+      "PUT": {
+        "description": "Set default genshare version",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/reports": {
+      "GET": {
+        "description": "Get all report URLs (proxy to snapshot-reports)",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/reports/kinds": {
+      "GET": {
+        "description": "Get available report kinds (proxy to snapshot-reports)",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/reports/:reportId/kind": {
+      "PATCH": {
+        "description": "Update report kind (proxy to snapshot-reports)",
+        "allowed": ["admin", "snapshot-s3-manager"],
         "blocked": []
       }
     }

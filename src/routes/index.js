@@ -40,6 +40,20 @@ const {
   retryJob: retryMailJob
 } = require('../controllers/snapshotMailsController');
 const { getGenshareData } = require('../controllers/snapshotReportsController');
+const {
+  getUsers,
+  getUser,
+  updateUserComplete,
+  updateUserGenshare,
+  updateUserReports,
+  getGenshareVersions,
+  getGenshareVersion,
+  updateGenshareVersion,
+  setDefaultGenshareVersion,
+  getReports,
+  getReportKinds,
+  updateReportKind
+} = require('../controllers/snapshotS3ManagerController');
 const { authenticateToken } = require('../middleware/auth');
 const { checkPermissions } = require('../middleware/permissions');
 const rateLimiter = require('../utils/rateLimiter');
@@ -144,6 +158,25 @@ authenticatedRouter.get('/scholarone/notifications/status', scholaroneGetNotific
 
 // Snapshot Reports endpoints
 authenticatedRouter.get('/snapshot-reports/:requestId/genshare', getGenshareData);
+
+// Snapshot S3 Manager Admin endpoints (dedicated routes for snapshot-s3-manager user)
+// Users management
+authenticatedRouter.get('/snapshot-s3-manager/users', getUsers);
+authenticatedRouter.get('/snapshot-s3-manager/users/:userId', getUser);
+authenticatedRouter.put('/snapshot-s3-manager/users/:userId', updateUserComplete);
+authenticatedRouter.patch('/snapshot-s3-manager/users/:userId/genshare', updateUserGenshare);
+authenticatedRouter.patch('/snapshot-s3-manager/users/:userId/reports', updateUserReports);
+
+// Genshare versions management
+authenticatedRouter.get('/snapshot-s3-manager/genshare/versions', getGenshareVersions);
+authenticatedRouter.get('/snapshot-s3-manager/genshare/versions/:alias', getGenshareVersion);
+authenticatedRouter.patch('/snapshot-s3-manager/genshare/versions/:alias', updateGenshareVersion);
+authenticatedRouter.put('/snapshot-s3-manager/genshare/default', setDefaultGenshareVersion);
+
+// Reports management (proxy to snapshot-reports)
+authenticatedRouter.get('/snapshot-s3-manager/reports', getReports);
+authenticatedRouter.get('/snapshot-s3-manager/reports/kinds', getReportKinds);
+authenticatedRouter.patch('/snapshot-s3-manager/reports/:reportId/kind', updateReportKind);
 
 // Mount the authenticated router
 unauthenticatedRouter.use('/', authenticatedRouter);
