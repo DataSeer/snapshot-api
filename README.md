@@ -1488,6 +1488,97 @@ The API includes special endpoints for integration with the snapshot-mails servi
 3. **Set up email monitoring** in snapshot-mails service
 4. **Configure SMTP settings** for result email delivery
 
+## Snapshot S3 Manager Integration
+
+The API includes dedicated endpoints for integration with the snapshot-s3-manager admin interface, allowing remote configuration management of users and genshare versions.
+
+### Admin API Endpoints
+
+These endpoints are protected and require the `snapshot-s3-manager` user authentication:
+
+```
+# Users Management
+GET    /snapshot-s3-manager/users                    - Get all users with their configurations
+GET    /snapshot-s3-manager/users/:userId            - Get a specific user
+PATCH  /snapshot-s3-manager/users/:userId/genshare   - Update user genshare settings
+PATCH  /snapshot-s3-manager/users/:userId/reports    - Update user reports settings
+
+# Genshare Versions Management
+GET    /snapshot-s3-manager/genshare/versions        - Get all genshare versions
+GET    /snapshot-s3-manager/genshare/versions/:alias - Get a specific genshare version
+PATCH  /snapshot-s3-manager/genshare/versions/:alias - Update a genshare version
+PUT    /snapshot-s3-manager/genshare/default         - Set default genshare version
+
+# Reports Management (proxy to snapshot-reports)
+GET    /snapshot-s3-manager/reports                  - Get all report URLs
+GET    /snapshot-s3-manager/reports/kinds            - Get available report kinds
+PATCH  /snapshot-s3-manager/reports/:reportId/kind   - Update a report's kind
+```
+
+### Configuration for snapshot-s3-manager
+
+1. **Create the snapshot-s3-manager user** in `conf/users.json`:
+```json
+{
+  "snapshot-s3-manager": {
+    "token": "your-jwt-token",
+    "rateLimit": {
+      "max": 200,
+      "windowMs": 900000
+    },
+    "genshare": {
+      "authorizedVersions": [],
+      "defaultVersion": ""
+    },
+    "reports": {
+      "authorizedVersions": [],
+      "defaultVersion": ""
+    }
+  }
+}
+```
+
+2. **Add permissions** in `conf/permissions.json` for all `/snapshot-s3-manager/*` routes (this restricts access to only the snapshot-s3-manager user)
+
+3. **Configure snapshot-s3-manager** with the token and this API's URL in its `.env` file
+
+### Update User Genshare Settings
+
+```bash
+curl -X PATCH http://localhost:3000/snapshot-s3-manager/users/user123/genshare \
+  -H "Authorization: Bearer <snapshot-s3-manager-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "defaultVersion": "latest",
+    "authorizedVersions": ["latest", "v81.5.0"]
+  }'
+```
+
+### Update User Reports Settings
+
+```bash
+curl -X PATCH http://localhost:3000/snapshot-s3-manager/users/user123/reports \
+  -H "Authorization: Bearer <snapshot-s3-manager-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "defaultVersion": "PLOS (v0.3)",
+    "authorizedVersions": ["PLOS (v0.3)", "TFOD (v0.3)"]
+  }'
+```
+
+### Update Genshare Version
+
+```bash
+curl -X PATCH http://localhost:3000/snapshot-s3-manager/genshare/versions/latest \
+  -H "Authorization: Bearer <snapshot-s3-manager-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "version": "v82.0.0",
+    "processPdfUrl": "https://new-genshare-service/snapshot",
+    "healthUrl": "https://new-genshare-service/health"
+  }'
+```
+
 ## Dependencies
 
 ### Main Dependencies
