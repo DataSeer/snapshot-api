@@ -1,6 +1,6 @@
 {
   "name": "nodejs-rest-api",
-  "version": "3.6.1",
+  "version": "3.8.0",
   "description": "nodejs REST API to interact with GenShare",
   "main": "src/server.js",
   "engines": {

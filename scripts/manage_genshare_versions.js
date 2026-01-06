@@ -33,16 +33,17 @@ function saveGenShareConfig(genshareConfig) {
 function listVersions() {
   const genshareConfig = loadGenShareConfig();
   console.log('GenShare Versions:');
-  console.log(`Default version: ${genshareConfig.defaultVersion || 'Not set'}`);
+  console.log(`Default version alias: ${genshareConfig.defaultVersion || 'Not set'}`);
   console.log('Available versions:');
-  
+
   if (!genshareConfig.versions || Object.keys(genshareConfig.versions).length === 0) {
     console.log('  No versions configured');
     return;
   }
-  
-  Object.entries(genshareConfig.versions).forEach(([version, config]) => {
-    console.log(`\n- Version: ${version}`);
+
+  Object.entries(genshareConfig.versions).forEach(([alias, config]) => {
+    console.log(`\n- Alias: ${alias}`);
+    console.log(`  Version: ${config.version || 'Not set'}`);
     console.log(`  Process PDF URL: ${config.processPDF?.url || 'Not set'}`);
     console.log(`  Health URL: ${config.health?.url || 'Not set'}`);
     console.log(`  Google Sheets spreadsheetId: ${config.googleSheets?.spreadsheetId || 'Not set'}`);
@@ -51,47 +52,49 @@ function listVersions() {
 }
 
 /**
- * Set default GenShare version
- * @param {string} version - Version to set as default
+ * Set default GenShare version alias
+ * @param {string} alias - Version alias to set as default (e.g., "latest")
  */
-function setDefaultVersion(version) {
+function setDefaultVersion(alias) {
   const genshareConfig = loadGenShareConfig();
-  
-  if (!genshareConfig.versions[version]) {
-    console.error(`Version ${version} is not configured. Please add it first.`);
+
+  if (!genshareConfig.versions[alias]) {
+    console.error(`Version alias "${alias}" is not configured. Please add it first.`);
     return;
   }
-  
-  genshareConfig.defaultVersion = version;
+
+  genshareConfig.defaultVersion = alias;
   saveGenShareConfig(genshareConfig);
-  console.log(`Default GenShare version set to ${version}`);
+  console.log(`Default GenShare version alias set to "${alias}"`);
 }
 
 /**
  * Add a new GenShare version
- * @param {string} version - Version identifier (e.g., v1.0.0)
+ * @param {string} alias - Version alias (e.g., "latest", "previous")
+ * @param {string} version - Actual version number (e.g., v1.0.0)
  * @param {string} processPdfUrl - URL for processing PDFs
  * @param {string} healthUrl - URL for health check
  * @param {string} spreadsheetId - Google Sheets spreadsheet ID
  * @param {string} sheetName - Google Sheets sheet name
  * @param {string} apiKey - API key for GenShare (optional)
  */
-function addVersion(version, processPdfUrl, healthUrl, spreadsheetId, sheetName, apiKey = '') {
+function addVersion(alias, version, processPdfUrl, healthUrl, spreadsheetId, sheetName, apiKey = '') {
   if (!isValidVersion(version)) {
     console.error(`Invalid version format: ${version}. Should be in format v1.0.0`);
     return;
   }
-  
+
   const genshareConfig = loadGenShareConfig();
-  
-  // Check if version already exists
-  if (genshareConfig.versions[version]) {
-    console.error(`Version ${version} already exists. Use 'update' to modify it.`);
+
+  // Check if alias already exists
+  if (genshareConfig.versions[alias]) {
+    console.error(`Alias "${alias}" already exists. Use 'update' to modify it.`);
     return;
   }
-  
-  // Create the base structure for this version
-  genshareConfig.versions[version] = {
+
+  // Create the base structure for this version alias
+  genshareConfig.versions[alias] = {
+    version,
     processPDF: {
       url: processPdfUrl,
       method: 'POST',
@@ -111,107 +114,111 @@ function addVersion(version, processPdfUrl, healthUrl, spreadsheetId, sheetName,
       getResponse: genshareConfig.versions[genshareConfig.defaultVersion]?.responseMapping?.getResponse || {}
     }
   };
-  
+
   // If this is the first version, set it as default
   if (Object.keys(genshareConfig.versions).length === 1) {
-    genshareConfig.defaultVersion = version;
-    console.log(`Setting ${version} as the default version.`);
+    genshareConfig.defaultVersion = alias;
+    console.log(`Setting "${alias}" as the default version alias.`);
   }
-  
+
   saveGenShareConfig(genshareConfig);
-  console.log(`Added GenShare version ${version}`);
+  console.log(`Added GenShare version alias "${alias}" (${version})`);
 }
 
 /**
  * Update an existing GenShare version
- * @param {string} version - Version identifier to update
+ * @param {string} alias - Version alias to update (e.g., "latest")
  * @param {Object} updates - Key-value pairs of properties to update
  */
-function updateVersion(version, updates) {
+function updateVersion(alias, updates) {
   const genshareConfig = loadGenShareConfig();
-  
-  if (!genshareConfig.versions[version]) {
-    console.error(`Version ${version} does not exist. Use 'add' to create it.`);
+
+  if (!genshareConfig.versions[alias]) {
+    console.error(`Version alias "${alias}" does not exist. Use 'add' to create it.`);
     return;
   }
-  
-  const versionConfig = genshareConfig.versions[version];
-  
+
+  const versionConfig = genshareConfig.versions[alias];
+
   // Apply updates
+  if (updates.version) {
+    versionConfig.version = updates.version;
+  }
+
   if (updates.processPdfUrl) {
     versionConfig.processPDF.url = updates.processPdfUrl;
   }
-  
+
   if (updates.healthUrl) {
     versionConfig.health.url = updates.healthUrl;
   }
-  
+
   if (updates.apiKey) {
     versionConfig.processPDF.apiKey = updates.apiKey;
   }
-  
+
   if (updates.spreadsheetId) {
     versionConfig.googleSheets.spreadsheetId = updates.spreadsheetId;
   }
-  
+
   if (updates.sheetName) {
     versionConfig.googleSheets.sheetName = updates.sheetName;
   }
-  
+
   saveGenShareConfig(genshareConfig);
-  console.log(`Updated GenShare version ${version}`);
+  console.log(`Updated GenShare version alias "${alias}"`);
 }
 
 /**
  * Remove a GenShare version
- * @param {string} version - Version identifier to remove
+ * @param {string} alias - Version alias to remove (e.g., "previous")
  */
-function removeVersion(version) {
+function removeVersion(alias) {
   const genshareConfig = loadGenShareConfig();
-  
-  if (!genshareConfig.versions[version]) {
-    console.error(`Version ${version} does not exist.`);
+
+  if (!genshareConfig.versions[alias]) {
+    console.error(`Version alias "${alias}" does not exist.`);
     return;
   }
-  
+
   // Check if trying to remove the default version
-  if (genshareConfig.defaultVersion === version) {
-    console.error(`Cannot remove default version. Set a new default version first.`);
+  if (genshareConfig.defaultVersion === alias) {
+    console.error(`Cannot remove default version alias. Set a new default version alias first.`);
     return;
   }
-  
-  delete genshareConfig.versions[version];
+
+  delete genshareConfig.versions[alias];
   saveGenShareConfig(genshareConfig);
-  console.log(`Removed GenShare version ${version}`);
+  console.log(`Removed GenShare version alias "${alias}"`);
 }
 
 /**
  * Update response mapping for a specific version
- * @param {string} version - Version identifier
+ * @param {string} alias - Version alias (e.g., "latest")
  * @param {string} mappingType - Either 'getPath' or 'getResponse'
  * @param {Object} mapping - Mapping object or array
  */
-function updateResponseMapping(version, mappingType, mapping) {
+function updateResponseMapping(alias, mappingType, mapping) {
   const genshareConfig = loadGenShareConfig();
-  
-  if (!genshareConfig.versions[version]) {
-    console.error(`Version ${version} does not exist.`);
+
+  if (!genshareConfig.versions[alias]) {
+    console.error(`Version alias "${alias}" does not exist.`);
     return;
   }
-  
+
   if (mappingType !== 'getPath' && mappingType !== 'getResponse') {
     console.error(`Invalid mapping type. Use 'getPath' or 'getResponse'.`);
     return;
   }
-  
+
   // Ensure responseMapping object exists
-  if (!genshareConfig.versions[version].responseMapping) {
-    genshareConfig.versions[version].responseMapping = {};
+  if (!genshareConfig.versions[alias].responseMapping) {
+    genshareConfig.versions[alias].responseMapping = {};
   }
-  
-  genshareConfig.versions[version].responseMapping[mappingType] = mapping;
+
+  genshareConfig.versions[alias].responseMapping[mappingType] = mapping;
   saveGenShareConfig(genshareConfig);
-  console.log(`Updated ${mappingType} mapping for version ${version}`);
+  console.log(`Updated ${mappingType} mapping for version alias "${alias}"`);
 }
 
 /**
@@ -225,62 +232,62 @@ function main() {
     case 'list':
       listVersions();
       break;
-      
+
     case 'add': {
-      if (args.length < 6) {
+      if (args.length < 7) {
         console.error('Missing required parameters');
-        console.log('Usage: node manage_genshare_versions.js add <version> <processPdfUrl> <healthUrl> <spreadsheetId> <sheetName> [apiKey]');
+        console.log('Usage: node manage_genshare_versions.js add <alias> <version> <processPdfUrl> <healthUrl> <spreadsheetId> <sheetName> [apiKey]');
         return;
       }
-      addVersion(args[1], args[2], args[3], args[4], args[5], args[6]);
+      addVersion(args[1], args[2], args[3], args[4], args[5], args[6], args[7]);
       break;
     }
-      
+
     case 'update': {
       if (args.length < 3) {
         console.error('Missing required parameters');
-        console.log('Usage: node manage_genshare_versions.js update <version> --<field> <value> [--<field> <value> ...]');
+        console.log('Usage: node manage_genshare_versions.js update <alias> --<field> <value> [--<field> <value> ...]');
         return;
       }
-      
-      const version = args[1];
+
+      const alias = args[1];
       const updates = {};
-      
+
       for (let i = 2; i < args.length; i += 2) {
         if (args[i].startsWith('--')) {
           const field = args[i].substring(2);
           updates[field] = args[i + 1];
         }
       }
-      
-      updateVersion(version, updates);
+
+      updateVersion(alias, updates);
       break;
     }
-      
+
     case 'remove':{
       if (args.length < 2) {
-        console.error('Missing version parameter');
-        console.log('Usage: node manage_genshare_versions.js remove <version>');
+        console.error('Missing alias parameter');
+        console.log('Usage: node manage_genshare_versions.js remove <alias>');
         return;
       }
       removeVersion(args[1]);
       break;
     }
-      
+
     case 'set-default': {
       if (args.length < 2) {
-        console.error('Missing version parameter');
-        console.log('Usage: node manage_genshare_versions.js set-default <version>');
+        console.error('Missing alias parameter');
+        console.log('Usage: node manage_genshare_versions.js set-default <alias>');
         return;
       }
       setDefaultVersion(args[1]);
       break;
     }
-      
+
     case 'update-mapping': {
       if (args.length < 4) {
         console.error('Missing required parameters');
-        console.log('Usage: node manage_genshare_versions.js update-mapping <version> <getPath|getResponse> <jsonMapping>');
+        console.log('Usage: node manage_genshare_versions.js update-mapping <alias> <getPath|getResponse> <jsonMapping>');
         return;
       }
       try {
@@ -291,21 +298,23 @@ function main() {
       }
       break;
     }
-      
+
     default: {
       console.log('Usage: node manage_genshare_versions.js <command> [options]');
       console.log('Commands:');
-      console.log('  list                            List all GenShare versions');
-      console.log('  add <version> <processPdfUrl> <healthUrl> <spreadsheetId> <sheetName> [apiKey]  Add a new version');
-      console.log('  update <version> --<field> <value> [--<field> <value> ...]  Update an existing version');
-      console.log('  remove <version>                Remove a version');
-      console.log('  set-default <version>          Set the default version');
-      console.log('  update-mapping <version> <getPath|getResponse> <jsonMapping>  Update response mapping');
+      console.log('  list                            List all GenShare version aliases');
+      console.log('  add <alias> <version> <processPdfUrl> <healthUrl> <spreadsheetId> <sheetName> [apiKey]  Add a new version alias');
+      console.log('  update <alias> --<field> <value> [--<field> <value> ...]  Update an existing version alias');
+      console.log('  remove <alias>                  Remove a version alias');
+      console.log('  set-default <alias>             Set the default version alias');
+      console.log('  update-mapping <alias> <getPath|getResponse> <jsonMapping>  Update response mapping');
+      console.log('');
+      console.log('Fields for update: version, processPdfUrl, healthUrl, apiKey, spreadsheetId, sheetName');
       console.log('');
       console.log('Examples:');
-      console.log('  node manage_genshare_versions.js add v2.0.0 "http://localhost:5001/process/pdf" "http://localhost:5001/health" "spreadsheet-id" "Sheet1" "api-key"');
-      console.log('  node manage_genshare_versions.js update v2.0.0 --processPdfUrl "http://localhost:5002/process/pdf" --apiKey "new-key"');
-      console.log('  node manage_genshare_versions.js set-default v2.0.0');
+      console.log('  node manage_genshare_versions.js add latest v2.0.0 "http://localhost:5001/process/pdf" "http://localhost:5001/health" "spreadsheet-id" "Sheet1" "api-key"');
+      console.log('  node manage_genshare_versions.js update latest --version v2.1.0 --processPdfUrl "http://localhost:5002/process/pdf"');
+      console.log('  node manage_genshare_versions.js set-default latest');
     }
   }
 }
