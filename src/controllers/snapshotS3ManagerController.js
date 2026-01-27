@@ -498,11 +498,15 @@ const getReports = async (req, res) => {
     const { baseUrl, apiKey } = getSnapshotReportsConfig();
     const limit = req.query.limit || 50;
     const offset = req.query.offset || 0;
+    const search = req.query.search || undefined;
+
+    const params = { limit, offset };
+    if (search) params.search = search;
 
     const response = await axios({
       method: 'GET',
       url: `${baseUrl}/api/reports`,
-      params: { limit, offset },
+      params,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`

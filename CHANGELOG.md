@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.9.0](https://github.com/DataSeer/snapshot-api/compare/v3.8.0...v3.9.0) (2026-01-27)
+
+
+### Features
+
+* manage search params for snapshot-s3-manager tool ([9350914](https://github.com/DataSeer/snapshot-api/commits/9350914423ebe5c4546d55e640062e70b14a18b4))
+
 ## [3.8.0](https://github.com/DataSeer/snapshot-api/compare/v3.7.0...v3.8.0) (2026-01-06)
 
 
