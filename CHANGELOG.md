@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.11.0](https://github.com/DataSeer/snapshot-api/compare/v3.10.0...v3.11.0) (2026-02-10)
+
+
+### Features
+
+* add generic GET requests endpoint & fix security issue on GET jobs endpoint ([807c7ef](https://github.com/DataSeer/snapshot-api/commits/807c7efd2b0fd3b969d2f609f2408e498d2c724f))
+
 ## [3.10.0](https://github.com/DataSeer/snapshot-api/compare/v3.9.0...v3.10.0) (2026-02-10)
 
 
