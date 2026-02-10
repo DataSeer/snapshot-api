@@ -102,12 +102,27 @@ const getUserResponseFieldRestrictions = (userId) => {
   }
 };
 
-module.exports = { 
+/**
+ * Check if a user has admin role
+ * @param {string} userId - The user ID to check
+ * @returns {boolean} True if user has role "admin"
+ */
+const isAdmin = (userId) => {
+  try {
+    const user = getUserById(userId);
+    return user.role === 'admin';
+  } catch (error) {
+    return false;
+  }
+};
+
+module.exports = {
   getAllUsers,
-  getUserById, 
-  updateUser, 
+  getUserById,
+  updateUser,
   validateClientCredentials,
-  getUserGenShareVersions, 
+  getUserGenShareVersions,
   getUserDefaultGenShareVersion,
-  getUserResponseFieldRestrictions
+  getUserResponseFieldRestrictions,
+  isAdmin
 };

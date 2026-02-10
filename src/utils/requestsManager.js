@@ -1,6 +1,6 @@
 // File: src/utils/requestsManager.js
 const dbManager = require('./dbManager');
-const { getAllGenshareRequestsFiles, getReportFile } = require('./s3Storage');
+const { getAllGenshareRequestsFiles, getReportFile, deleteObjectsByPrefix, s3Config } = require('./s3Storage');
 const config = require('../config');
 
 // Load the report configuration
@@ -306,6 +306,72 @@ const deleteRequest = async (userName, articleId, requestId = null) => {
 };
 
 /**
+ * Completely delete a request: S3 objects + all DB records
+ * @param {string} requestId - The request ID to delete
+ * @returns {Promise<Object>} - Deletion result with details
+ */
+const deleteRequestComplete = async (requestId) => {
+  // Get request record to find user_name (needed for S3 path)
+  const request = await dbManager.getRequestByRequestId(requestId);
+  if (!request) {
+    return null;
+  }
+
+  const userName = request.user_name;
+
+  // Delete S3 objects under {s3Folder}/{userName}/{requestId}/
+  const s3Prefix = `${s3Config.s3Folder}/${userName}/${requestId}/`;
+  let s3DeletedCount = 0;
+  try {
+    s3DeletedCount = await deleteObjectsByPrefix(s3Prefix);
+    console.log(`[RequestsManager] Deleted ${s3DeletedCount} S3 objects for request ${requestId}`);
+  } catch (s3Error) {
+    console.error(`[RequestsManager] Error deleting S3 objects for request ${requestId}:`, s3Error);
+    // Continue with DB deletion even if S3 fails
+  }
+
+  // Delete DB record from requests table
+  const dbResult = await dbManager.deleteRequest(userName, null, requestId);
+  console.log(`[RequestsManager] Deleted ${dbResult.changes} request DB record(s) for ${requestId}`);
+
+  // Delete DB record from processing_jobs table (if exists)
+  const jobResult = await dbManager.deleteJobByRequestId(requestId);
+  console.log(`[RequestsManager] Deleted ${jobResult.changes} job DB record(s) for ${requestId}`);
+
+  // Delete DB record from editorial-manager-submissions table (if exists)
+  const emResult = await dbManager.deleteEmSubmissionByRequestId(requestId);
+  console.log(`[RequestsManager] Deleted ${emResult.changes} EM submission DB record(s) for ${requestId}`);
+
+  // Delete DB record from scholarone-submissions table (if exists)
+  const scholaroneResult = await dbManager.deleteScholaroneSubmissionByRequestId(requestId);
+  console.log(`[RequestsManager] Deleted ${scholaroneResult.changes} ScholarOne submission DB record(s) for ${requestId}`);
+
+  // Delete DB record from snapshot-mails-submissions table (if exists)
+  const snapshotMailsResult = await dbManager.deleteSnapshotMailsSubmissionByRequestId(requestId);
+  console.log(`[RequestsManager] Deleted ${snapshotMailsResult.changes} Snapshot Mails submission DB record(s) for ${requestId}`);
+
+  // Delete DB records from scholarone-notifications table (if exists)
+  const notificationsResult = await dbManager.deleteScholaroneNotificationsByRequestId(requestId);
+  console.log(`[RequestsManager] Deleted ${notificationsResult.changes} ScholarOne notification DB record(s) for ${requestId}`);
+
+  // Build response with only non-zero counts to avoid exposing irrelevant info
+  const result = {
+    request_id: requestId,
+    user_name: userName
+  };
+
+  if (s3DeletedCount > 0) result.s3_objects_deleted = s3DeletedCount;
+  if (dbResult.changes > 0) result.db_requests_deleted = dbResult.changes;
+  if (jobResult.changes > 0) result.db_jobs_deleted = jobResult.changes;
+  if (emResult.changes > 0) result.db_em_submissions_deleted = emResult.changes;
+  if (scholaroneResult.changes > 0) result.db_scholarone_submissions_deleted = scholaroneResult.changes;
+  if (snapshotMailsResult.changes > 0) result.db_snapshot_mails_submissions_deleted = snapshotMailsResult.changes;
+  if (notificationsResult.changes > 0) result.db_scholarone_notifications_deleted = notificationsResult.changes;
+
+  return result;
+};
+
+/**
  * Get request_id for a given article_id (return the newest one)
  * @param {string} userName - The user name
  * @param {string} articleId - The article ID
@@ -442,6 +508,7 @@ module.exports = {
   addOrUpdateRequestWithReport,
   updateRequestReportData,
   deleteRequest,
+  deleteRequestComplete,
   getRequestIdByArticleId,
   getArticleIdByRequestId,
   getRequestIdsByArticleId,

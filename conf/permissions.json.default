@@ -9,7 +9,28 @@
     },
     "/processPDF": {
       "POST": {
-        "description": "Process a PDF file",
+        "description": "Process a PDF file (sync, backward compatible)",
+        "allowed": [],
+        "blocked": []
+      }
+    },
+    "/processPDF/sync": {
+      "POST": {
+        "description": "Process a PDF file synchronously",
+        "allowed": [],
+        "blocked": []
+      }
+    },
+    "/processPDF/async": {
+      "POST": {
+        "description": "Process a PDF file asynchronously",
+        "allowed": [],
+        "blocked": []
+      }
+    },
+    "/jobs/:requestId": {
+      "GET": {
+        "description": "Get job status by request ID",
         "allowed": [],
         "blocked": []
       }
@@ -25,6 +46,18 @@
       "POST": {
         "description": "Refresh article ID requests from S3",
         "allowed": ["admin"],
+        "blocked": []
+      }
+    },
+    "/requests/:requestId": {
+      "GET": {
+        "description": "Get a request by request ID",
+        "allowed": [],
+        "blocked": []
+      },
+      "DELETE": {
+        "description": "Delete a request and all associated data",
+        "allowed": [],
         "blocked": []
       }
     },
