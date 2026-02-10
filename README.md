@@ -185,6 +185,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 // conf/users.json
 {
   "admin": {
+    "role": "admin",
     "token": "jwt_token_here",
     "client_secret": "client_secret_for_temp_tokens",
     "rateLimit": {
@@ -616,9 +617,13 @@ GET    /versions                         - Get version information
 GET    /ping                             - Health check all services
 
 # Core functionality
-POST   /processPDF                       - Process a PDF file (asynchronous)
+POST   /processPDF                       - Process a PDF file (sync, backward compatible)
+POST   /processPDF/sync                  - Process a PDF file synchronously
+POST   /processPDF/async                 - Process a PDF file asynchronously with callback
+GET    /jobs/:requestId                  - Get job status for async processing
 GET    /requests/search                  - Search for reports by article_id or request_id
 POST   /requests/refresh                 - Refresh article-request ID mapping from S3
+DELETE /requests/:requestId              - Delete a request and all associated data
 
 # Service health checks
 GET    /genshare/health                  - Check GenShare service health
@@ -754,16 +759,22 @@ curl -X POST http://localhost:3000/editorial-manager/revokeToken \
 
 ## Usage
 
-### Processing PDFs (Asynchronous)
+### Processing PDFs (Synchronous)
 
-All PDF processing is now asynchronous and returns immediately with a request ID:
+The default `/processPDF` endpoint processes PDFs synchronously and returns the full result:
 
 ```bash
-# Basic usage with PDF only - returns immediately with request_id
+# Basic usage with PDF only (synchronous)
 curl -X POST http://localhost:3000/processPDF \
   -H "Authorization: Bearer <your-token>" \
   -F "file=@document.pdf" \
-  -F 'options={"article_id": "ARTICLE123"}'
+  -F 'options={"article_id": "ARTICLE123", "document_type": "article"}'
+
+# Explicit sync endpoint
+curl -X POST http://localhost:3000/processPDF/sync \
+  -H "Authorization: Bearer <your-token>" \
+  -F "file=@document.pdf" \
+  -F 'options={"article_id": "ARTICLE123", "document_type": "article"}'
 
 # With supplementary files (ZIP format required)
 curl -X POST http://localhost:3000/processPDF \
@@ -772,12 +783,59 @@ curl -X POST http://localhost:3000/processPDF \
   -F "supplementary_file=@supplementary.zip" \
   -F 'options={"article_id": "ARTICLE123", "document_type": "article"}'
 
+# Response contains full processing result
+```
+
+### Processing PDFs (Asynchronous)
+
+The `/processPDF/async` endpoint processes PDFs in the background and notifies a callback URL:
+
+```bash
+# Async processing - returns immediately with request_id
+curl -X POST http://localhost:3000/processPDF/async \
+  -H "Authorization: Bearer <your-token>" \
+  -F "file=@document.pdf" \
+  -F "notification_url=https://your-server.com/callback" \
+  -F 'options={"article_id": "ARTICLE123", "document_type": "article"}'
+
 # Response:
 # {
-#   "status": "Success",
-#   "request_id": "12345678901234567890123456789012",
-#   "message": "PDF processing started in background"
+#   "status": "processing",
+#   "request_id": "12345678901234567890123456789012"
 # }
+
+# Check job status
+curl -G http://localhost:3000/jobs/12345678901234567890123456789012 \
+  -H "Authorization: Bearer <your-token>"
+
+# Response:
+# {
+#   "request_id": "12345678901234567890123456789012",
+#   "status": "completed",
+#   "created_at": "2025-01-01T10:00:00Z",
+#   "updated_at": "2025-01-01T10:05:00Z",
+#   "retries": 0,
+#   "max_retries": 3,
+#   "results": { ... }
+# }
+```
+
+When processing completes, the API POSTs the result to the `notification_url`:
+```json
+{
+  "status": "completed",
+  "request_id": "12345678901234567890123456789012",
+  "response": { ... full processing result ... }
+}
+```
+
+On failure:
+```json
+{
+  "status": "failed",
+  "request_id": "12345678901234567890123456789012",
+  "error": "Error message here"
+}
 ```
 
 #### Supplementary Files Support
@@ -863,6 +921,34 @@ curl -G http://localhost:3000/requests/search \
   -H "Authorization: Bearer <your-token>" \
   --data-urlencode "request_id=12345678901234567890123456789012"
 ```
+
+### Deleting Requests
+
+Users can delete their own requests. Admin users (with `role: "admin"` in users.json) can delete any user's requests:
+
+```bash
+# Delete a request (deletes S3 objects + database records)
+curl -X DELETE http://localhost:3000/requests/12345678901234567890123456789012 \
+  -H "Authorization: Bearer <your-token>"
+
+# Response:
+# {
+#   "message": "Request deleted",
+#   "request_id": "12345678901234567890123456789012",
+#   "details": {
+#     "request_id": "12345678901234567890123456789012",
+#     "user_name": "user123",
+#     "s3_objects_deleted": 15,
+#     "db_requests_deleted": 1,
+#     "db_jobs_deleted": 1
+#   }
+# }
+```
+
+**Authorization:**
+- Users can delete their own requests
+- Admin users can delete any user's requests
+- Attempting to delete another user's request without admin role returns 403
 
 ### Editorial Manager Integration
 

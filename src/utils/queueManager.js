@@ -34,7 +34,7 @@ const JobType = {
   EM_SUBMISSION: 'em_submission',
   MAIL_SUBMISSION: 'mail_submission', // Added for snapshot-mails
   SCHOLARONE_SUBMISSION: 'scholarone_submission', // Added for ScholarOne
-  // Add more job types here if needed
+  GENSHARE_SUBMISSION: 'genshare_submission', // Added for async processPDF
 };
 
 /**
@@ -226,6 +226,14 @@ const processNextJob = async () => {
             // Try to dynamically require the scholaroneManager to avoid circular dependencies
             const scholaroneManager = require('./scholaroneManager');
             processorFunction = scholaroneManager.processScholaroneSubmissionJob;
+          } catch (error) {
+            throw new Error(`Could not load processor for job type ${job.job_type}: ${error.message}`);
+          }
+          break;
+        case 'genshare_submission':
+          try {
+            const genshareManager = require('./genshareManager');
+            processorFunction = genshareManager.processGenshareSubmissionJob;
           } catch (error) {
             throw new Error(`Could not load processor for job type ${job.job_type}: ${error.message}`);
           }

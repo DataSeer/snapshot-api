@@ -1,7 +1,7 @@
 // File: src/routes/index.js
 const express = require('express');
 const multer = require('multer');
-const { processPDF, getGenShareHealth } = require('../controllers/genshareController');
+const { processPDF, getGenShareHealth, processPDFAsync, getJobStatus: getGenshareJobStatus } = require('../controllers/genshareController');
 const { getGrobidHealth } = require('../controllers/grobidController');
 const { getDatastetHealth } = require('../controllers/datastetController');
 const { getPing } = require('../controllers/healthController');
@@ -9,7 +9,8 @@ const { getApiRoutes } = require('../controllers/apiController');
 const { getVersions } = require('../controllers/versionsController');
 const {
   refreshRequests,
-  searchRequest
+  searchRequest,
+  deleteRequest
 } = require('../controllers/requestsController');
 const { 
   authenticateEditorialManager, 
@@ -107,15 +108,35 @@ authenticatedRouter.use(rateLimiter);
 authenticatedRouter.get('/', getApiRoutes);
 authenticatedRouter.get('/versions', getVersions);
 
-// Updated processPDF route to handle multiple files including supplementary_file
-authenticatedRouter.post('/processPDF', 
+// Sync processPDF (explicit route)
+authenticatedRouter.post('/processPDF/sync',
   upload.fields([
     { name: 'file', maxCount: 1 },
     { name: 'supplementary_file', maxCount: 1 }
-  ]), 
+  ]),
   validateSupplementaryFiles,
   processPDF
-); 
+);
+
+// processPDF alias for backward compatibility (maps to sync)
+authenticatedRouter.post('/processPDF',
+  upload.fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'supplementary_file', maxCount: 1 }
+  ]),
+  validateSupplementaryFiles,
+  processPDF
+);
+
+// Async processPDF
+authenticatedRouter.post('/processPDF/async',
+  upload.fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'supplementary_file', maxCount: 1 }
+  ]),
+  validateSupplementaryFiles,
+  processPDFAsync
+);
 
 // Health check endpoints
 authenticatedRouter.get('/ping', getPing);
@@ -123,9 +144,13 @@ authenticatedRouter.get('/genshare/health', getGenShareHealth);
 authenticatedRouter.get('/grobid/health', getGrobidHealth);
 authenticatedRouter.get('/datastet/health', getDatastetHealth);
 
+// Generic job status endpoint
+authenticatedRouter.get('/jobs/:requestId', getGenshareJobStatus);
+
 // Requests & Reports endpoints
 authenticatedRouter.post('/requests/refresh', refreshRequests);
 authenticatedRouter.get('/requests/search', searchRequest); // Available params: article_id & request_id
+authenticatedRouter.delete('/requests/:requestId', deleteRequest);
 
 // Editorial Manager endpoints
 authenticatedRouter.post('/editorial-manager/submissions', upload.any(), emPostSubmissions);

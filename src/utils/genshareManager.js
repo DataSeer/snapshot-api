@@ -1133,10 +1133,231 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
   }
 };
 
+// ============================================================================
+// ASYNC JOB PROCESSING FUNCTIONS
+// ============================================================================
+
+const queueManager = require('./queueManager');
+const { ProcessingSession } = require('./s3Storage');
+
+/**
+ * Process a GenShare submission job (called by the queue manager)
+ * @param {Object} job - Job record from database
+ * @returns {Promise<Object>} - Processing result
+ */
+const processGenshareSubmissionJob = async (job) => {
+  const data = JSON.parse(job.data);
+
+  // Create a new processing session reusing the original request ID
+  const session = new ProcessingSession(data.user_id, job.request_id);
+  session.setOrigin('direct');
+
+  // Track file paths for cleanup
+  const tempFilePaths = [];
+
+  try {
+    session.addLog('Starting background processing of GenShare submission');
+
+    // Reconstruct file objects from stored paths
+    const mainFile = data.file || null;
+    const supplementaryFile = data.supplementary_file || null;
+
+    if (mainFile && mainFile.path) {
+      session.addFile(mainFile, 'api');
+      tempFilePaths.push(mainFile.path);
+    }
+    if (supplementaryFile && supplementaryFile.path) {
+      session.addFile(supplementaryFile, 'api');
+      tempFilePaths.push(supplementaryFile.path);
+    }
+
+    // Prepare processing data
+    const processingData = {
+      file: mainFile,
+      supplementary_file: supplementaryFile,
+      user: { id: data.user_id },
+      options: data.options || {}
+    };
+
+    // Process the PDF
+    const result = await processPDF(processingData, session);
+
+    // Save session to S3
+    session.setAPIResponse({
+      status: result.status,
+      data: result.data
+    });
+    await session.saveToS3();
+
+    session.addLog('Background GenShare processing completed');
+
+    return {
+      status: result.status,
+      data: result.data,
+      errorStatus: result.errorStatus
+    };
+  } catch (error) {
+    session.addLog(`Error in background processing: ${error.message}`);
+
+    try {
+      session.setAPIResponse({
+        status: 'error',
+        error: error.message
+      });
+      await session.saveToS3();
+    } catch (s3Error) {
+      console.error(`[${job.request_id}] Error saving error session to S3:`, s3Error);
+    }
+
+    throw error;
+  } finally {
+    // Clean up temp files
+    const fsPromises = require('fs').promises;
+    for (const filePath of tempFilePaths) {
+      try {
+        await fsPromises.unlink(filePath);
+      } catch (cleanupError) {
+        console.error(`[${job.request_id}] Error cleaning up temp file ${filePath}:`, cleanupError);
+      }
+    }
+  }
+};
+
+/**
+ * Handle GenShare job completion - POST result to notification_url
+ * @param {string} requestId - Request ID of the completed job
+ */
+const handleGenshareJobCompletion = async (requestId) => {
+  try {
+    console.log(`[GenShare] Job ${requestId} completed, sending notification`);
+
+    const job = await queueManager.getJobByRequestId(requestId);
+    if (!job) {
+      console.error(`[GenShare] Could not find job data for ${requestId}`);
+      return;
+    }
+
+    const jobData = JSON.parse(job.data);
+    const notificationUrl = jobData.notification_url;
+
+    if (!notificationUrl) {
+      console.log(`[GenShare] No notification_url for job ${requestId}, skipping notification`);
+      return;
+    }
+
+    let completionData = null;
+    if (job.completion_data) {
+      try {
+        completionData = JSON.parse(job.completion_data);
+      } catch (e) {
+        console.error(`[GenShare] Error parsing completion_data for job ${requestId}:`, e);
+      }
+    }
+
+    await axios.post(notificationUrl, {
+      status: 'completed',
+      request_id: requestId,
+      response: completionData
+    });
+
+    console.log(`[GenShare] Notification sent for completed job ${requestId}`);
+  } catch (error) {
+    console.error(`[GenShare] Error sending completion notification for ${requestId}:`, error.message);
+  }
+};
+
+/**
+ * Handle GenShare job failure - POST error to notification_url
+ * @param {string} requestId - Request ID of the failed job
+ * @param {Error} error - Error that caused the failure
+ */
+const handleGenshareJobFailure = async (requestId, error) => {
+  try {
+    console.log(`[GenShare] Job ${requestId} failed, sending failure notification`);
+
+    const job = await queueManager.getJobByRequestId(requestId);
+    if (!job) {
+      console.error(`[GenShare] Could not find job data for ${requestId}`);
+      return;
+    }
+
+    const jobData = JSON.parse(job.data);
+    const notificationUrl = jobData.notification_url;
+
+    if (!notificationUrl) {
+      console.log(`[GenShare] No notification_url for job ${requestId}, skipping notification`);
+      return;
+    }
+
+    await axios.post(notificationUrl, {
+      status: 'failed',
+      request_id: requestId,
+      error: error.message
+    });
+
+    console.log(`[GenShare] Failure notification sent for job ${requestId}`);
+  } catch (notifError) {
+    console.error(`[GenShare] Error sending failure notification for ${requestId}:`, notifError.message);
+  }
+};
+
+/**
+ * Get job status for a GenShare async job
+ * @param {string} requestId - Request ID of the job
+ * @returns {Promise<Object>} - Job status
+ */
+const getJobStatus = async (requestId) => {
+  try {
+    const job = await queueManager.getJobByRequestId(requestId);
+
+    if (!job) {
+      return {
+        status: 'Error',
+        error: 'Job not found'
+      };
+    }
+
+    const response = {
+      request_id: requestId,
+      status: job.status,
+      created_at: job.created_at,
+      updated_at: job.updated_at,
+      retries: job.retries,
+      max_retries: job.max_retries
+    };
+
+    if (job.status === queueManager.JobStatus.FAILED) {
+      response.error_message = job.error_message;
+    }
+
+    if (job.status === queueManager.JobStatus.COMPLETED && job.completion_data) {
+      try {
+        response.results = JSON.parse(job.completion_data);
+      } catch (e) {
+        response.results = { error: 'Could not parse completion data' };
+      }
+    }
+
+    return response;
+  } catch (error) {
+    console.error(`Error getting job status for ${requestId}:`, error);
+    return {
+      status: 'Error',
+      error: error.message
+    };
+  }
+};
+
 module.exports = {
   // Main functions
   getGenShareHealth,
   processPDF,
+
+  // Async job processing
+  processGenshareSubmissionJob,
+  handleGenshareJobCompletion,
+  handleGenshareJobFailure,
+  getJobStatus,
 
   // Logging functions
   appendToSummary,
