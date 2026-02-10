@@ -50,6 +50,11 @@
       }
     },
     "/requests/:requestId": {
+      "GET": {
+        "description": "Get a request by request ID",
+        "allowed": [],
+        "blocked": []
+      },
       "DELETE": {
         "description": "Delete a request and all associated data",
         "allowed": [],

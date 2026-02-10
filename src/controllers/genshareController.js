@@ -3,7 +3,7 @@ const fs = require('fs').promises;
 const genshareManager = require('../utils/genshareManager');
 const queueManager = require('../utils/queueManager');
 const { ProcessingSession } = require('../utils/s3Storage');
-const { getUserById } = require('../utils/userManager');
+const { getUserById, isAdmin } = require('../utils/userManager');
 
 /**
  * Add editorial_policy to options based on article_id prefix for specific users
@@ -443,6 +443,19 @@ module.exports.getJobStatus = async (req, res) => {
       return res.status(400).json({
         error: 'Missing required parameter: requestId'
       });
+    }
+
+    const job = await queueManager.getJobByRequestId(requestId);
+
+    if (!job) {
+      return res.status(404).json({ status: 'Error', error: 'Job not found' });
+    }
+
+    // Ownership check: only the job owner or an admin can access job status
+    const currentUserId = req.user?.id;
+    const jobData = JSON.parse(job.data);
+    if (jobData.user_id !== currentUserId && !isAdmin(currentUserId)) {
+      return res.status(403).json({ error: 'You are not authorized to access this job' });
     }
 
     const jobStatus = await genshareManager.getJobStatus(requestId);
