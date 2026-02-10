@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.10.0](https://github.com/DataSeer/snapshot-api/compare/v3.9.0...v3.10.0) (2026-02-10)
+
+
+### Features
+
+* add endpoints for 'processPDF' asynchronous requests & delete requests ([c05f8d0](https://github.com/DataSeer/snapshot-api/commits/c05f8d0e4c4d7e056a2dce6a9d57a9c951878745))
+
 ## [3.9.0](https://github.com/DataSeer/snapshot-api/compare/v3.8.0...v3.9.0) (2026-01-27)
 
 
