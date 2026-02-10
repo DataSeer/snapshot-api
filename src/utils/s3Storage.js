@@ -1,9 +1,10 @@
 // File: src/utils/s3Storage.js
-const { 
-  S3Client, 
-  PutObjectCommand, 
-  ListObjectsV2Command, 
-  GetObjectCommand
+const {
+  S3Client,
+  PutObjectCommand,
+  ListObjectsV2Command,
+  GetObjectCommand,
+  DeleteObjectsCommand
 } = require('@aws-sdk/client-s3');
 const { createReadStream } = require('fs');
 const crypto = require('crypto');
@@ -202,6 +203,42 @@ const getGenshareResponseFile = async (userId, requestId) => {
       return null;
     }
     console.error('Error getting genshare response file:', error);
+    throw error;
+  }
+};
+
+// Delete all objects under a given prefix
+const deleteObjectsByPrefix = async (prefix) => {
+  try {
+    const objects = await listObjects(prefix);
+
+    if (objects.length === 0) {
+      console.log(`No objects found under prefix: ${prefix}`);
+      return 0;
+    }
+
+    let deletedCount = 0;
+
+    // DeleteObjectsCommand supports max 1000 objects per call
+    for (let i = 0; i < objects.length; i += 1000) {
+      const batch = objects.slice(i, i + 1000);
+      const deleteParams = {
+        Bucket: s3Config.bucketName,
+        Delete: {
+          Objects: batch.map(obj => ({ Key: obj.Key })),
+          Quiet: true
+        }
+      };
+
+      const command = new DeleteObjectsCommand(deleteParams);
+      await s3Client.send(command);
+      deletedCount += batch.length;
+      console.log(`Deleted ${deletedCount}/${objects.length} objects under prefix: ${prefix}`);
+    }
+
+    return deletedCount;
+  } catch (error) {
+    console.error(`Error deleting objects by prefix ${prefix}:`, error);
     throw error;
   }
 };
@@ -541,11 +578,13 @@ class ProcessingSession {
   }
 }
 
-module.exports = { 
+module.exports = {
   ProcessingSession,
   getAllGenshareRequestsFiles,
   getReportFile,
   getGenshareResponseFile,
   generateRequestId,
-  uploadBatchToS3
+  uploadBatchToS3,
+  deleteObjectsByPrefix,
+  s3Config
 };

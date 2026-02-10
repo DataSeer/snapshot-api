@@ -1007,6 +1007,210 @@ const getRequestIdsByArticleIdAnyUser = async (articleId) => {
   }
 };
 
+/**
+ * Get a request record by request_id (no user filter)
+ * @param {string} requestId - The request ID
+ * @returns {Promise<Object|null>} - Request record or null if not found
+ */
+const getRequestByRequestId = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+
+    const result = await new Promise((resolve, reject) => {
+      db.get(
+        'SELECT * FROM requests WHERE request_id = ?',
+        [requestId],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row || null);
+        }
+      );
+    });
+
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    return result;
+  } catch (error) {
+    console.error('Error getting request by request_id:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a job from processing_jobs by request_id
+ * @param {string} requestId - The request ID
+ * @returns {Promise<Object>} - Result with changes count
+ */
+const deleteJobByRequestId = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        'DELETE FROM processing_jobs WHERE request_id = ?',
+        [requestId],
+        function(err) {
+          if (err) reject(err);
+          else resolve({ changes: this.changes });
+        }
+      );
+    });
+
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    return result;
+  } catch (error) {
+    console.error('Error deleting job by request_id:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete an Editorial Manager submission by request_id
+ * @param {string} requestId - The request ID
+ * @returns {Promise<Object>} - Result with changes count
+ */
+const deleteEmSubmissionByRequestId = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        'DELETE FROM "editorial-manager-submissions" WHERE request_id = ?',
+        [requestId],
+        function(err) {
+          if (err) reject(err);
+          else resolve({ changes: this.changes });
+        }
+      );
+    });
+
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    return result;
+  } catch (error) {
+    console.error('Error deleting EM submission by request_id:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a ScholarOne submission by request_id
+ * @param {string} requestId - The request ID
+ * @returns {Promise<Object>} - Result with changes count
+ */
+const deleteScholaroneSubmissionByRequestId = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        'DELETE FROM "scholarone-submissions" WHERE request_id = ?',
+        [requestId],
+        function(err) {
+          if (err) reject(err);
+          else resolve({ changes: this.changes });
+        }
+      );
+    });
+
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    return result;
+  } catch (error) {
+    console.error('Error deleting ScholarOne submission by request_id:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a Snapshot Mails submission by request_id
+ * @param {string} requestId - The request ID
+ * @returns {Promise<Object>} - Result with changes count
+ */
+const deleteSnapshotMailsSubmissionByRequestId = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        'DELETE FROM "snapshot-mails-submissions" WHERE request_id = ?',
+        [requestId],
+        function(err) {
+          if (err) reject(err);
+          else resolve({ changes: this.changes });
+        }
+      );
+    });
+
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    return result;
+  } catch (error) {
+    console.error('Error deleting Snapshot Mails submission by request_id:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete ScholarOne notifications by request_id
+ * @param {string} requestId - The request ID
+ * @returns {Promise<Object>} - Result with changes count
+ */
+const deleteScholaroneNotificationsByRequestId = async (requestId) => {
+  try {
+    const db = await getDBConnection();
+
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        'DELETE FROM "scholarone-notifications" WHERE request_id = ?',
+        [requestId],
+        function(err) {
+          if (err) reject(err);
+          else resolve({ changes: this.changes });
+        }
+      );
+    });
+
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    return result;
+  } catch (error) {
+    console.error('Error deleting ScholarOne notifications by request_id:', error);
+    throw error;
+  }
+};
+
 /*
  * EDITORIAL MANAGER SUBMISSIONS METHODS
  */
@@ -2018,6 +2222,7 @@ module.exports = {
   getRequestWithReportData,
   getRequestsWithReportDataByArticleId,
   deleteRequest,
+  getRequestByRequestId,
   getRequestIdByArticleId,
   getArticleIdByRequestId,
   getRequestIdsByArticleId,
@@ -2056,7 +2261,14 @@ module.exports = {
   updateJobStatus,
   getNextPendingJob,
   getJobByRequestId,
-  
+  deleteJobByRequestId,
+
+  // Submission deletion methods (for complete request cleanup)
+  deleteEmSubmissionByRequestId,
+  deleteScholaroneSubmissionByRequestId,
+  deleteSnapshotMailsSubmissionByRequestId,
+  deleteScholaroneNotificationsByRequestId,
+
   // Retry and cleanup methods
   incrementJobRetries,
   resetJobForRetry,

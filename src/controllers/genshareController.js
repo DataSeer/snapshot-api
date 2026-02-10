@@ -1,6 +1,7 @@
 // File: src/controllers/genshareController.js
 const fs = require('fs').promises;
 const genshareManager = require('../utils/genshareManager');
+const queueManager = require('../utils/queueManager');
 const { ProcessingSession } = require('../utils/s3Storage');
 const { getUserById } = require('../utils/userManager');
 
@@ -275,5 +276,186 @@ module.exports.processPDF = async (req, res) => {
     // Forward error response if available
     if (error.response) return res.status(error.response.status).send(error.message);
     return res.status(500).send('GenShare returned an error');
+  }
+};
+
+/**
+ * Process a PDF document asynchronously
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
+ */
+module.exports.processPDFAsync = async (req, res) => {
+  // Initialize processing session
+  const session = new ProcessingSession(req.user.id);
+  session.setOrigin('direct');
+
+  try {
+    // Extract optional notification_url (if not provided, user must poll for results)
+    const notificationUrl = req.body.notification_url;
+
+    // Store API request
+    session.setAPIRequest({
+      method: req.method,
+      path: req.path,
+      query: req.query,
+      body: req.body,
+      files: req.files ? Object.entries(req.files).flatMap(([fieldname, files]) =>
+        files.map(file => ({
+          fieldname,
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size
+        }))
+      ) : []
+    });
+
+    // Extract files
+    let mainFile = null;
+    let supplementaryFile = null;
+
+    if (req.files) {
+      if (req.files.file && req.files.file.length > 0) {
+        mainFile = req.files.file[0];
+      }
+      if (req.files.supplementary_file && req.files.supplementary_file.length > 0) {
+        supplementaryFile = req.files.supplementary_file[0];
+      }
+    }
+
+    if (mainFile) session.addFile(mainFile, 'api');
+    if (supplementaryFile) {
+      if (supplementaryFile.mimetype !== 'application/zip' &&
+          supplementaryFile.mimetype !== 'application/x-zip-compressed' &&
+          !supplementaryFile.originalname.toLowerCase().endsWith('.zip')) {
+        const filesToCleanup = [mainFile, supplementaryFile].filter(f => f && f.path);
+        await Promise.all(filesToCleanup.map(file =>
+          fs.unlink(file.path).catch(err =>
+            console.error(`[${session.requestId}] Error cleaning up file:`, err)
+          )
+        ));
+        return res.status(400).json({
+          error: 'Invalid supplementary files format. Only ZIP files are supported.'
+        });
+      }
+      session.addFile(supplementaryFile, 'api');
+    }
+
+    // Parse options
+    let parsedOptions = {};
+    if (req.body.options) {
+      try {
+        parsedOptions = typeof req.body.options === 'string'
+          ? JSON.parse(req.body.options)
+          : req.body.options;
+      } catch (parseError) {
+        parsedOptions = typeof req.body.options === 'object' && req.body.options !== null
+          ? req.body.options
+          : {};
+        session.addLog(`Warning: Error parsing options: ${parseError.message}`);
+      }
+    }
+
+    // Add editorial_policy for specific users
+    parsedOptions = addEditorialPolicyForUser(parsedOptions, req.user.id, session);
+
+    // Save initial session to S3
+    await session.saveToS3();
+
+    // Build queue data with file paths (temp files persist until job processes them)
+    const queueData = {
+      file: mainFile ? {
+        path: mainFile.path,
+        originalname: mainFile.originalname,
+        mimetype: mainFile.mimetype,
+        size: mainFile.size,
+        fieldname: mainFile.fieldname
+      } : null,
+      supplementary_file: supplementaryFile ? {
+        path: supplementaryFile.path,
+        originalname: supplementaryFile.originalname,
+        mimetype: supplementaryFile.mimetype,
+        size: supplementaryFile.size,
+        fieldname: supplementaryFile.fieldname
+      } : null,
+      options: parsedOptions,
+      user_id: req.user.id,
+      notification_url: notificationUrl
+    };
+
+    // Define completion callback
+    const onJobComplete = async (error) => {
+      if (error) {
+        await genshareManager.handleGenshareJobFailure(session.requestId, error);
+      } else {
+        await genshareManager.handleGenshareJobCompletion(session.requestId);
+      }
+    };
+
+    // Enqueue job
+    await queueManager.enqueueJob(
+      session.requestId,
+      queueManager.JobType.GENSHARE_SUBMISSION,
+      queueData,
+      undefined, // default max retries
+      undefined, // default priority
+      genshareManager.processGenshareSubmissionJob,
+      onJobComplete
+    );
+
+    // Return immediately - DO NOT clean up temp files (job processor handles them)
+    return res.json({
+      status: 'processing',
+      request_id: session.requestId
+    });
+  } catch (error) {
+    session.addLog(`Error setting up async processing: ${error.message}`);
+    console.error(`[${session.requestId}] Error in processPDFAsync:`, error);
+
+    // Clean up temp files on error
+    if (req.files) {
+      const filesToCleanup = [];
+      Object.values(req.files).forEach(fileArray => {
+        fileArray.forEach(file => {
+          if (file && file.path) filesToCleanup.push(file);
+        });
+      });
+      await Promise.all(filesToCleanup.map(file =>
+        fs.unlink(file.path).catch(err =>
+          console.error(`[${session.requestId}] Error deleting temp file:`, err)
+        )
+      ));
+    }
+
+    return res.status(500).json({ error: 'Failed to enqueue async processing' });
+  }
+};
+
+/**
+ * Get job status for a GenShare async job
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
+ */
+module.exports.getJobStatus = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+
+    if (!requestId) {
+      return res.status(400).json({
+        error: 'Missing required parameter: requestId'
+      });
+    }
+
+    const jobStatus = await genshareManager.getJobStatus(requestId);
+
+    if (jobStatus.status === 'Error') {
+      return res.status(404).json(jobStatus);
+    }
+
+    return res.json(jobStatus);
+  } catch (error) {
+    console.error(`[${req.params.requestId}] Failed to retrieve job status`);
+    return res.status(500).json({
+      error: 'Failed to retrieve job status'
+    });
   }
 };

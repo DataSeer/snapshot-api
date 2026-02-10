@@ -1,5 +1,7 @@
 // File: src/controllers/requestsController.js
 const requestsManager = require('../utils/requestsManager');
+const dbManager = require('../utils/dbManager');
+const { isAdmin } = require('../utils/userManager');
 
 /**
  * Refresh requests from S3
@@ -184,9 +186,69 @@ const getReportUrlOfRequest = async (req, res) => {
   }
 };
 
+/**
+ * Delete a request and all associated data (S3 + DB)
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
+ */
+const deleteRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const currentUserId = req.user?.id;
+
+    if (!currentUserId) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    // Validate request_id format (32 hex chars)
+    if (!/^[0-9a-f]{32}$/.test(requestId)) {
+      return res.status(400).json({
+        error: 'Invalid request ID format. Must be 32 hexadecimal characters.'
+      });
+    }
+
+    // Lookup request in DB to get the owning user
+    const request = await dbManager.getRequestByRequestId(requestId);
+
+    if (!request) {
+      return res.status(404).json({
+        error: 'Request not found',
+        request_id: requestId
+      });
+    }
+
+    // Authorization: owner or admin
+    if (request.user_name !== currentUserId && !isAdmin(currentUserId)) {
+      return res.status(403).json({
+        error: 'You are not authorized to delete this request'
+      });
+    }
+
+    // Delete everything
+    const result = await requestsManager.deleteRequestComplete(requestId);
+
+    if (!result) {
+      return res.status(404).json({
+        error: 'Request not found',
+        request_id: requestId
+      });
+    }
+
+    return res.json({
+      message: 'Request deleted',
+      request_id: requestId,
+      details: result
+    });
+  } catch (error) {
+    console.error('Error deleting request:', error);
+    res.status(500).json({ error: 'Failed to delete request' });
+  }
+};
+
 module.exports = {
   refreshRequests,
   searchRequest,
   getReportOfRequest,
-  getReportUrlOfRequest
+  getReportUrlOfRequest,
+  deleteRequest
 };

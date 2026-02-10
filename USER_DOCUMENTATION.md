@@ -28,10 +28,14 @@ bounded to a specific user.
 
 ## API Endpoints
 
-| Endpoint      | Method | Content-Type          | Description                                    |
-|---------------|--------|-----------------------|------------------------------------------------|
-| `/`           | GET    | N/A                   | Return information about available API routes. |
-| `/processPDF` | POST   | `multipart/form-data` | Process a PDF document                         |
+| Endpoint                 | Method | Content-Type          | Description                                           |
+|--------------------------|--------|-----------------------|-------------------------------------------------------|
+| `/`                      | GET    | N/A                   | Return information about available API routes.        |
+| `/processPDF`            | POST   | `multipart/form-data` | Process a PDF document (sync, backward compatible)    |
+| `/processPDF/sync`       | POST   | `multipart/form-data` | Process a PDF document synchronously                  |
+| `/processPDF/async`      | POST   | `multipart/form-data` | Process a PDF document asynchronously with callback   |
+| `/jobs/:requestId`       | GET    | N/A                   | Get job status for async processing                   |
+| `/requests/:requestId`   | DELETE | N/A                   | Delete a request and all associated data              |
 
 ### API Information (GET)
 
@@ -491,6 +495,166 @@ Here is the list of all available fields
   ]
 }
 ```
+
+### Process PDF Async (POST)
+
+The `/processPDF/async` endpoint processes PDFs in the background and sends the result to a callback URL when complete.
+
+#### Request Parameters
+
+| Field              | Type   | Description                                                    |
+|--------------------|--------|----------------------------------------------------------------|
+| file               | File   | (required) The PDF file to be processed                        |
+| supplementary_file | File   | (optional) ZIP file containing supplementary materials         |
+| notification_url   | String | (required) URL to POST results to when processing completes    |
+| options            | String | (required) **JSON string** of processing options               |
+
+The `options` parameter is the same as for `/processPDF` (see above).
+
+#### Example Request
+
+```bash
+curl -X POST -H "Authorization: Bearer <your_token>" \
+     -F "file=@path/to/your/file.pdf" \
+     -F "notification_url=https://your-server.com/callback" \
+     -F 'options={"article_id": "KWG1234", "document_type": "article"}' \
+     https://snapshot.dataseer.ai/processPDF/async
+```
+
+#### Example Response
+
+```json
+{
+  "status": "processing",
+  "request_id": "12345678901234567890123456789012"
+}
+```
+
+#### Callback Notification
+
+When processing completes, the API POSTs to the `notification_url`:
+
+**On success:**
+```json
+{
+  "status": "completed",
+  "request_id": "12345678901234567890123456789012",
+  "response": {
+    "status": 200,
+    "data": [ ... full response array ... ]
+  }
+}
+```
+
+**On failure:**
+```json
+{
+  "status": "failed",
+  "request_id": "12345678901234567890123456789012",
+  "error": "Error message describing the failure"
+}
+```
+
+### Get Job Status (GET)
+
+Check the status of an async processing job.
+
+#### Example Request
+
+```bash
+curl -H "Authorization: Bearer <your_token>" \
+     https://snapshot.dataseer.ai/jobs/12345678901234567890123456789012
+```
+
+#### Example Responses
+
+**Job in progress:**
+```json
+{
+  "request_id": "12345678901234567890123456789012",
+  "status": "processing",
+  "created_at": "2025-01-01T10:00:00.000Z",
+  "updated_at": "2025-01-01T10:01:00.000Z",
+  "retries": 0,
+  "max_retries": 3
+}
+```
+
+**Job completed:**
+```json
+{
+  "request_id": "12345678901234567890123456789012",
+  "status": "completed",
+  "created_at": "2025-01-01T10:00:00.000Z",
+  "updated_at": "2025-01-01T10:05:00.000Z",
+  "retries": 0,
+  "max_retries": 3,
+  "results": {
+    "status": 200,
+    "data": [ ... ]
+  }
+}
+```
+
+**Job failed:**
+```json
+{
+  "request_id": "12345678901234567890123456789012",
+  "status": "failed",
+  "created_at": "2025-01-01T10:00:00.000Z",
+  "updated_at": "2025-01-01T10:05:00.000Z",
+  "retries": 3,
+  "max_retries": 3,
+  "error_message": "Error description"
+}
+```
+
+#### Job Status Values
+
+| Status      | Description                                      |
+|-------------|--------------------------------------------------|
+| pending     | Job is queued waiting for processing             |
+| processing  | Job is currently being processed                 |
+| completed   | Job finished successfully                        |
+| failed      | Job failed permanently after all retries         |
+| retrying    | Job failed but will be retried automatically     |
+
+### Delete Request (DELETE)
+
+Delete a request and all associated data (S3 objects + database records).
+
+**Authorization:** Users can delete their own requests. Admin users can delete any user's requests.
+
+#### Example Request
+
+```bash
+curl -X DELETE -H "Authorization: Bearer <your_token>" \
+     https://snapshot.dataseer.ai/requests/12345678901234567890123456789012
+```
+
+#### Example Response
+
+```json
+{
+  "message": "Request deleted",
+  "request_id": "12345678901234567890123456789012",
+  "details": {
+    "request_id": "12345678901234567890123456789012",
+    "user_name": "your_user_id",
+    "s3_objects_deleted": 15,
+    "db_requests_deleted": 1,
+    "db_jobs_deleted": 1
+  }
+}
+```
+
+#### Error Responses
+
+| Error code | Description                                              |
+|------------|----------------------------------------------------------|
+| 400        | Invalid request ID format (must be 32 hex characters)    |
+| 403        | Not authorized to delete this request                    |
+| 404        | Request not found                                        |
 
 ## Error Handling
 
