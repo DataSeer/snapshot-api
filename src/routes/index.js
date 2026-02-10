@@ -10,6 +10,7 @@ const { getVersions } = require('../controllers/versionsController');
 const {
   refreshRequests,
   searchRequest,
+  getRequest,
   deleteRequest
 } = require('../controllers/requestsController');
 const { 
@@ -150,6 +151,7 @@ authenticatedRouter.get('/jobs/:requestId', getGenshareJobStatus);
 // Requests & Reports endpoints
 authenticatedRouter.post('/requests/refresh', refreshRequests);
 authenticatedRouter.get('/requests/search', searchRequest); // Available params: article_id & request_id
+authenticatedRouter.get('/requests/:requestId', getRequest);
 authenticatedRouter.delete('/requests/:requestId', deleteRequest);
 
 // Editorial Manager endpoints

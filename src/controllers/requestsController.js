@@ -187,6 +187,58 @@ const getReportUrlOfRequest = async (req, res) => {
 };
 
 /**
+ * Get a request by request ID
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
+ */
+const getRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const currentUserId = req.user?.id;
+
+    if (!currentUserId) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    // Validate request_id format (32 hex chars)
+    if (!/^[0-9a-f]{32}$/.test(requestId)) {
+      return res.status(400).json({
+        error: 'Invalid request ID format. Must be 32 hexadecimal characters.'
+      });
+    }
+
+    // Lookup request in DB
+    const request = await dbManager.getRequestByRequestId(requestId);
+
+    if (!request) {
+      return res.status(404).json({
+        error: 'Request not found',
+        request_id: requestId
+      });
+    }
+
+    // Authorization: owner or admin
+    if (request.user_name !== currentUserId && !isAdmin(currentUserId)) {
+      return res.status(403).json({
+        error: 'You are not authorized to access this request'
+      });
+    }
+
+    return res.json({
+      request_id: request.request_id,
+      article_id: request.article_id,
+      user_name: request.user_name,
+      report_data: request.report_data,
+      created_at: request.created_at,
+      updated_at: request.updated_at
+    });
+  } catch (error) {
+    console.error('Error getting request:', error);
+    res.status(500).json({ error: 'Failed to get request' });
+  }
+};
+
+/**
  * Delete a request and all associated data (S3 + DB)
  * @param {Object} req - Express request
  * @param {Object} res - Express response
@@ -250,5 +302,6 @@ module.exports = {
   searchRequest,
   getReportOfRequest,
   getReportUrlOfRequest,
+  getRequest,
   deleteRequest
 };
