@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
+    "start:prod": "NODE_ENV=production node src/server.js",
     "start:dev": "NODE_ENV=development NO_DB_REFRESH=true node src/server.js",
     "manage-permissions": "node scripts/manage_permissions.js",
     "manage-users": "node scripts/manage_users.js",
@@ -15,6 +16,11 @@
     "analyze-logs": "node scripts/analyze_logs.js",
     "refresh-ds-logs": "node scripts/refresh_ds_logs.js",
     "refresh-user-logs": "node scripts/refresh_user_logs.js",
+    "test": "jest --testPathPatterns='test/(unit|middleware|integration/processPDF)' --forceExit --detectOpenHandles",
+    "test:integration": "NODE_ENV=test jest --testPathPatterns='test/integration/(db|s3)' --forceExit --detectOpenHandles --testTimeout=30000",
+    "test:e2e": "NODE_ENV=test jest --testPathPatterns='test/e2e' --forceExit --detectOpenHandles --testTimeout=120000",
+    "test:all": "npm test && npm run test:integration && npm run test:e2e",
+    "test:coverage": "jest --coverage --forceExit --detectOpenHandles",
     "lint": "eslint . --ext .js",
     "lint:fix": "eslint . --ext .js --fix",
     "prepare": "husky install",
@@ -62,7 +68,9 @@
     "eslint-plugin-import": "^2.29.1",
     "eslint-plugin-node": "^11.1.0",
     "husky": "^8.0.3",
+    "jest": "^30.2.0",
     "lint-staged": "^15.0.0",
-    "standard-version": "^9.5.0"
+    "standard-version": "^9.5.0",
+    "supertest": "^7.2.2"
   }
 }

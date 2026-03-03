@@ -34,7 +34,7 @@ const refreshRequestsFromS3 = async () => {
     const requestIds = validFiles.map(file => file.requestId);
     const uniqueRequestIds = new Set(requestIds);
     console.log(`Unique request_ids: ${uniqueRequestIds.size} out of ${requestIds.length}`);
-    
+
     // Find duplicates
     const duplicateIds = requestIds.filter((id, index) => requestIds.indexOf(id) !== index);
     const uniqueDuplicateIds = [...new Set(duplicateIds)];
@@ -42,11 +42,12 @@ const refreshRequestsFromS3 = async () => {
     if (uniqueDuplicateIds.length > 0) {
       console.log(`First few duplicate IDs: ${uniqueDuplicateIds.slice(0, 5).join(', ')}`);
     }
-    
+
     // Process each file
     let insertedCount = 0;
     let errorCount = 0;
     let reportUpdatedCount = 0;
+    let reportErrorCount = 0;
     
     for (const file of requestsFiles) {
       if (file.content && file.content.article_id) {
@@ -64,8 +65,7 @@ const refreshRequestsFromS3 = async () => {
               reportUpdatedCount++;
             }
           } catch (reportError) {
-            // Report file doesn't exist, that's okay
-            console.log(`No report file found for ${file.requestId}: ${reportError.message}`);
+            reportErrorCount++;
           }
           
           // Add/update request with report data if available
@@ -85,7 +85,7 @@ const refreshRequestsFromS3 = async () => {
       }
     }
     
-    console.log(`Inserted/updated ${insertedCount} records, Reports updated: ${reportUpdatedCount}, Errors: ${errorCount}`);
+    console.log(`S3 refresh complete: ${insertedCount} processed, ${reportUpdatedCount} reports found, ${reportErrorCount} reports missing, ${errorCount} errors`);
     
     return true;
   } catch (error) {

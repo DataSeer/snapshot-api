@@ -58,19 +58,20 @@ const startServer = async () => {
       }
     }, 3600000); // 1 hour
     
-    // Only refresh from S3 if NO_DB_REFRESH is not set to true
-    if (process.env.NO_DB_REFRESH !== 'true') {
-      console.log('Refreshing requests from S3...');
-      await refreshRequestsFromS3();
-      console.log('Requests refreshed successfully');
-    } else {
-      console.log('Skipping S3 refresh (NO_DB_REFRESH=true)');
-    }
-    
     // Start the server
     app.listen(config.port, () => {
       console.log(`Server running on port ${config.port} in ${process.env.NODE_ENV || 'production'} mode`);
     });
+
+    // Refresh from S3 in the background (non-blocking)
+    if (process.env.NO_DB_REFRESH !== 'true') {
+      console.log('Starting S3 refresh in background...');
+      refreshRequestsFromS3()
+        .then(() => console.log('S3 refresh completed successfully'))
+        .catch((err) => console.error('S3 refresh failed:', err));
+    } else {
+      console.log('Skipping S3 refresh (NO_DB_REFRESH=true)');
+    }
   } catch (error) {
     console.error('Error during server startup:', error);
     throw new Error(`Server startup failed: ${error.message}`);

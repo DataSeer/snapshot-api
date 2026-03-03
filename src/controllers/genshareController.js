@@ -54,6 +54,9 @@ function addEditorialPolicyForUser(options, userId, session) {
  * @param {Object} req - Express request
  * @param {Object} res - Express response
  */
+// Export for unit testing
+module.exports.addEditorialPolicyForUser = addEditorialPolicyForUser;
+
 module.exports.getGenShareHealth = async (req, res) => {
   try {
     const user = getUserById(req.user.id);

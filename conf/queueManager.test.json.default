@@ -1,0 +1,13 @@
+{
+  "maxRetries": 1,
+  "processorInterval": 1000,
+  "retryDelayBase": 2,
+  "retryDelayMultiplier": 100,
+  "maxConcurrentJobs": 1,
+  "jobPriorities": {
+    "LOW": 1,
+    "NORMAL": 5,
+    "HIGH": 10,
+    "CRITICAL": 20
+  }
+}

@@ -1,5 +1,4 @@
 // File: src/utils/googleSheets.js
-const path = require('path');
 const { google } = require('googleapis');
 // Load Genshare configuration which now contains Google Sheets settings per version
 const config = require('../config');
@@ -9,7 +8,7 @@ const genshareConfig = require(config.genshareConfigPath);
 
 // Initialize the Sheets API client
 const auth = new google.auth.GoogleAuth({
-  keyFile: path.join(__dirname, `../../conf/googleSheets.credentials.json`),
+  keyFile: config.googleSheetsCredentialsPath,
   scopes: [
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive',
