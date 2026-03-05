@@ -276,6 +276,7 @@ class ProcessingSession {
     this.startTime = new Date();
     this.endTime = null;
     this.duration = -1;
+    this.timeline = [];
     this.snapshotAPIVersion = "";
     this.genshareVersion = "";
     
@@ -353,6 +354,17 @@ class ProcessingSession {
   addLog(entry, level = 'INFO') {
     const timestamp = formatLogDate(new Date());
     this.logs.push(`[${timestamp}] [${level}] ${entry}`);
+  }
+
+  // Add a timeline event
+  addTimelineEvent(id, start, end, source = 'snapshot-api') {
+    this.timeline.push({
+      id,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      duration_ms: end - start,
+      source
+    });
   }
 
   // Set Genshare request
@@ -435,7 +447,8 @@ class ProcessingSession {
         origin: this.origin,
         services: {
           genshare: this.genshare.isActive
-        }
+        },
+        timeline: this.timeline
       };
 
       // Add process files

@@ -890,6 +890,7 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
   session.setGenshareRequest(genshareRequestData);
 
   try {
+    const genshareCallStart = new Date();
     const response = await axios({
       method: processPDFConfig.method,
       url: processPDFConfig.url,
@@ -901,6 +902,27 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
       responseType: 'json',
       maxBodyLength: Infinity
     });
+    const genshareCallEnd = new Date();
+
+    // Record Snapshot API pre-GenShare processing time
+    session.addTimelineEvent('snapshot-api-pre', session.startTime, genshareCallStart);
+
+    // Record GenShare round-trip as meta event (not shown in chart, used for stats)
+    session.timeline.push({
+      id: 'genshare-call',
+      start: genshareCallStart.toISOString(),
+      end: genshareCallEnd.toISOString(),
+      duration_ms: genshareCallEnd - genshareCallStart,
+      source: 'snapshot-api',
+      type: 'meta'
+    });
+
+    // Merge genshare timeline events into session timeline
+    if (response.data && response.data.timeline && Array.isArray(response.data.timeline)) {
+      response.data.timeline.forEach(event => {
+        session.timeline.push({ ...event, source: event.source || 'genshare' });
+      });
+    }
 
     // Check if response status is not 2xx or 3xx
     if (response.status >= 400) {
@@ -1047,6 +1069,9 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
       });
     }
 
+    // Log to Google Sheets (summary + user-specific)
+    const sheetsStart = new Date();
+
     // Log to summary sheet before returning the result ONLY if shouldLogToSummary is true
     if (shouldLogToSummary) {
       try {
@@ -1085,6 +1110,23 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
       console.error(`[${session.requestId}] Error logging to user sheet:`, userLogError);
       // Don't fail the process if user sheet logging fails
     }
+
+    const sheetsEnd = new Date();
+
+    // Record GoogleSheets Logs sub-step
+    if (sheetsEnd - sheetsStart > 0) {
+      session.timeline.push({
+        id: 'googlesheets-logs',
+        start: sheetsStart.toISOString(),
+        end: sheetsEnd.toISOString(),
+        duration_ms: sheetsEnd - sheetsStart,
+        source: 'snapshot-api',
+        type: 'sub-step'
+      });
+    }
+
+    // Record Snapshot API post-GenShare processing time
+    session.addTimelineEvent('snapshot-api-post', genshareCallEnd, new Date());
 
     // Return the processing result with additional metadata
     return {
