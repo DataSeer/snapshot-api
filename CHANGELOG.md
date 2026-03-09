@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.12.0](https://github.com/DataSeer/snapshot-api/compare/v3.11.0...v3.12.0) (2026-03-09)
+
+
+### Features
+
+* add Integration & E2E tests + CI integration ([c8d7920](https://github.com/DataSeer/snapshot-api/commits/c8d792019a38548a3b22fe73a050f3e06dd2b2ee))
+* add Snapshot Timelines ([51578db](https://github.com/DataSeer/snapshot-api/commits/51578db167c6125df54d961b44fe6f9ce6ddd95e))
+* add user logs in the editorial manager PDF processing ([57e45d4](https://github.com/DataSeer/snapshot-api/commits/57e45d400290b1086777d8e659e8a731ecd018bf))
+* update tests ([465970e](https://github.com/DataSeer/snapshot-api/commits/465970e84b351fbb8c00d956639fed77bd9690b0))
+
 ## [3.11.0](https://github.com/DataSeer/snapshot-api/compare/v3.10.0...v3.11.0) (2026-02-10)
 
 
