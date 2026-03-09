@@ -11,10 +11,12 @@ const crypto = require('crypto');
 const fs = require('fs');
 
 const { isValidVersion } = require('./versions');
+const { logger } = require('./logger');
 
 // Load S3 configuration from JSON file
+const config = require('../config');
 // eslint-disable-next-line node/no-unpublished-require
-const s3Config = require('../../conf/aws.s3.json');
+const s3Config = require(config.awsS3ConfigPath);
 
 // Initialize S3 client
 const s3Client = new S3Client({
@@ -89,7 +91,7 @@ const listObjects = async (prefix) => {
     continuationToken = response.NextContinuationToken;
     
     console.log(`Retrieved ${response.Contents?.length || 0} objects, ${allObjects.length} total so far.`);
-    
+
   } while (continuationToken);
   
   return allObjects;
@@ -109,7 +111,8 @@ const getFile = async (key) => {
     // In v3, Body is a readable stream
     return await streamToString(response.Body);
   } catch (error) {
-    console.error(`Error getting file ${key}:`, error);
+    console.error(`[S3] Error getting file ${key}: ${error.Code}`);
+    logger.error(`[S3] Error getting file ${key}`, error);
     throw error;
   }
 };
@@ -599,5 +602,7 @@ module.exports = {
   generateRequestId,
   uploadBatchToS3,
   deleteObjectsByPrefix,
+  listObjects,
+  getFile,
   s3Config
 };

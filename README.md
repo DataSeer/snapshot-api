@@ -1149,11 +1149,8 @@ npm run db:check-notification
 # List all ScholarOne notifications
 npm run db:list-notifications
 
-# View job queue status
-npm run queue:status
-
-# Clean up old completed jobs
-npm run queue:cleanup
+# Note: Job queue data is stored in the processing_jobs table in SQLite
+# Use db:check to inspect database records
 ```
 
 ### ScholarOne Management
@@ -1208,9 +1205,6 @@ npm run analyze-logs
 
 # Analyze specific log file
 npm run analyze-logs -- path/to/logfile.log
-
-# Analyze queue performance
-npm run analyze-queue-logs
 ```
 
 ## Development

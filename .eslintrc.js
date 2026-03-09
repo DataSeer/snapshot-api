@@ -16,6 +16,17 @@ module.exports = {
     'import',
     'node'
   ],
+  overrides: [
+    {
+      files: ['test/**/*.js'],
+      env: {
+        jest: true
+      },
+      rules: {
+        'node/no-unpublished-require': 'off'
+      }
+    }
+  ],
   rules: {
     'node/no-unsupported-features/node-builtins': ['error', {
       version: '>=20.0.0'  // Added this to match your Node version

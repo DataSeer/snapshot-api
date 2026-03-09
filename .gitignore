@@ -13,5 +13,8 @@ output/*/*/*.csv
 tmp/
 
 log/*.log
+*.log
 
 .idea
+
+coverage/

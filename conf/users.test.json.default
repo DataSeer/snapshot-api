@@ -1,0 +1,67 @@
+{
+  "admin": {
+    "role": "admin",
+    "token": "test-admin-token",
+    "client_secret": "test-admin-secret",
+    "rateLimit": {
+      "max": 200,
+      "windowMs": 0
+    },
+    "genshare": {
+      "authorizedVersions": [
+        "latest"
+      ],
+      "defaultVersion": "latest",
+      "fieldOrder": [],
+      "availableFields": [],
+      "restrictedFields": [],
+      "options": {
+        "editorial_policy": {
+          "available": ["PLOS", "TFOD", "SURR"],
+          "default": "TFOD"
+        }
+      }
+    },
+    "reports": {
+      "authorizedVersions": [
+        "Admin (v0.1)",
+        "Generic (v0.1)"
+      ],
+      "defaultVersion": "Admin (v0.1)"
+    }
+  },
+  "test": {
+    "token": "test-user-token",
+    "client_secret": "test-user-secret",
+    "rateLimit": {
+      "max": 200,
+      "windowMs": 0
+    },
+    "googleSheets": {
+      "enabled": false,
+      "spreadsheetId": "",
+      "sheetName": ""
+    },
+    "genshare": {
+      "authorizedVersions": [
+        "latest"
+      ],
+      "defaultVersion": "latest",
+      "fieldOrder": [],
+      "availableFields": [],
+      "restrictedFields": [],
+      "options": {
+        "editorial_policy": {
+          "available": ["PLOS", "TFOD", "SURR"],
+          "default": "TFOD"
+        }
+      }
+    },
+    "reports": {
+      "authorizedVersions": [
+        "Generic (v0.1)"
+      ],
+      "defaultVersion": "Generic (v0.1)"
+    }
+  }
+}

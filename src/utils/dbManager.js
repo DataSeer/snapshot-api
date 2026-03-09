@@ -3,13 +3,15 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 
-// Create sqlite directory if it doesn't exist
+// Create sqlite directory if it doesn't exist (skip for in-memory DB)
 const SQLITE_DIR = path.join(__dirname, '../../sqlite');
-if (!fs.existsSync(SQLITE_DIR)) {
-  fs.mkdirSync(SQLITE_DIR, { recursive: true });
-}
+const DB_PATH = process.env.DB_PATH || path.join(SQLITE_DIR, 'snapshot.db');
 
-const DB_PATH = path.join(SQLITE_DIR, 'snapshot.db');
+if (!process.env.DB_PATH) {
+  if (!fs.existsSync(SQLITE_DIR)) {
+    fs.mkdirSync(SQLITE_DIR, { recursive: true });
+  }
+}
 
 /**
  * Database connection manager
@@ -17,7 +19,13 @@ const DB_PATH = path.join(SQLITE_DIR, 'snapshot.db');
  */
 const getDBConnection = () => {
   return new Promise((resolve, reject) => {
-    const db = new sqlite3.Database(DB_PATH, (err) => {
+    // Use OPEN_URI flag for shared-cache in-memory databases (e.g. file::memory:?cache=shared)
+    const mode = DB_PATH.startsWith('file:')
+      ? sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE | sqlite3.OPEN_URI
+      : undefined;
+    const args = [DB_PATH];
+    if (mode !== undefined) args.push(mode);
+    args.push((err) => {
       if (err) {
         console.error('Error opening database:', err);
         reject(err);
@@ -25,6 +33,7 @@ const getDBConnection = () => {
         resolve(db);
       }
     });
+    const db = new sqlite3.Database(...args);
   });
 };
 

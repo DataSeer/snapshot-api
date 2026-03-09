@@ -4,11 +4,10 @@ const config = require('../config');
 
 const genshareConfig = require(config.genshareConfigPath);
 const grobidConfig = require(config.grobidConfigPath);
-const datastetConfig = require(config.datastetConfigPath);
 
 const checkHealth = async (config) => {
   const request = `${config.health.method.toUpperCase()} ${config.health.url}`;
-  
+
   try {
     const response = await axios({
       method: config.health.method,
@@ -39,13 +38,12 @@ const checkHealth = async (config) => {
 
 module.exports.getPing = async (req, res) => {
   try {
-    const [genshareResult, grobidResult, datastetResult] = await Promise.all([
+    const [genshareResult, grobidResult] = await Promise.all([
       checkHealth(genshareConfig),
-      checkHealth(grobidConfig),
-      checkHealth(datastetConfig)
+      checkHealth(grobidConfig)
     ]);
 
-    const allHealthy = [genshareResult, grobidResult, datastetResult]
+    const allHealthy = [genshareResult, grobidResult]
       .every(service => service.response.status === 200);
 
     const overallStatus = 200;
@@ -55,8 +53,7 @@ module.exports.getPing = async (req, res) => {
       timestamp: new Date().toISOString(),
       services: {
         genshare: genshareResult,
-        grobid: grobidResult,
-        datastet: datastetResult
+        grobid: grobidResult
       }
     });
   } catch (error) {
@@ -74,8 +71,7 @@ module.exports.getPing = async (req, res) => {
       timestamp: new Date().toISOString(),
       services: {
         genshare: failedRequest,
-        grobid: failedRequest,
-        datastet: failedRequest
+        grobid: failedRequest
       }
     });
   }

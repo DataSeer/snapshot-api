@@ -3,7 +3,6 @@ const express = require('express');
 const multer = require('multer');
 const { processPDF, getGenShareHealth, processPDFAsync, getJobStatus: getGenshareJobStatus } = require('../controllers/genshareController');
 const { getGrobidHealth } = require('../controllers/grobidController');
-const { getDatastetHealth } = require('../controllers/datastetController');
 const { getPing } = require('../controllers/healthController');
 const { getApiRoutes } = require('../controllers/apiController');
 const { getVersions } = require('../controllers/versionsController');
@@ -143,8 +142,6 @@ authenticatedRouter.post('/processPDF/async',
 authenticatedRouter.get('/ping', getPing);
 authenticatedRouter.get('/genshare/health', getGenShareHealth);
 authenticatedRouter.get('/grobid/health', getGrobidHealth);
-authenticatedRouter.get('/datastet/health', getDatastetHealth);
-
 // Generic job status endpoint
 authenticatedRouter.get('/jobs/:requestId', getGenshareJobStatus);
 
