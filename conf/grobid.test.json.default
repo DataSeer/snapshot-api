@@ -1,6 +1,0 @@
-{
-  "health": {
-    "url": "http://localhost:8070/api/isalive",
-    "method": "GET"
-  }
-}

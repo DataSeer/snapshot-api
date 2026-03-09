@@ -1,22 +1,23 @@
 // File: src/config.js
 const path = require('path');
 
-const configSuffix = process.env.NODE_ENV === 'test' ? '.test.json' : '.json';
+const isTest = process.env.NODE_ENV === 'test';
+const testSuffix = (name) =>
+  isTest && ['aws.s3', 'users', 'permissions'].includes(name) ? '.test.json' : '.json';
 
 module.exports = {
   port: process.env.PORT || 3000,
   jwtSecret: process.env.JWT_SECRET || 'your_jwt_secret_key',
   tokenExpiration: process.env.TOKEN_EXPIRATION || 3600, // Default: 1 hour in seconds
-  permissionsConfigPath: path.join(__dirname, `../conf/permissions${configSuffix}`),
-  genshareConfigPath: path.join(__dirname, `../conf/genshare${configSuffix}`),
-  grobidConfigPath: path.join(__dirname, `../conf/grobid${configSuffix}`),
-  datastetConfigPath: path.join(__dirname, `../conf/datastet${configSuffix}`),
-  reportsConfigPath: path.join(__dirname, `../conf/reports${configSuffix}`),
-  usersPath: path.join(__dirname, `../conf/users${configSuffix}`),
-  emConfigPath: path.join(__dirname, `../conf/em${configSuffix}`),
-  scholaroneConfigPath: path.join(__dirname, `../conf/scholarone${configSuffix}`),
-  snapshotMailsConfigPath: path.join(__dirname, `../conf/snapshotMails${configSuffix}`),
-  queueManagerConfigPath: path.join(__dirname, `../conf/queueManager${configSuffix}`),
-  awsS3ConfigPath: path.join(__dirname, `../conf/aws.s3${configSuffix}`),
-  googleSheetsCredentialsPath: path.join(__dirname, `../conf/googleSheets.credentials${configSuffix}`)
+  permissionsConfigPath: path.join(__dirname, `../conf/permissions${testSuffix('permissions')}`),
+  genshareConfigPath: path.join(__dirname, '../conf/genshare.json'),
+  grobidConfigPath: path.join(__dirname, '../conf/grobid.json'),
+  reportsConfigPath: path.join(__dirname, '../conf/reports.json'),
+  usersPath: path.join(__dirname, `../conf/users${testSuffix('users')}`),
+  emConfigPath: path.join(__dirname, '../conf/em.json'),
+  scholaroneConfigPath: path.join(__dirname, '../conf/scholarone.json'),
+  snapshotMailsConfigPath: path.join(__dirname, '../conf/snapshotMails.json'),
+  queueManagerConfigPath: path.join(__dirname, '../conf/queueManager.json'),
+  awsS3ConfigPath: path.join(__dirname, `../conf/aws.s3${testSuffix('aws.s3')}`),
+  googleSheetsCredentialsPath: path.join(__dirname, '../conf/googleSheets.credentials.json')
 };

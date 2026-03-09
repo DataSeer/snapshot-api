@@ -14,28 +14,18 @@ setupTestEnv();
 setupTestDb();
 
 // Validate configs
+let configError = null;
 try {
-  validateTestConfigs([
-    'users.test.json',
-    'permissions.test.json',
-    'genshare.test.json',
-    'queueManager.test.json',
-    'reports.test.json',
-    'em.test.json',
-    'scholarone.test.json',
-    'datastet.test.json',
-    'grobid.test.json',
-    'snapshotMails.test.json',
-    'aws.s3.test.json',
-    'googleSheets.credentials.test.json'
-  ]);
+  validateTestConfigs();
 } catch (err) {
-  describe('Auth Workflow E2E', () => {
-    test.skip('SKIPPED: ' + err.message, () => {});
-  });
-  module.exports = {};
-  return;
+  configError = err;
 }
+
+if (configError) {
+  describe('Auth Workflow E2E', () => {
+    test.skip('SKIPPED: ' + configError.message, () => {});
+  });
+} else {
 
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
@@ -50,7 +40,7 @@ let testUserToken;
  * Build a minimal Express app that mirrors the real app
  * but skips background tasks (queue processor, polling, S3 refresh)
  */
-function buildTestApp() {
+const buildTestApp = () => {
   const testApp = express();
   testApp.set('trust proxy', 1);
   testApp.use(express.json());
@@ -224,3 +214,5 @@ describe('Auth Workflow E2E', () => {
     });
   });
 });
+
+} // end if (!configError)

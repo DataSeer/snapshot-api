@@ -11,15 +11,18 @@ const { validateTestPrefix, cleanupTestPrefix, generateTestRequestId } = require
 setupTestEnv();
 
 // Validate required configs exist
+let configError = null;
 try {
   validateTestConfigs(['aws.s3.test.json']);
 } catch (err) {
-  describe('ProcessingSession Integration', () => {
-    test.skip('SKIPPED: ' + err.message, () => {});
-  });
-  module.exports = {};
-  return;
+  configError = err;
 }
+
+if (configError) {
+  describe('ProcessingSession Integration', () => {
+    test.skip('SKIPPED: ' + configError.message, () => {});
+  });
+} else {
 
 const {
   ProcessingSession,
@@ -54,7 +57,7 @@ describe('ProcessingSession Integration', () => {
     });
 
     test('should save process.json and process.log to S3', async () => {
-      session.setSnapshotAPIVersion('3.11.0');
+      session.setSnapshotAPIVersion('v3.11.0');
       session.setOrigin('direct');
       session.setAPIRequest({ body: { article_id: 'TEST-001' } });
       session.setAPIResponse({ status: 200, data: { result: 'ok' } });
@@ -65,7 +68,7 @@ describe('ProcessingSession Integration', () => {
       // Verify process.json exists
       const processJson = await getFile(`${session.getBasePath()}/process.json`);
       const processData = JSON.parse(processJson);
-      expect(processData.snapshotAPIVersion).toBe('3.11.0');
+      expect(processData.snapshotAPIVersion).toBe('v3.11.0');
       expect(processData.origin.type).toBe('direct');
       expect(processData.duration).toBeDefined();
 
@@ -94,7 +97,7 @@ describe('ProcessingSession Integration', () => {
       gsRequestId = generateTestRequestId();
       genshareSession = new ProcessingSession(testUserId, gsRequestId);
 
-      genshareSession.setSnapshotAPIVersion('3.11.0');
+      genshareSession.setSnapshotAPIVersion('v3.11.0');
       genshareSession.setOrigin('direct');
       genshareSession.initGenShare('v81.3.0');
       genshareSession.setGenshareRequest({
@@ -140,7 +143,7 @@ describe('ProcessingSession Integration', () => {
       reportRequestId = generateTestRequestId();
       reportSession = new ProcessingSession(testUserId, reportRequestId);
 
-      reportSession.setSnapshotAPIVersion('3.11.0');
+      reportSession.setSnapshotAPIVersion('v3.11.0');
       reportSession.setReport({
         reportId: 'rpt-001',
         reportUrl: 'https://example.com/report',
@@ -168,3 +171,5 @@ describe('ProcessingSession Integration', () => {
     });
   });
 });
+
+} // end if (!configError)

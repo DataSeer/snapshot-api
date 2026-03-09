@@ -11,18 +11,18 @@ const { validateTestPrefix, cleanupTestPrefix, generateTestRequestId } = require
 setupTestEnv();
 
 // Validate required configs exist
+let configError = null;
 try {
   validateTestConfigs(['aws.s3.test.json']);
 } catch (err) {
-  // Skip all tests if config is missing
-  describe('S3 Storage Integration', () => {
-    test.skip('SKIPPED: ' + err.message, () => {});
-  });
-  // Prevent further execution
-  // eslint-disable-next-line no-global-assign
-  module.exports = {};
-  return;
+  configError = err;
 }
+
+if (configError) {
+  describe('S3 Storage Integration', () => {
+    test.skip('SKIPPED: ' + configError.message, () => {});
+  });
+} else {
 
 const {
   uploadBatchToS3,
@@ -156,3 +156,5 @@ describe('S3 Storage Integration', () => {
     });
   });
 });
+
+} // end if (!configError)

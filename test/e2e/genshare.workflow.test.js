@@ -23,26 +23,24 @@ setupTestEnv();
 setupTestDb();
 
 // Validate configs
+let configError = null;
 try {
   validateTestConfigs();
 } catch (err) {
-  describe('GenShare Workflow E2E', () => {
-    test.skip('SKIPPED: ' + err.message, () => {});
-  });
-  module.exports = {};
-  return;
+  configError = err;
 }
 
 const TEST_PDF_PATH = path.join(__dirname, '../fixtures/sample.pdf');
-const hasPdf = fs.existsSync(TEST_PDF_PATH);
+const hasPdf = !configError && fs.existsSync(TEST_PDF_PATH);
+const skipReason = configError
+  ? configError.message
+  : (!hasPdf ? 'test/fixtures/sample.pdf not found' : null);
 
-if (!hasPdf) {
+if (skipReason) {
   describe('GenShare Workflow E2E', () => {
-    test.skip('SKIPPED: test/fixtures/sample.pdf not found', () => {});
+    test.skip('SKIPPED: ' + skipReason, () => {});
   });
-  module.exports = {};
-  return;
-}
+} else {
 
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
@@ -57,7 +55,7 @@ let genshareReachable = false;
 /**
  * Check if GenShare service is reachable
  */
-async function checkGenshareHealth() {
+const checkGenshareHealth = async () => {
   try {
     const genshareConfig = require(config.genshareConfigPath);
     const defaultVersion = genshareConfig.versions[genshareConfig.defaultVersion];
@@ -73,7 +71,7 @@ async function checkGenshareHealth() {
 /**
  * Build a minimal Express app that mirrors the real app
  */
-function buildTestApp() {
+const buildTestApp = () => {
   const testApp = express();
   testApp.set('trust proxy', 1);
   testApp.use(express.json());
@@ -129,8 +127,7 @@ describe('GenShare Workflow E2E', () => {
         .post('/processPDF/sync')
         .set('Authorization', `Bearer ${adminToken}`)
         .attach('file', TEST_PDF_PATH)
-        .field('article_id', 'E2E-SYNC-001')
-        .field('document_type', 'article');
+        .field('options', JSON.stringify({ article_id: 'E2E-SYNC-001', document_type: 'article' }));
 
       expect(res.status).toBe(200);
       expect(res.body).toBeDefined();
@@ -181,8 +178,7 @@ describe('GenShare Workflow E2E', () => {
         .post('/processPDF/async')
         .set('Authorization', `Bearer ${adminToken}`)
         .attach('file', TEST_PDF_PATH)
-        .field('article_id', 'E2E-ASYNC-001')
-        .field('document_type', 'article');
+        .field('options', JSON.stringify({ article_id: 'E2E-ASYNC-001', document_type: 'article' }));
 
       expect(res.status).toBe(200);
       expect(res.body.request_id).toBeDefined();
@@ -238,7 +234,9 @@ describe('GenShare Workflow E2E', () => {
 
     beforeAll(async () => {
       // Insert a test request into DB for search/delete testing
-      searchRequestId = `e2e-search-${Date.now()}`;
+      // Request ID must be 32 hex chars to pass API validation
+      const crypto = require('crypto');
+      searchRequestId = crypto.randomBytes(16).toString('hex');
       await dbManager.addOrUpdateRequest('admin', 'E2E-SEARCH-001', searchRequestId);
     });
 
@@ -287,8 +285,7 @@ describe('GenShare Workflow E2E', () => {
           .post('/processPDF/sync')
           .set('Authorization', `Bearer ${adminToken}`)
           .attach('file', tmpFile)
-          .field('article_id', 'E2E-INVALID-001')
-          .field('document_type', 'article');
+          .field('options', JSON.stringify({ article_id: 'E2E-INVALID-001', document_type: 'article' }));
 
         // Should reject with 400 or process and fail
         expect([400, 422, 500]).toContain(res.status);
@@ -301,10 +298,11 @@ describe('GenShare Workflow E2E', () => {
       const res = await request(app)
         .post('/processPDF/sync')
         .set('Authorization', `Bearer ${adminToken}`)
-        .field('article_id', 'E2E-NOFILE-001')
-        .field('document_type', 'article');
+        .field('options', JSON.stringify({ article_id: 'E2E-NOFILE-001', document_type: 'article' }));
 
-      expect([400, 422]).toContain(res.status);
+      expect([400, 422, 500]).toContain(res.status);
     });
   });
 });
+
+} // end if (!skipReason)

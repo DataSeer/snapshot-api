@@ -10,20 +10,13 @@ const CONF_DIR = path.join(__dirname, '../../conf');
 
 /**
  * Required test config files for integration/E2E tests
+ * Only S3, users, and permissions need test-specific variants.
+ * All other configs use the real production JSON files.
  */
 const REQUIRED_TEST_CONFIGS = [
   'aws.s3.test.json',
   'users.test.json',
-  'permissions.test.json',
-  'genshare.test.json',
-  'queueManager.test.json',
-  'reports.test.json',
-  'em.test.json',
-  'scholarone.test.json',
-  'datastet.test.json',
-  'grobid.test.json',
-  'snapshotMails.test.json',
-  'googleSheets.credentials.test.json'
+  'permissions.test.json'
 ];
 
 /**
