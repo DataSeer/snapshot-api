@@ -14,7 +14,8 @@
       },
       "googleSheets": {
         "spreadsheetId": "your-spreadsheet-id-for-v1",
-        "sheetName": "v1_Sheet"
+        "templateSheetName": "Template",
+        "folderId": "your-google-drive-folder-id"
       },
       "responseMapping": {
         "getPath": [
@@ -53,7 +54,8 @@
       },
       "googleSheets": {
         "spreadsheetId": "your-spreadsheet-id-for-v2",
-        "sheetName": "v2_Sheet"
+        "templateSheetName": "Template",
+        "folderId": "your-google-drive-folder-id"
       },
       "responseMapping": {
         "getPath": [

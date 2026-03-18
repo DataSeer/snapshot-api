@@ -210,6 +210,36 @@ const getGenshareResponseFile = async (userId, requestId) => {
   }
 };
 
+// Get process.json file from S3
+const getProcessFile = async (userId, requestId) => {
+  try {
+    const key = `${s3Config.s3Folder}/${userId}/${requestId}/process.json`;
+    const content = await getFile(key);
+    return JSON.parse(content);
+  } catch (error) {
+    if (error.$metadata?.httpStatusCode === 404 || error.name === 'NoSuchKey') {
+      return null;
+    }
+    console.error('Error getting process file:', error);
+    throw error;
+  }
+};
+
+// Get API response.json file from S3
+const getApiResponseFile = async (userId, requestId) => {
+  try {
+    const key = `${s3Config.s3Folder}/${userId}/${requestId}/response.json`;
+    const content = await getFile(key);
+    return JSON.parse(content);
+  } catch (error) {
+    if (error.$metadata?.httpStatusCode === 404 || error.name === 'NoSuchKey') {
+      return null;
+    }
+    console.error('Error getting API response file:', error);
+    throw error;
+  }
+};
+
 // Delete all objects under a given prefix
 const deleteObjectsByPrefix = async (prefix) => {
   try {
@@ -599,6 +629,8 @@ module.exports = {
   getAllGenshareRequestsFiles,
   getReportFile,
   getGenshareResponseFile,
+  getProcessFile,
+  getApiResponseFile,
   generateRequestId,
   uploadBatchToS3,
   deleteObjectsByPrefix,

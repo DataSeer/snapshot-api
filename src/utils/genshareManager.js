@@ -8,10 +8,14 @@ const config = require('../config');
 const { appendToSheet, appendToUserSheet, convertToGoogleSheetsDate, convertToGoogleSheetsTime, convertToGoogleSheetsDuration } = require('./googleSheets');
 const { getUserById } = require('./userManager');
 const requestsManager = require('./requestsManager');
+const emailAlertManager = require('./emailAlertManager');
 const snapshotReportsManager = require('./snapshotReportsManager');
 
-// Load the genshare configuration
-const genshareConfig = require(config.genshareConfigPath);
+// Load the genshare configuration (auto-reloads on file change)
+const { watchConfig } = require('./configWatcher');
+const genshareConfig = watchConfig(config.genshareConfigPath);
+const logsConfig = watchConfig(config.googleSheetsLogsConfigPath);
+const instanceConfig = watchConfig(config.instanceConfigPath, {});
 
 /**
  * Get version configuration by alias (e.g., "latest", "previous")
@@ -377,7 +381,6 @@ function filterOptions(options, user, session) {
  * @param {string} options.graphValue - Graph/editorial policy value
  * @param {string} options.articleId - Article ID
  * @param {Array} options.responseData - GenShare response data array
- * @param {Array} options.pathData - GenShare path data array
  * @returns {Array} - CSV row data array (contains only genshareVersion, not alias)
  */
 const buildSummaryRowData = (options) => {
@@ -396,13 +399,11 @@ const buildSummaryRowData = (options) => {
     reportURL = "",
     graphValue = "",
     articleId = "",
-    responseData = [],
-    pathData = []
+    responseData = []
   } = options;
 
-  // Format response and path data using existing functions (use alias for config lookup)
+  // Format response data using existing function (use alias for config lookup)
   const response = getResponse(responseData, genshareVersionAlias);
-  const pathFormatted = getPath(pathData, genshareVersionAlias);
 
   // Build the row data
   const rowData = [
@@ -419,7 +420,7 @@ const buildSummaryRowData = (options) => {
     reportURL,                                   // Report URL
     graphValue,                                  // Graph value
     articleId                                    // Article ID
-  ].concat(response).concat(pathFormatted);
+  ].concat(response);
 
   return rowData;
 };
@@ -431,27 +432,27 @@ const buildSummaryRowData = (options) => {
  */
 const getSummaryHeaders = (versionAlias) => {
   const versionConfig = getVersionConfig(versionAlias) || getVersionConfig(genshareConfig.defaultVersion);
-  
+
   const baseHeaders = [
     "Request ID",
-    "Snapshot API Version", 
+    "Snapshot API Version",
     "GenShare Version",
     "Error",
     "Date",
-    "Time", 
+    "Time",
     "Duration",
     "User ID",
     "Filename",
     "Report Version",
     "Report URL",
-    "Graph Value"
+    "Graph Value",
+    "Article ID"
   ];
-  
-  // Add response mapping headers
+
+  // Add getResponse field headers
   const responseHeaders = Object.keys(versionConfig.responseMapping?.getResponse || {});
-  const pathHeaders = versionConfig.responseMapping?.getPath || [];
-  
-  return baseHeaders.concat(responseHeaders).concat(pathHeaders);
+
+  return baseHeaders.concat(responseHeaders);
 };
 
 /**
@@ -472,6 +473,7 @@ const buildUserLogRowData = (options) => {
   const {
     requestId,
     date,
+    duration = 0,
     filename = "N/A",
     genshareVersion = "",
     reportVersion = "",
@@ -486,6 +488,7 @@ const buildUserLogRowData = (options) => {
     requestId,                                   // Request ID
     convertToGoogleSheetsDate(date),             // Date
     convertToGoogleSheetsTime(date),             // Time
+    convertToGoogleSheetsDuration(duration),     // Duration
     filename,                                    // PDF filename
     genshareVersion,                             // GenShare version
     reportVersion,                               // Report version
@@ -518,6 +521,7 @@ const getUserLogHeaders = (filteredData = []) => {
     "Request ID",
     "Date",
     "Time",
+    "Duration",
     "Filename",
     "GenShare Version",
     "Report Version",
@@ -559,10 +563,14 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersionAlia
     // Current date
     const now = new Date();
 
+    // Build s3-manager request URL for the hyperlink
+    const s3ManagerUrl = (instanceConfig.s3ManagerUrl || '').replace(/\/+$/, '');
+    const requestUrl = s3ManagerUrl ? `${s3ManagerUrl}/request/${session.requestId}` : null;
+
     // Build the row data using the centralized function
     const rowData = buildSummaryRowData({
       requestId: session.requestId,
-      s3Url: session.url,
+      s3Url: requestUrl,
       snapshotAPIVersion: session.getSnapshotAPIVersion(),
       genshareVersion: session.getGenshareVersion() || getActualVersion(genshareVersionAlias),  // Version returned by genshare (stored in session)
       genshareVersionAlias,  // Alias for config lookups
@@ -575,13 +583,15 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersionAlia
       reportURL: reportURL || "",
       graphValue: graphValue || "",
       articleId: articleId || "",
-      responseData: genshareResponse?.data?.response,
-      pathData: genshareResponse?.data?.path
+      responseData: genshareResponse?.data?.response
     });
 
-    // Log to Google Sheets for this specific version (use alias for config lookup)
-    await appendToSheet(rowData, genshareVersionAlias);
+    // Log to Google Sheets using the actual version label for the tab name
+    const versionLabel = session.getGenshareVersion() || getActualVersion(genshareVersionAlias);
+    const headers = getSummaryHeaders(genshareVersionAlias);
+    await appendToSheet(rowData, versionLabel, headers);
 
+    session.loggedToSummary = true;
     session.addLog('Logged to Google Sheets successfully');
   } catch (sheetsError) {
     session.addLog(`Error logging to Google Sheets: ${sheetsError.message}`);
@@ -593,7 +603,7 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersionAlia
  * Logs filtered response data to user-specific Google Sheets
  * @param {Object} options - Options containing session, user, and filtered data
  * @param {Object} options.session - Processing session for logging
- * @param {Object} options.user - User object with googleSheets configuration
+ * @param {string} options.userId - User ID to look up in logsConfig.users
  * @param {Array} options.filteredData - Filtered response data array
  * @param {string} options.reportURL - Report URL (optional)
  * @param {string} options.filename - Original filename
@@ -602,19 +612,11 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersionAlia
  * @param {string} options.graphValue - Graph/editorial policy value
  * @returns {Promise<void>}
  */
-const appendToUserLog = async ({ session, user, filteredData, reportURL, filename, genshareVersionAlias, reportVersion, graphValue, articleId }) => {
+const appendToUserLog = async ({ session, userId, filteredData, reportURL, filename, genshareVersionAlias, reportVersion, graphValue, articleId }) => {
   try {
-    // Check if user has Google Sheets logging enabled
-    if (!user.googleSheets || !user.googleSheets.enabled) {
-      session.addLog('[User Sheets] User Google Sheets logging is disabled or not configured');
-      return;
-    }
-
-    const userSheetConfig = user.googleSheets;
-
-    // Validate configuration
-    if (!userSheetConfig.spreadsheetId || !userSheetConfig.sheetName) {
-      session.addLog('[User Sheets] Invalid user Google Sheets configuration: missing spreadsheetId or sheetName');
+    // Check if user has an entry in logsConfig.users (spreadsheetId will be auto-created if missing)
+    if (!logsConfig.users?.[userId]) {
+      session.addLog('[User Sheets] User Google Sheets logging is not configured in logsConfig');
       return;
     }
 
@@ -625,6 +627,7 @@ const appendToUserLog = async ({ session, user, filteredData, reportURL, filenam
     const rowData = buildUserLogRowData({
       requestId: session.requestId,
       date: now,
+      duration: session.getDuration(),
       filename: filename || "N/A",
       genshareVersion: session.getGenshareVersion() || getActualVersion(genshareVersionAlias),  // Version returned by genshare (stored in session)
       reportVersion: reportVersion || "",
@@ -635,9 +638,10 @@ const appendToUserLog = async ({ session, user, filteredData, reportURL, filenam
     });
 
     // Append to user's Google Sheet
-    await appendToUserSheet(rowData, userSheetConfig);
+    const headers = getUserLogHeaders(filteredData);
+    await appendToUserSheet(rowData, userId, headers);
 
-    session.addLog(`[User Sheets] Logged to user Google Sheet successfully (${userSheetConfig.spreadsheetId})`);
+    session.addLog(`[User Sheets] Logged to user Google Sheet successfully (${logsConfig.users[userId]?.spreadsheetId})`);
   } catch (sheetsError) {
     session.addLog(`[User Sheets] Error logging to user Google Sheet: ${sheetsError.message}`);
     console.error(`[${session.requestId}] Error logging to user Google Sheet:`, sheetsError);
@@ -715,6 +719,7 @@ const getGenShareHealth = async (user, requestedVersion) => {
  * @returns {Promise<Object>} - Processing result
  */
 const processPDF = async (data, session, shouldLogToSummary = true) => {
+  try {
   // Get the user's full information
   const user = getUserById(data.user.id);
   
@@ -889,8 +894,12 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
 
   session.setGenshareRequest(genshareRequestData);
 
+  const genshareCallStart = new Date();
+
+  // Record Snapshot API pre-GenShare processing time (always, even if GenShare fails)
+  session.addTimelineEvent('snapshot-api-pre', session.startTime, genshareCallStart);
+
   try {
-    const genshareCallStart = new Date();
     const response = await axios({
       method: processPDFConfig.method,
       url: processPDFConfig.url,
@@ -903,9 +912,6 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
       maxBodyLength: Infinity
     });
     const genshareCallEnd = new Date();
-
-    // Record Snapshot API pre-GenShare processing time
-    session.addTimelineEvent('snapshot-api-pre', session.startTime, genshareCallStart);
 
     // Record GenShare round-trip as meta event (not shown in chart, used for stats)
     session.timeline.push({
@@ -1006,19 +1012,19 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
     })[0]?.value;
 
     if (!articleId) {
-      session.addLog('[DB] Error: "article_id" not found. Link "article_id <-> request_id" not created.');
-      console.error(`[${session.requestId}] Error: "article_id" not found. Link "article_id <-> request_id" not created.`);
+      session.addLog('[DB] Warning: "article_id" not found in response. Storing request with empty article_id.');
+      console.warn(`[${session.requestId}] Warning: "article_id" not found. Storing request with empty article_id.`);
     } else {
-      // Add the link between the "article_id" and the "request_id" with report data if available
       session.addLog('[DB] Link "article_id <-> request_id" created');
-      if (session.report) {
-        // Add request with report data
-        await requestsManager.addOrUpdateRequestWithReport(user.id, articleId, session.requestId, session.report);
-        session.addLog('[DB] Report data saved to database');
-      } else {
-        // Add request without report data (will be updated later if needed)
-        await requestsManager.addOrUpdateRequest(user.id, articleId, session.requestId);
-      }
+    }
+
+    // Always store the request in DB (with or without article_id)
+    const dbArticleId = articleId || '';
+    if (session.report) {
+      await requestsManager.addOrUpdateRequestWithReport(user.id, dbArticleId, session.requestId, session.report);
+      session.addLog('[DB] Report data saved to database');
+    } else {
+      await requestsManager.addOrUpdateRequest(user.id, dbArticleId, session.requestId);
     }
 
     // Validate action_required field
@@ -1096,7 +1102,7 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
     try {
       await appendToUserLog({
         session,
-        user,
+        userId: user.id,
         filteredData: finalData,
         reportURL,
         filename: data.file?.originalname,
@@ -1140,6 +1146,28 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
       activeReportVersion       // Add this for caller to use
     };
   } catch (error) {
+    const genshareCallEnd = new Date();
+
+    // Record GenShare call duration even on failure
+    session.timeline.push({
+      id: 'genshare-call',
+      start: genshareCallStart.toISOString(),
+      end: genshareCallEnd.toISOString(),
+      duration_ms: genshareCallEnd - genshareCallStart,
+      source: 'snapshot-api',
+      type: 'meta'
+    });
+
+    // Merge genshare timeline events from error response if available
+    if (error.response?.data?.timeline && Array.isArray(error.response.data.timeline)) {
+      error.response.data.timeline.forEach(event => {
+        session.timeline.push({ ...event, source: event.source || 'genshare' });
+      });
+    }
+
+    // Record post-GenShare processing time
+    session.addTimelineEvent('snapshot-api-post', genshareCallEnd, new Date());
+
     // Set error status based on the type of error
     if (error.response) {
       errorStatus = `GenShare Error (HTTP ${error.response.status})`;
@@ -1150,6 +1178,16 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
     // Log error
     session.addLog(`Error processing request: ${error.message}`);
     session.addLog(`Stack: ${error.stack}`);
+
+    // Store failed request in DB so it appears in s3-manager logs
+    try {
+      const errorArticleId = data.options?.article_id || '';
+      await requestsManager.addOrUpdateRequest(user.id, errorArticleId, session.requestId);
+      session.addLog('[DB] Failed request stored in database');
+    } catch (dbError) {
+      session.addLog(`[DB] Error storing failed request: ${dbError.message}`);
+      console.error(`[${session.requestId}] Error storing failed request in DB:`, dbError);
+    }
 
     // Log to summary sheet even in case of error ONLY if shouldLogToSummary is true
     if (shouldLogToSummary) {
@@ -1171,6 +1209,11 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
     }
 
     // Re-throw the original error
+    throw error;
+  }
+  } catch (error) {
+    // Fire-and-forget email alert for all genshare errors
+    emailAlertManager.notifyGenshareError({ session, error, userId: data.user.id });
     throw error;
   }
 };

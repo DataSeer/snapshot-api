@@ -622,7 +622,7 @@ const processScholaroneSubmissionJob = async (job) => {
           file: mainFile,
           user: { id: data.userId }
         },
-        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
+        genshareVersionAlias: genshareResult?.activeGenShareVersion || genshareConfig.defaultVersion,
         reportURL,
         graphValue,
         reportVersion,
@@ -632,7 +632,25 @@ const processScholaroneSubmissionJob = async (job) => {
       session.addLog(`Error logging to summary: ${summaryError.message}`);
       console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
     }
-    
+
+    // Log to user-specific Google Sheet - SUCCESS case
+    try {
+      await genshareManager.appendToUserLog({
+        session,
+        userId: data.userId,
+        filteredData: genshareResult ? genshareResult.data : [],
+        reportURL,
+        filename: mainFile ? mainFile.originalname : 'N/A',
+        genshareVersionAlias: genshareResult?.activeGenShareVersion || genshareConfig.defaultVersion,
+        reportVersion,
+        graphValue,
+        articleId: genshareOptions.article_id
+      });
+    } catch (userLogError) {
+      session.addLog(`[ScholarOne] Error logging to user Google Sheet: ${userLogError.message}`);
+      console.error(`[${job.request_id}] Error logging to user Google Sheet:`, userLogError);
+    }
+
     // ===== CLEAN UP AFTER EVERYTHING IS DONE =====
     session.addLog(`[Job] Cleaning up ${tempFilePaths.length} temporary file(s)`);
     for (const filePath of tempFilePaths) {
@@ -677,7 +695,7 @@ const processScholaroneSubmissionJob = async (job) => {
           file: mainFile,
           user: { id: data.userId }
         },
-        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
+        genshareVersionAlias: genshareConfig.defaultVersion,
         reportURL,
         graphValue,
         reportVersion,
@@ -686,6 +704,24 @@ const processScholaroneSubmissionJob = async (job) => {
     } catch (summaryError) {
       session.addLog(`Error logging to summary: ${summaryError.message}`);
       console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
+    }
+
+    // Log to user-specific Google Sheet - ERROR case
+    try {
+      await genshareManager.appendToUserLog({
+        session,
+        userId: data.userId,
+        filteredData: [],
+        reportURL,
+        filename: mainFile ? mainFile.originalname : 'N/A',
+        genshareVersionAlias: genshareConfig.defaultVersion,
+        reportVersion,
+        graphValue,
+        articleId: data.submissionId || ""
+      });
+    } catch (userLogError) {
+      session.addLog(`[ScholarOne] Error logging to user Google Sheet: ${userLogError.message}`);
+      console.error(`[${job.request_id}] Error logging to user Google Sheet:`, userLogError);
     }
     
     // ===== CLEAN UP AFTER EVERYTHING IS DONE (even on error) =====

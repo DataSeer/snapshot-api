@@ -260,6 +260,13 @@
         "blocked": []
       }
     },
+    "/snapshot-s3-manager/requests": {
+      "GET": {
+        "description": "Search requests for s3-manager sync",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
     "/snapshot-s3-manager/reports": {
       "GET": {
         "description": "Get all report URLs (proxy to snapshot-reports)",
@@ -277,6 +284,32 @@
     "/snapshot-s3-manager/reports/:reportId/kind": {
       "PATCH": {
         "description": "Update report kind (proxy to snapshot-reports)",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/logs/rebuild-admin": {
+      "POST": {
+        "description": "Rebuild admin Google Sheets logs",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/logs/rebuild-user": {
+      "POST": {
+        "description": "Rebuild user Google Sheets logs",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/email-alerts": {
+      "GET": {
+        "description": "Get email alerts configuration",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      },
+      "PATCH": {
+        "description": "Update email alerts configuration",
         "allowed": ["admin", "snapshot-s3-manager"],
         "blocked": []
       }

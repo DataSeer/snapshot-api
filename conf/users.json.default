@@ -48,7 +48,8 @@
     "googleSheets": {
       "enabled": true,
       "spreadsheetId": "your_spreadsheet_id_here",
-      "sheetName": "SnapShot Response"
+      "templateSheetName": "Template",
+      "folderId": "your-google-drive-folder-id"
     },
     "genshare": {
       "authorizedVersions": [

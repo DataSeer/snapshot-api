@@ -19,5 +19,9 @@ module.exports = {
   snapshotMailsConfigPath: path.join(__dirname, '../conf/snapshotMails.json'),
   queueManagerConfigPath: path.join(__dirname, '../conf/queueManager.json'),
   awsS3ConfigPath: path.join(__dirname, `../conf/aws.s3${testSuffix('aws.s3')}`),
-  googleSheetsCredentialsPath: path.join(__dirname, '../conf/googleSheets.credentials.json')
+  instanceConfigPath: path.join(__dirname, '../conf/instance.json'),
+  googleSheetsCredentialsPath: path.join(__dirname, '../conf/googleSheets.credentials.json'),
+  googleSheetsLogsConfigPath: path.join(__dirname, '../conf/googleSheets.logs.json'),
+  emailAlertsConfigPath: path.join(__dirname, '../conf/emailAlerts.json'),
+  smtpConfigPath: path.join(__dirname, '../conf/smtp.json')
 };

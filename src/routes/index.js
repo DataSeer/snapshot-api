@@ -47,13 +47,22 @@ const {
   updateUserComplete,
   updateUserGenshare,
   updateUserReports,
+  getInstanceConfig,
+  updateInstanceConfig,
   getGenshareVersions,
   getGenshareVersion,
   updateGenshareVersion,
   setDefaultGenshareVersion,
   getReports,
   getReportKinds,
-  updateReportKind
+  updateReportKind,
+  getRequests,
+  getEmailAlertsConfig,
+  updateEmailAlertsConfig,
+  getGoogleSheetsLogsConfig,
+  rebuildAdminLogs,
+  rebuildUserLogs,
+  rebuildAllLogs
 } = require('../controllers/snapshotS3ManagerController');
 const { authenticateToken } = require('../middleware/auth');
 const { checkPermissions } = require('../middleware/permissions');
@@ -191,11 +200,28 @@ authenticatedRouter.put('/snapshot-s3-manager/users/:userId', updateUserComplete
 authenticatedRouter.patch('/snapshot-s3-manager/users/:userId/genshare', updateUserGenshare);
 authenticatedRouter.patch('/snapshot-s3-manager/users/:userId/reports', updateUserReports);
 
+// Instance configuration
+authenticatedRouter.get('/snapshot-s3-manager/instance', getInstanceConfig);
+authenticatedRouter.patch('/snapshot-s3-manager/instance', updateInstanceConfig);
+
 // Genshare versions management
 authenticatedRouter.get('/snapshot-s3-manager/genshare/versions', getGenshareVersions);
 authenticatedRouter.get('/snapshot-s3-manager/genshare/versions/:alias', getGenshareVersion);
 authenticatedRouter.patch('/snapshot-s3-manager/genshare/versions/:alias', updateGenshareVersion);
 authenticatedRouter.put('/snapshot-s3-manager/genshare/default', setDefaultGenshareVersion);
+
+// Requests search (for s3-manager sync)
+authenticatedRouter.get('/snapshot-s3-manager/requests', getRequests);
+
+// Email alerts management
+authenticatedRouter.get('/snapshot-s3-manager/email-alerts', getEmailAlertsConfig);
+authenticatedRouter.patch('/snapshot-s3-manager/email-alerts', updateEmailAlertsConfig);
+
+// Logs management endpoints
+authenticatedRouter.get('/snapshot-s3-manager/logs/config', getGoogleSheetsLogsConfig);
+authenticatedRouter.post('/snapshot-s3-manager/logs/rebuild-all', rebuildAllLogs);
+authenticatedRouter.post('/snapshot-s3-manager/logs/rebuild-admin', rebuildAdminLogs);
+authenticatedRouter.post('/snapshot-s3-manager/logs/rebuild-user', rebuildUserLogs);
 
 // Reports management (proxy to snapshot-reports)
 authenticatedRouter.get('/snapshot-s3-manager/reports', getReports);

@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "recipients": ["team@example.com"],
+  "watchedUsers": [],
+  "watchAll": false
+}
