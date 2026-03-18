@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.13.0](https://github.com/DataSeer/snapshot-api/compare/v3.12.0...v3.13.0) (2026-03-18)
+
+
+### Features
+
+* improve logging system ([a8a04ba](https://github.com/DataSeer/snapshot-api/commits/a8a04ba9ab11e3949d66d0e36da8b35e79ae43a5))
+
+
+### Bug Fixes
+
+* fix docker issue ([569fef4](https://github.com/DataSeer/snapshot-api/commits/569fef47f65b74e38c2cd2cee86a2783152ac60f))
+* manage missing item.value in genshare data ([b9c218c](https://github.com/DataSeer/snapshot-api/commits/b9c218ca3f99beb8641392b60e7c74645cf82a54))
+
 ## [3.12.0](https://github.com/DataSeer/snapshot-api/compare/v3.11.0...v3.12.0) (2026-03-09)
 
 
