@@ -8,8 +8,9 @@ const config = require('../config');
 const queueManager = require('./queueManager');
 const { ProcessingSession } = require('./s3Storage');
 
-// Load the genshare configuration
-const genshareConfig = require(config.genshareConfigPath);
+// Load the genshare configuration (auto-reloads on file change)
+const { watchConfig } = require('./configWatcher');
+const genshareConfig = watchConfig(config.genshareConfigPath);
 const snapshotMailsConfig = require(config.snapshotMailsConfigPath);
 
 /**
@@ -298,7 +299,7 @@ const processMailSubmissionJob = async (job) => {
           file: data.pdfFile,
           user: { id: data.user_id }
         },
-        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
+        genshareVersionAlias: genshareResult?.activeGenShareVersion || genshareConfig.defaultVersion,
         reportURL,
         graphValue,
         reportVersion,
@@ -308,7 +309,25 @@ const processMailSubmissionJob = async (job) => {
       session.addLog(`Error logging to summary: ${summaryError.message}`);
       console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
     }
-    
+
+    // Log to user-specific Google Sheet - SUCCESS case
+    try {
+      await genshareManager.appendToUserLog({
+        session,
+        userId: data.user_id,
+        filteredData: genshareResult ? genshareResult.data : [],
+        reportURL,
+        filename: data.pdfFile ? data.pdfFile.originalname : 'N/A',
+        genshareVersionAlias: genshareResult?.activeGenShareVersion || genshareConfig.defaultVersion,
+        reportVersion,
+        graphValue,
+        articleId: data.keywords?.article_id || ""
+      });
+    } catch (userLogError) {
+      session.addLog(`[Mails] Error logging to user Google Sheet: ${userLogError.message}`);
+      console.error(`[${job.request_id}] Error logging to user Google Sheet:`, userLogError);
+    }
+
     // NOTE: Notification will be sent in the completion callback
     // after the job is marked as completed in the database
     
@@ -351,7 +370,7 @@ const processMailSubmissionJob = async (job) => {
           file: data.pdfFile,
           user: { id: data.user_id }
         },
-        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
+        genshareVersionAlias: genshareConfig.defaultVersion,
         reportURL,
         graphValue,
         reportVersion,
@@ -361,7 +380,25 @@ const processMailSubmissionJob = async (job) => {
       session.addLog(`Error logging to summary: ${summaryError.message}`);
       console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
     }
-    
+
+    // Log to user-specific Google Sheet - ERROR case
+    try {
+      await genshareManager.appendToUserLog({
+        session,
+        userId: data.user_id,
+        filteredData: [],
+        reportURL,
+        filename: data.pdfFile ? data.pdfFile.originalname : 'N/A',
+        genshareVersionAlias: genshareConfig.defaultVersion,
+        reportVersion,
+        graphValue,
+        articleId: data.keywords?.article_id || ""
+      });
+    } catch (userLogError) {
+      session.addLog(`[Mails] Error logging to user Google Sheet: ${userLogError.message}`);
+      console.error(`[${job.request_id}] Error logging to user Google Sheet:`, userLogError);
+    }
+
     try {
       // Save session data with error information
       await session.saveToS3();

@@ -2,6 +2,9 @@
 const scholaroneManager = require('../utils/scholaroneManager');
 const genshareManager = require('../utils/genshareManager');
 const { ProcessingSession } = require('../utils/s3Storage');
+const config = require('../config');
+const { watchConfig } = require('../utils/configWatcher');
+const genshareConfig = watchConfig(config.genshareConfigPath);
 
 /**
  * Handle POST /scholarone/submissions
@@ -94,26 +97,24 @@ module.exports.postSubmissions = async (req, res) => {
       error_message: error.message
     });
     
-    // Append error to summary (Google Sheets logging)
-    try {
-      await genshareManager.appendToSummary({
-        session,
-        errorStatus: error.message,
-        data: {
-          file: { originalname: req.body.submission_id },
-          user: { id: req.user.id }
-        },
-        genshareVersion: session.getGenshareVersion() || null,
-        reportURL: "",
-        graphValue: "",
-        reportVersion: "",
-        articleId: req.body.submission_id || ""
-      });
-    } catch (appendError) {
-      session.addLog(`Error appending to summary: ${appendError.message}`);
-      console.error(`[${session.requestId}] Error appending to summary:`, appendError);
+    // Log to Google Sheets if the manager job processor didn't already log (pre-processing errors)
+    if (!session.loggedToSummary) {
+      try {
+        await genshareManager.appendToSummary({
+          session,
+          errorStatus: error.message,
+          data: { file: { originalname: req.body.submission_id || 'N/A' }, user: { id: req.user.id } },
+          genshareVersionAlias: genshareConfig.defaultVersion,
+          reportURL: '',
+          graphValue: '',
+          reportVersion: '',
+          articleId: req.body.submission_id || ''
+        });
+      } catch (appendError) {
+        session.addLog(`Error appending to summary: ${appendError.message}`);
+      }
     }
-    
+
     try {
       // Save session data with error information
       await session.saveToS3();

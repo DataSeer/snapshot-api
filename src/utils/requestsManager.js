@@ -26,10 +26,11 @@ const refreshRequestsFromS3 = async () => {
     const requestsFiles = await getAllGenshareRequestsFiles();
     console.log(`Total S3 options files retrieved: ${requestsFiles.length}`);
     
-    // Count how many have valid article_id
-    const validFiles = requestsFiles.filter(file => file.content && file.content.article_id);
-    console.log(`Files with valid article_id: ${validFiles.length}`);
-    
+    // Filter to files with valid content
+    const validFiles = requestsFiles.filter(file => file.content);
+    const withArticleId = validFiles.filter(file => file.content.article_id);
+    console.log(`Files with valid content: ${validFiles.length} (${withArticleId.length} with article_id)`);
+
     // Check for duplicate request_ids
     const requestIds = validFiles.map(file => file.requestId);
     const uniqueRequestIds = new Set(requestIds);
@@ -43,20 +44,20 @@ const refreshRequestsFromS3 = async () => {
       console.log(`First few duplicate IDs: ${uniqueDuplicateIds.slice(0, 5).join(', ')}`);
     }
 
-    // Process each file
+    // Process each file (including those without article_id)
     let insertedCount = 0;
     let errorCount = 0;
     let reportUpdatedCount = 0;
     let reportErrorCount = 0;
-    
+
     for (const file of requestsFiles) {
-      if (file.content && file.content.article_id) {
+      if (file.content) {
         try {
           // Format the date for record
           const formattedDate = file.lastModified instanceof Date
             ? file.lastModified.toISOString().replace('T', ' ').split('.')[0]
             : new Date(file.lastModified).toISOString().replace('T', ' ').split('.')[0];
-          
+
           // Try to get report data from S3
           let reportData = null;
           try {
@@ -67,16 +68,17 @@ const refreshRequestsFromS3 = async () => {
           } catch (reportError) {
             reportErrorCount++;
           }
-          
+
           // Add/update request with report data if available
+          // Use empty string for missing article_id
           await dbManager.addOrUpdateRequest(
-            file.userId, 
-            file.content.article_id, 
+            file.userId,
+            file.content.article_id || '',
             file.requestId,
-            reportData, // Include report data if available
+            reportData,
             formattedDate
           );
-          
+
           insertedCount++;
         } catch (error) {
           console.error(`Exception processing file ${file.requestId}:`, error);
@@ -84,7 +86,7 @@ const refreshRequestsFromS3 = async () => {
         }
       }
     }
-    
+
     console.log(`S3 refresh complete: ${insertedCount} processed, ${reportUpdatedCount} reports found, ${reportErrorCount} reports missing, ${errorCount} errors`);
     
     return true;

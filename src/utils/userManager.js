@@ -1,14 +1,17 @@
 // File: src/utils/userManager.js
 const fs = require('fs');
 const config = require('../config');
+const { watchConfig } = require('./configWatcher');
+
+// Watch users config (auto-reloads on file change)
+const usersConfig = watchConfig(config.usersPath);
 
 /**
  * Get all users from the configuration
  * @returns {Object} Object containing all users with their configurations
  */
 const getAllUsers = () => {
-  const users = JSON.parse(fs.readFileSync(config.usersPath, 'utf8'));
-  return users;
+  return usersConfig;
 };
 
 /**
@@ -17,13 +20,11 @@ const getAllUsers = () => {
  * @returns {Object} User object with user data
  */
 const getUserById = (userId) => {
-  const users = JSON.parse(fs.readFileSync(config.usersPath, 'utf8'));
-  
-  if (!users[userId]) {
+  if (!usersConfig[userId]) {
     throw new Error(`User ${userId} not found`);
   }
-  
-  return { id: userId, ...users[userId] };
+
+  return { id: userId, ...usersConfig[userId] };
 };
 
 /**
@@ -32,14 +33,16 @@ const getUserById = (userId) => {
  * @param {Object} userData - The user data to update
  */
 const updateUser = (userId, userData) => {
+  // Read fresh from disk for write operations to avoid race conditions
   const users = JSON.parse(fs.readFileSync(config.usersPath, 'utf8'));
-  
+
   if (!users[userId]) {
     throw new Error(`User ${userId} not found`);
   }
-  
+
   users[userId] = { ...users[userId], ...userData };
   fs.writeFileSync(config.usersPath, JSON.stringify(users, null, 2));
+  // The watcher will automatically pick up the change
 };
 
 /**

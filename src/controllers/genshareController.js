@@ -4,6 +4,9 @@ const genshareManager = require('../utils/genshareManager');
 const queueManager = require('../utils/queueManager');
 const { ProcessingSession } = require('../utils/s3Storage');
 const { getUserById, isAdmin } = require('../utils/userManager');
+const config = require('../config');
+const { watchConfig } = require('../utils/configWatcher');
+const genshareConfig = watchConfig(config.genshareConfigPath);
 
 /**
  * Add editorial_policy to options based on article_id prefix for specific users
@@ -211,36 +214,32 @@ module.exports.processPDF = async (req, res) => {
     session.addLog(`Error processing request: ${error.message}`);
     session.addLog(`Stack: ${error.stack}`);
 
-    // Append error to summary (Google Sheets logging)
-    try {
-      // Parse options to get article_id if available
-      let parsedOptions = {};
-      if (req.body.options) {
-        try {
-          parsedOptions = typeof req.body.options === 'string' 
-            ? JSON.parse(req.body.options) 
-            : req.body.options;
-        } catch (parseError) {
-          parsedOptions = {};
+    // Log to Google Sheets if processPDF didn't already log (pre-processing errors)
+    if (!session.loggedToSummary) {
+      try {
+        let parsedOptions = {};
+        if (req.body.options) {
+          try {
+            parsedOptions = typeof req.body.options === 'string'
+              ? JSON.parse(req.body.options)
+              : req.body.options;
+          } catch { parsedOptions = {}; }
         }
+        const user = getUserById(req.user.id);
+        const versionAlias = user.genshare?.defaultVersion || genshareConfig.defaultVersion;
+        await genshareManager.appendToSummary({
+          session,
+          errorStatus: error.message,
+          data: { file: req.files?.file?.[0] || { originalname: 'N/A' }, user: { id: req.user.id } },
+          genshareVersionAlias: versionAlias,
+          reportURL: '',
+          graphValue: parsedOptions.editorial_policy || '',
+          reportVersion: '',
+          articleId: parsedOptions.article_id || ''
+        });
+      } catch (appendError) {
+        session.addLog(`Error appending to summary: ${appendError.message}`);
       }
-      
-      await genshareManager.appendToSummary({
-        session,
-        errorStatus: error.message,
-        data: {
-          file: { originalname: "N/A" },
-          user: { id: req.user.id }
-        },
-        genshareVersion: session.getGenshareVersion() || null,
-        reportURL: "",
-        graphValue: parsedOptions.editorial_policy || "",
-        reportVersion: "",
-        articleId: parsedOptions.article_id || ""
-      });
-    } catch (appendError) {
-      session.addLog(`Error appending to summary: ${appendError.message}`);
-      console.error(`[${session.requestId}] Error appending to summary:`, appendError);
     }
 
     try {

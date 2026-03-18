@@ -536,6 +536,80 @@ const addOrUpdateRequest = async (userName, articleId, requestId, reportData = n
 };
 
 /**
+ * Search requests with flexible filters (for snapshot-s3-manager)
+ * @param {Object} filters - Search filters
+ * @param {string} [filters.since] - ISO timestamp to filter requests created after
+ * @param {string} [filters.request_id] - Filter by request_id (exact match)
+ * @param {string} [filters.article_id] - Filter by article_id (partial match)
+ * @param {string} [filters.user_name] - Filter by user_name (exact match)
+ * @param {number} [filters.limit] - Max results (default 500)
+ * @param {number} [filters.offset] - Offset for pagination (default 0)
+ * @returns {Promise<Object>} - { requests: Array, total: number }
+ */
+const searchRequestsFiltered = async (filters = {}) => {
+  try {
+    const db = await getDBConnection();
+    const { since, request_id, article_id, user_name, limit = 500, offset = 0 } = filters;
+
+    let whereClauses = [];
+    let params = [];
+
+    if (since) {
+      whereClauses.push('created_at > ?');
+      params.push(since);
+    }
+    if (request_id) {
+      whereClauses.push('request_id = ?');
+      params.push(request_id);
+    }
+    if (article_id) {
+      whereClauses.push('article_id LIKE ?');
+      params.push(`%${article_id}%`);
+    }
+    if (user_name) {
+      whereClauses.push('user_name = ?');
+      params.push(user_name);
+    }
+
+    const whereSQL = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    // Get total count
+    const total = await new Promise((resolve, reject) => {
+      db.get(`SELECT COUNT(*) as count FROM requests ${whereSQL}`, params, (err, row) => {
+        if (err) reject(err);
+        else resolve(row.count);
+      });
+    });
+
+    // Get results
+    const requests = await new Promise((resolve, reject) => {
+      db.all(
+        `SELECT request_id, user_name, article_id, created_at, updated_at
+         FROM requests ${whereSQL}
+         ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+        [...params, limit, offset],
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
+        }
+      );
+    });
+
+    await new Promise((resolve, reject) => {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    return { requests, total };
+  } catch (error) {
+    console.error('Error searching requests:', error);
+    throw error;
+  }
+};
+
+/**
  * Update report data for a request
  * @param {string} requestId - The request ID
  * @param {Object} reportData - The report data
@@ -2227,6 +2301,7 @@ module.exports = {
   
   // Request and report management methods (existing user-specific)
   addOrUpdateRequest,
+  searchRequestsFiltered,
   updateRequestReportData,
   getRequestWithReportData,
   getRequestsWithReportDataByArticleId,
