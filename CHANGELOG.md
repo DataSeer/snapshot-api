@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.13.1](https://github.com/DataSeer/snapshot-api/compare/v3.13.0...v3.13.1) (2026-03-18)
+
+
+### Bug Fixes
+
+* fix User Logs system ([6ed3274](https://github.com/DataSeer/snapshot-api/commits/6ed32743c79e79046fce2e8b5a40c486f12bccb0))
+
 ## [3.13.0](https://github.com/DataSeer/snapshot-api/compare/v3.12.0...v3.13.0) (2026-03-18)
 
 
