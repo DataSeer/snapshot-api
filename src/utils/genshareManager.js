@@ -165,8 +165,10 @@ const getResponse = (response = [], versionAlias) => {
     }
     
     if (typeof index === "number") {
-      // item.value can be an Array, Google Sheets require string
-      if (Array.isArray(item.value)) {
+      // item.value can be an Array, undefined, or null — Google Sheets requires string
+      if (item.value == null) {
+        result[index] = "";
+      } else if (Array.isArray(item.value)) {
         result[index] = item.value.join("\n");
       } else {
         result[index] = item.value.toString();
@@ -502,7 +504,7 @@ const buildUserLogRowData = (options) => {
     for (const item of filteredData) {
       if (item && item.name !== undefined && item.value !== undefined) {
         // Convert array values to string
-        const value = typeof item.value === "string" ? item.value.toString() : JSON.stringify(item.value, null, 2);
+        const value = item.value == null ? "" : (typeof item.value === "string" ? item.value : JSON.stringify(item.value, null, 2));
         rowData.push(value);
       }
     }
