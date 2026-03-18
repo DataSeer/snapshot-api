@@ -8,9 +8,6 @@ const config = require('../config');
 const queueManager = require('./queueManager');
 const { ProcessingSession } = require('./s3Storage');
 
-// Load the genshare configuration (auto-reloads on file change)
-const { watchConfig } = require('./configWatcher');
-const genshareConfig = watchConfig(config.genshareConfigPath);
 const snapshotMailsConfig = require(config.snapshotMailsConfigPath);
 
 /**
@@ -203,9 +200,6 @@ const processMailSubmissionJob = async (job) => {
   
   // Variables for summary logging
   let errorStatus = "No";
-  let reportURL = "";
-  let graphValue = "";
-  let reportVersion = "";
   
   try {
     // Set origin as external service (snapshot-mails)
@@ -262,13 +256,8 @@ const processMailSubmissionJob = async (job) => {
       
       try {
         // Process the PDF with GenShare - DON'T log to summary here (pass false)
-        genshareResult = await genshareManager.processPDF(genshareData, session, false);
+        genshareResult = await genshareManager.processPDF(genshareData, session);
         session.addLog(`GenShare processing completed with status: ${genshareResult.status}`);
-        
-        // Extract values from GenShare result for summary
-        reportURL = genshareResult.reportURL || "";
-        graphValue = genshareResult.activeGenShareGraphValue || "";
-        reportVersion = genshareResult.activeReportVersion || "";
         
       } catch (genshareError) {
         session.addLog(`Error processing with GenShare: ${genshareError.message}`);
@@ -290,43 +279,7 @@ const processMailSubmissionJob = async (job) => {
       }
     }
     
-    // Log to summary sheet ONCE at the end - SUCCESS case
-    try {
-      await genshareManager.appendToSummary({
-        session,
-        errorStatus,
-        data: {
-          file: data.pdfFile,
-          user: { id: data.user_id }
-        },
-        genshareVersionAlias: genshareResult?.activeGenShareVersion || genshareConfig.defaultVersion,
-        reportURL,
-        graphValue,
-        reportVersion,
-        articleId: data.keywords?.article_id || ""
-      });
-    } catch (summaryError) {
-      session.addLog(`Error logging to summary: ${summaryError.message}`);
-      console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
-    }
-
-    // Log to user-specific Google Sheet - SUCCESS case
-    try {
-      await genshareManager.appendToUserLog({
-        session,
-        userId: data.user_id,
-        filteredData: genshareResult ? genshareResult.data : [],
-        reportURL,
-        filename: data.pdfFile ? data.pdfFile.originalname : 'N/A',
-        genshareVersionAlias: genshareResult?.activeGenShareVersion || genshareConfig.defaultVersion,
-        reportVersion,
-        graphValue,
-        articleId: data.keywords?.article_id || ""
-      });
-    } catch (userLogError) {
-      session.addLog(`[Mails] Error logging to user Google Sheet: ${userLogError.message}`);
-      console.error(`[${job.request_id}] Error logging to user Google Sheet:`, userLogError);
-    }
+    // Note: Genshare summary + user logging is handled by processPDF
 
     // NOTE: Notification will be sent in the completion callback
     // after the job is marked as completed in the database
@@ -361,43 +314,7 @@ const processMailSubmissionJob = async (job) => {
       errorStatus = `Job Error: ${error.message}`;
     }
     
-    // Log to summary sheet ONCE at the end - ERROR case
-    try {
-      await genshareManager.appendToSummary({
-        session,
-        errorStatus,
-        data: {
-          file: data.pdfFile,
-          user: { id: data.user_id }
-        },
-        genshareVersionAlias: genshareConfig.defaultVersion,
-        reportURL,
-        graphValue,
-        reportVersion,
-        articleId: data.keywords?.article_id || ""
-      });
-    } catch (summaryError) {
-      session.addLog(`Error logging to summary: ${summaryError.message}`);
-      console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
-    }
-
-    // Log to user-specific Google Sheet - ERROR case
-    try {
-      await genshareManager.appendToUserLog({
-        session,
-        userId: data.user_id,
-        filteredData: [],
-        reportURL,
-        filename: data.pdfFile ? data.pdfFile.originalname : 'N/A',
-        genshareVersionAlias: genshareConfig.defaultVersion,
-        reportVersion,
-        graphValue,
-        articleId: data.keywords?.article_id || ""
-      });
-    } catch (userLogError) {
-      session.addLog(`[Mails] Error logging to user Google Sheet: ${userLogError.message}`);
-      console.error(`[${job.request_id}] Error logging to user Google Sheet:`, userLogError);
-    }
+    // Note: Genshare summary + user logging is handled by processPDF
 
     try {
       // Save session data with error information

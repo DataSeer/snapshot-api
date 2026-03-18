@@ -14,7 +14,6 @@ const snapshotReportsManager = require('./snapshotReportsManager');
 // Load the genshare configuration (auto-reloads on file change)
 const { watchConfig } = require('./configWatcher');
 const genshareConfig = watchConfig(config.genshareConfigPath);
-const logsConfig = watchConfig(config.googleSheetsLogsConfigPath);
 const instanceConfig = watchConfig(config.instanceConfigPath, {});
 
 /**
@@ -616,11 +615,7 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersionAlia
  */
 const appendToUserLog = async ({ session, userId, filteredData, reportURL, filename, genshareVersionAlias, reportVersion, graphValue, articleId }) => {
   try {
-    // Check if user has an entry in logsConfig.users (spreadsheetId will be auto-created if missing)
-    if (!logsConfig.users?.[userId]) {
-      session.addLog('[User Sheets] User Google Sheets logging is not configured in logsConfig');
-      return;
-    }
+    // Folder and spreadsheet are auto-created if the user doesn't exist in logsConfig yet
 
     // Current date
     const now = new Date();
@@ -643,7 +638,7 @@ const appendToUserLog = async ({ session, userId, filteredData, reportURL, filen
     const headers = getUserLogHeaders(filteredData);
     await appendToUserSheet(rowData, userId, headers);
 
-    session.addLog(`[User Sheets] Logged to user Google Sheet successfully (${logsConfig.users[userId]?.spreadsheetId})`);
+    session.addLog(`[User Sheets] Logged to user Google Sheet successfully (${userId})`);
   } catch (sheetsError) {
     session.addLog(`[User Sheets] Error logging to user Google Sheet: ${sheetsError.message}`);
     console.error(`[${session.requestId}] Error logging to user Google Sheet:`, sheetsError);
@@ -717,10 +712,9 @@ const getGenShareHealth = async (user, requestedVersion) => {
  * Process a PDF document using GenShare service
  * @param {Object} data - PDF and processing data 
  * @param {ProcessingSession} session - Processing session for logging
- * @param {boolean} shouldLogToSummary - Whether to log to Google Sheets summary (default: true)
  * @returns {Promise<Object>} - Processing result
  */
-const processPDF = async (data, session, shouldLogToSummary = true) => {
+const processPDF = async (data, session) => {
   try {
   // Get the user's full information
   const user = getUserById(data.user.id);
@@ -801,25 +795,23 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
     errorStatus = `File validation error: ${validationResult.reason}`;
     session.addLog(`Error: ${validationResult.reason}`);
     
-    // Log to summary sheet with error status ONLY if shouldLogToSummary is true
-    if (shouldLogToSummary) {
-      try {
-        await appendToSummary({
-          session,
-          errorStatus,
-          data,
-          genshareVersionAlias: activeGenShareVersion || genshareConfig.defaultVersion,
-          reportURL: "",
-          graphValue: "",
-          reportVersion: "",
-          articleId: data.options?.article_id || ""
-        });
-      } catch (summaryError) {
-        session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
-        console.error(`[${session.requestId}] Error logging validation error to summary:`, summaryError);
-      }
+    // Log to summary sheet with error status
+    try {
+      await appendToSummary({
+        session,
+        errorStatus,
+        data,
+        genshareVersionAlias: activeGenShareVersion || genshareConfig.defaultVersion,
+        reportURL: "",
+        graphValue: "",
+        reportVersion: "",
+        articleId: data.options?.article_id || ""
+      });
+    } catch (summaryError) {
+      session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
+      console.error(`[${session.requestId}] Error logging validation error to summary:`, summaryError);
     }
-    
+
     const validationError = new Error(validationResult.reason);
     validationError.status = 400; // Bad Request
     throw validationError;
@@ -1036,23 +1028,21 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
       session.addLog('Error: action_required value is empty in Snapshot response');
       errorStatus = 'Validation error: action_required is empty';
       
-      // Log to summary sheet with error status ONLY if shouldLogToSummary is true
-      if (shouldLogToSummary) {
-        try {
-          await appendToSummary({
-            session,
-            errorStatus,
-            data,
-            genshareVersionAlias: activeGenShareVersion,
-            reportURL,
-            graphValue: activeGenShareGraphValue,
-            reportVersion: activeReportVersion,
-            articleId: articleId || ""
-          });
-        } catch (summaryError) {
-          session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
-          console.error(`[${session.requestId}] Error logging validation error to summary:`, summaryError);
-        }
+      // Log to summary sheet with error status
+      try {
+        await appendToSummary({
+          session,
+          errorStatus,
+          data,
+          genshareVersionAlias: activeGenShareVersion,
+          reportURL,
+          graphValue: activeGenShareGraphValue,
+          reportVersion: activeReportVersion,
+          articleId: articleId || ""
+        });
+      } catch (summaryError) {
+        session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
+        console.error(`[${session.requestId}] Error logging validation error to summary:`, summaryError);
       }
 
       // Throw error with 500 status
@@ -1080,27 +1070,24 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
     // Log to Google Sheets (summary + user-specific)
     const sheetsStart = new Date();
 
-    // Log to summary sheet before returning the result ONLY if shouldLogToSummary is true
-    if (shouldLogToSummary) {
-      try {
-        await appendToSummary({
-          session,
-          errorStatus,
-          data,
-          genshareVersionAlias: activeGenShareVersion,
-          reportURL,
-          graphValue: activeGenShareGraphValue,
-          reportVersion: activeReportVersion,
-          articleId: articleId || ""
-        });
-      } catch (summaryError) {
-        session.addLog(`Error logging to summary: ${summaryError.message}`);
-        console.error(`[${session.requestId}] Error logging to summary:`, summaryError);
-        // Don't fail the process if summary logging fails
-      }
+    // Log to genshare summary sheet
+    try {
+      await appendToSummary({
+        session,
+        errorStatus,
+        data,
+        genshareVersionAlias: activeGenShareVersion,
+        reportURL,
+        graphValue: activeGenShareGraphValue,
+        reportVersion: activeReportVersion,
+        articleId: articleId || ""
+      });
+    } catch (summaryError) {
+      session.addLog(`Error logging to summary: ${summaryError.message}`);
+      console.error(`[${session.requestId}] Error logging to summary:`, summaryError);
     }
 
-    // Log to user-specific Google Sheets (always attempt if configured)
+    // Log to user-specific Google Sheet
     try {
       await appendToUserLog({
         session,
@@ -1116,7 +1103,6 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
     } catch (userLogError) {
       session.addLog(`Error logging to user sheet: ${userLogError.message}`);
       console.error(`[${session.requestId}] Error logging to user sheet:`, userLogError);
-      // Don't fail the process if user sheet logging fails
     }
 
     const sheetsEnd = new Date();
@@ -1191,23 +1177,39 @@ const processPDF = async (data, session, shouldLogToSummary = true) => {
       console.error(`[${session.requestId}] Error storing failed request in DB:`, dbError);
     }
 
-    // Log to summary sheet even in case of error ONLY if shouldLogToSummary is true
-    if (shouldLogToSummary) {
-      try {
-        await appendToSummary({
-          session,
-          errorStatus,
-          data,
-          genshareVersionAlias: activeGenShareVersion || genshareConfig.defaultVersion,
-          reportURL: "",
-          graphValue: activeGenShareGraphValue,
-          reportVersion: activeReportVersion,
-          articleId: data.options?.article_id || ""
-        });
-      } catch (summaryError) {
-        session.addLog(`Error logging error to summary: ${summaryError.message}`);
-        console.error(`[${session.requestId}] Error logging error to summary:`, summaryError);
-      }
+    // Log to genshare summary sheet even in case of error
+    try {
+      await appendToSummary({
+        session,
+        errorStatus,
+        data,
+        genshareVersionAlias: activeGenShareVersion || genshareConfig.defaultVersion,
+        reportURL: "",
+        graphValue: activeGenShareGraphValue,
+        reportVersion: activeReportVersion,
+        articleId: data.options?.article_id || ""
+      });
+    } catch (summaryError) {
+      session.addLog(`Error logging error to summary: ${summaryError.message}`);
+      console.error(`[${session.requestId}] Error logging error to summary:`, summaryError);
+    }
+
+    // Log to user-specific Google Sheet even in case of error
+    try {
+      await appendToUserLog({
+        session,
+        userId: user.id,
+        filteredData: [],
+        reportURL: "",
+        filename: data.file?.originalname,
+        genshareVersionAlias: activeGenShareVersion || genshareConfig.defaultVersion,
+        reportVersion: activeReportVersion,
+        graphValue: activeGenShareGraphValue,
+        articleId: data.options?.article_id || ""
+      });
+    } catch (userLogError) {
+      session.addLog(`Error logging error to user sheet: ${userLogError.message}`);
+      console.error(`[${session.requestId}] Error logging error to user sheet:`, userLogError);
     }
 
     // Re-throw the original error

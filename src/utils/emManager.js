@@ -79,9 +79,8 @@ const getReportValue = (publicationCode) => {
   }
 };
 /**
- * Get Google Sheets configuration for a specific publication code
- * @param {string} publicationCode - Publication code from submission
- * @returns {Object|null} - Google Sheets config object or null if not configured
+ * @deprecated Legacy function — Google Sheets logging is now centralized in googleSheets.logs.json.
+ * Kept for backward compatibility but no longer used.
  */
 const getGoogleSheetsConfig = (publicationCode) => {
   try {
@@ -95,7 +94,6 @@ const getGoogleSheetsConfig = (publicationCode) => {
     }
 
     if (!config.spreadsheetId || !config.templateSheetName) {
-      console.warn(`[EM] Invalid Google Sheets configuration for publication code "${publicationCode}": missing spreadsheetId or templateSheetName`);
       return null;
     }
 
@@ -581,7 +579,7 @@ const processEmSubmissionJob = async (job) => {
       
       try {
         // Process the PDF with GenShare - DON'T log to summary here (pass false)
-        genshareResult = await genshareManager.processPDF(genshareData, session, false);
+        genshareResult = await genshareManager.processPDF(genshareData, session);
         session.addLog(`GenShare processing completed with status: ${genshareResult.status}`);
         
         if (supplementaryFilesZip) {
@@ -613,42 +611,25 @@ const processEmSubmissionJob = async (job) => {
       }
     }
     
-    // Log to summary sheet ONCE at the end - SUCCESS case
-    try {
-      await genshareManager.appendToSummary({
-        session,
-        errorStatus,
-        data: {
-          file: data.reviewerPdfFile,
-          user: { id: data.user_id }
-        },
-        genshareVersionAlias: genshareResult?.activeGenShareVersion || genshareConfig.defaultVersion,
-        reportURL,
-        graphValue,
-        reportVersion,
-        articleId: data.document_id || ""
-      });
-    } catch (summaryError) {
-      session.addLog(`Error logging to summary: ${summaryError.message}`);
-      console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
-    }
+    // Note: Genshare summary + system user logging is handled by processPDF
 
-    // Log to user-specific Google Sheet
-    try {
-      await genshareManager.appendToUserLog({
-        session,
-        userId: data.user_id,
-        filteredData: genshareResult ? genshareResult.data : [],
-        reportURL,
-        filename: data.reviewerPdfFile ? data.reviewerPdfFile.originalname : 'N/A',
-        genshareVersionAlias: genshareResult?.activeGenShareVersion || genshareConfig.defaultVersion,
-        reportVersion,
-        graphValue,
-        articleId: data.document_id || ""
-      });
-    } catch (userLogError) {
-      session.addLog(`[EM] Error logging to user Google Sheet: ${userLogError.message}`);
-      console.error(`[${job.request_id}] Error logging to user Google Sheet:`, userLogError);
+    // Log to publication-specific Google Sheet (internal user: publication_code)
+    if (data.publication_code) {
+      try {
+        await genshareManager.appendToUserLog({
+          session,
+          userId: data.publication_code,
+          filteredData: genshareResult ? genshareResult.data : [],
+          reportURL,
+          filename: data.reviewerPdfFile ? data.reviewerPdfFile.originalname : 'N/A',
+          genshareVersionAlias: genshareResult?.activeGenShareVersion || genshareConfig.defaultVersion,
+          reportVersion,
+          graphValue,
+          articleId: data.document_id || ""
+        });
+      } catch (pubLogError) {
+        session.addLog(`[EM] Error logging to publication Google Sheet (${data.publication_code}): ${pubLogError.message}`);
+      }
     }
 
     // NOTE: Notification will be sent in the completion callback
@@ -680,42 +661,25 @@ const processEmSubmissionJob = async (job) => {
       errorStatus = `Job Error: ${error.message}`;
     }
     
-    // Log to summary sheet ONCE at the end - ERROR case
-    try {
-      await genshareManager.appendToSummary({
-        session,
-        errorStatus,
-        data: {
-          file: data.reviewerPdfFile,
-          user: { id: data.user_id }
-        },
-        genshareVersionAlias: genshareConfig.defaultVersion,
-        reportURL,
-        graphValue,
-        reportVersion,
-        articleId: data.document_id || ""
-      });
-    } catch (summaryError) {
-      session.addLog(`Error logging to summary: ${summaryError.message}`);
-      console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
-    }
+    // Note: Genshare summary + system user logging is handled by processPDF
 
-    // Log to user-specific Google Sheet - ERROR case
-    try {
-      await genshareManager.appendToUserLog({
-        session,
-        userId: data.user_id,
-        filteredData: [],
-        reportURL,
-        filename: data.reviewerPdfFile ? data.reviewerPdfFile.originalname : 'N/A',
-        genshareVersionAlias: genshareConfig.defaultVersion,
-        reportVersion,
-        graphValue,
-        articleId: data.document_id || ""
-      });
-    } catch (userLogError) {
-      session.addLog(`[EM] Error logging to user Google Sheet: ${userLogError.message}`);
-      console.error(`[${job.request_id}] Error logging to user Google Sheet:`, userLogError);
+    // Log to publication-specific Google Sheet - ERROR case (internal user)
+    if (data.publication_code) {
+      try {
+        await genshareManager.appendToUserLog({
+          session,
+          userId: data.publication_code,
+          filteredData: [],
+          reportURL,
+          filename: data.reviewerPdfFile ? data.reviewerPdfFile.originalname : 'N/A',
+          genshareVersionAlias: genshareConfig.defaultVersion,
+          reportVersion,
+          graphValue,
+          articleId: data.document_id || ""
+        });
+      } catch (pubLogError) {
+        session.addLog(`[EM] Error logging to publication Google Sheet (${data.publication_code}): ${pubLogError.message}`);
+      }
     }
 
     try {
