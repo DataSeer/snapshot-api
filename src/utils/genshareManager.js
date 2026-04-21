@@ -561,8 +561,8 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersionAlia
     // Get the response info from the genshare response in the session
     const genshareResponse = session.genshare?.response;
 
-    // Current date
-    const now = new Date();
+    // Use session start time (when API received the request)
+    const date = session.startTime || new Date();
 
     // Build s3-manager request URL for the hyperlink
     const s3ManagerUrl = (instanceConfig.s3ManagerUrl || '').replace(/\/+$/, '');
@@ -576,7 +576,7 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersionAlia
       genshareVersion: session.getGenshareVersion() || getActualVersion(genshareVersionAlias),  // Version returned by genshare (stored in session)
       genshareVersionAlias,  // Alias for config lookups
       errorStatus,
-      date: now,
+      date,
       duration: session.getDuration(),
       userId: data.user.id,
       filename,
@@ -617,13 +617,13 @@ const appendToUserLog = async ({ session, userId, filteredData, reportURL, filen
   try {
     // Folder and spreadsheet are auto-created if the user doesn't exist in logsConfig yet
 
-    // Current date
-    const now = new Date();
+    // Use session start time (when API received the request)
+    const date = session.startTime || new Date();
 
     // Build the row data using the centralized function
     const rowData = buildUserLogRowData({
       requestId: session.requestId,
-      date: now,
+      date,
       duration: session.getDuration(),
       filename: filename || "N/A",
       genshareVersion: session.getGenshareVersion() || getActualVersion(genshareVersionAlias),  // Version returned by genshare (stored in session)
