@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.14.0](https://github.com/DataSeer/snapshot-api/compare/v3.13.1...v3.14.0) (2026-04-22)
+
+
+### Features
+
+* implement cache & bypass ([966b9bd](https://github.com/DataSeer/snapshot-api/commits/966b9bdd6a59c8c0b4e3942ea2a0a810807fe8e5))
+
+
+### Bug Fixes
+
+* fix date management ([b9b01c0](https://github.com/DataSeer/snapshot-api/commits/b9b01c055c605c14a2953ee51372c8836b61968f))
+
 ### [3.13.1](https://github.com/DataSeer/snapshot-api/compare/v3.13.0...v3.13.1) (2026-03-18)
 
 
