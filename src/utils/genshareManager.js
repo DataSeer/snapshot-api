@@ -10,6 +10,9 @@ const { getUserById } = require('./userManager');
 const requestsManager = require('./requestsManager');
 const emailAlertManager = require('./emailAlertManager');
 const snapshotReportsManager = require('./snapshotReportsManager');
+const cacheManager = require('./cacheManager');
+const dbManager = require('./dbManager');
+const { calculateSHA256 } = require('./s3Storage');
 
 // Load the genshare configuration (auto-reloads on file change)
 const { watchConfig } = require('./configWatcher');
@@ -346,13 +349,13 @@ function filterOptions(options, user, session) {
       // If the value is not in the available list, use the default
       if (!config.available.includes(value)) {
         filteredOptions[optionKey] = config.default;
-        session.addLog(`GenShare options "${optionKey}" with value "${value}" is not available; default value: "${config.default}" will be used instead`);
+        session.addLog(`[GenShare] Option "${optionKey}" with value "${value}" is not available; default value "${config.default}" will be used instead`);
       }
     } else {
       // If the option is not provided and there's a default, set it
       if (config.default) {
         filteredOptions[optionKey] = config.default;
-        session.addLog(`GenShare options "${optionKey}" not provided; default value: "${config.default}" will be used instead`);
+        session.addLog(`[GenShare] Option "${optionKey}" not provided; default value "${config.default}" will be used instead`);
       }
     }
   });
@@ -593,9 +596,9 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersionAlia
     await appendToSheet(rowData, versionLabel, headers);
 
     session.loggedToSummary = true;
-    session.addLog('Logged to Google Sheets successfully');
+    session.addLog('[Sheets] Logged to summary Google Sheet successfully');
   } catch (sheetsError) {
-    session.addLog(`Error logging to Google Sheets: ${sheetsError.message}`);
+    session.addLog(`[Sheets] Error logging to summary Google Sheet: ${sheetsError.message}`, 'WARN');
     console.error(`[${session.requestId}] Error logging to Google Sheets:`, sheetsError);
   }
 };
@@ -783,17 +786,17 @@ const processPDF = async (data, session) => {
   // Input validation
   if (!data.file) {
     errorStatus = 'Input error: Required "file" missing';
-    session.addLog('Error: Required "file" missing');
+    session.addLog('[Input] Error: Required "file" missing', 'ERROR');
     throw new Error('Required "file" missing.');
   }
 
   // Validate PDF file
-  session.addLog('Validating PDF file...');
+  session.addLog('[PDF] Validating PDF file...');
   const validationResult = await validatePDFFile(data.file);
   
   if (!validationResult.valid) {
     errorStatus = `File validation error: ${validationResult.reason}`;
-    session.addLog(`Error: ${validationResult.reason}`);
+    session.addLog(`[PDF] Validation failed: ${validationResult.reason}`, 'ERROR');
     
     // Log to summary sheet with error status
     try {
@@ -808,7 +811,7 @@ const processPDF = async (data, session) => {
         articleId: data.options?.article_id || ""
       });
     } catch (summaryError) {
-      session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
+      session.addLog(`[Sheets] Error logging validation error to summary: ${summaryError.message}`, 'WARN');
       console.error(`[${session.requestId}] Error logging validation error to summary:`, summaryError);
     }
 
@@ -817,7 +820,18 @@ const processPDF = async (data, session) => {
     throw validationError;
   }
   
-  session.addLog('PDF file validation passed');
+  session.addLog('[PDF] File validation passed');
+
+  // Compute the SHA-256 of the PDF once. Stored on the session so later
+  // DB inserts can persist it on the requests row (enables the demo-bypass
+  // lookup on future requests with the same PDF binary).
+  try {
+    session.pdfHash = await calculateSHA256(data.file.path);
+    session.addLog(`[PDF] SHA-256: ${session.pdfHash}`);
+  } catch (hashError) {
+    session.addLog(`[PDF] Failed to compute SHA-256: ${hashError.message}`, 'WARN');
+    session.pdfHash = null;
+  }
 
   // Initialize GenShare with the active version
   session.initGenShare(activeGenShareVersion);
@@ -831,8 +845,8 @@ const processPDF = async (data, session) => {
   const actualVersion = getActualVersion(activeGenShareVersion);
 
   // Log initial request details
-  session.addLog(`Request received from ${data.user.id}`);
-  session.addLog(`Using GenShare version: ${activeGenShareVersion} (${actualVersion})`);
+  session.addLog(`[API] Received from user ${data.user.id}`);
+  session.addLog(`[GenShare] Using version: ${activeGenShareVersion} (${actualVersion})`);
 
   const formData = new FormData();
   
@@ -850,7 +864,7 @@ const processPDF = async (data, session) => {
       filename: data.supplementary_file.originalname,
       contentType: data.supplementary_file.mimetype
     });
-    session.addLog(`Added supplementary files: ${data.supplementary_file.originalname} (${data.supplementary_file.size} bytes)`);
+    session.addLog(`[S3] Added supplementary file: ${data.supplementary_file.originalname} (${data.supplementary_file.size} bytes)`);
   }
 
   // Filter options sent by the user 
@@ -866,8 +880,8 @@ const processPDF = async (data, session) => {
   formData.append('options', JSON.stringify(requestOptions));
 
   // Log third-party service request
-  session.addLog(`Sending request to GenShare service: ${activeGenShareVersion} (${actualVersion})`);
-  session.addLog(`URL: ${processPDFConfig.url}`);
+  session.addLog(`[GenShare] Sending request to service: ${activeGenShareVersion} (${actualVersion})`);
+  session.addLog(`[GenShare] URL: ${processPDFConfig.url}`);
 
   // Store GenShare request data
   const genshareRequestData = {
@@ -938,14 +952,14 @@ const processPDF = async (data, session) => {
     }
 
     if (!responseGenShareVersion) {
-      session.addLog(`GenShare version returned not found`, 'WARN');
+      session.addLog(`[GenShare] Version not returned by service`, 'WARN');
     } else {
-      session.addLog(`GenShare version returned: ${responseGenShareVersion}`);
+      session.addLog(`[GenShare] Version returned: ${responseGenShareVersion}`);
       // Compare the actual version (not the alias) with the response version
       if (actualVersion === responseGenShareVersion) {
-        session.addLog(`GenShare versions match: ${activeGenShareVersion} (${actualVersion}) - ${responseGenShareVersion}`);
+        session.addLog(`[GenShare] Versions match: ${activeGenShareVersion} (${actualVersion}) - ${responseGenShareVersion}`);
       } else {
-        session.addLog(`GenShare versions don't match: ${activeGenShareVersion} (${actualVersion}) - ${responseGenShareVersion}`, 'WARN');
+        session.addLog(`[GenShare] Versions don't match: ${activeGenShareVersion} (${actualVersion}) - ${responseGenShareVersion}`, 'WARN');
       }
     }
 
@@ -953,21 +967,52 @@ const processPDF = async (data, session) => {
     let responseGenShareGraphValue = response?.data?.graph_policy_traversal_data?.graph_type || "";
 
     if (!responseGenShareGraphValue) {
-      session.addLog(`GenShare graph value returned not found`);
+      session.addLog(`[GenShare] Graph value not returned by service`);
     } else {
-      session.addLog(`GenShare graph value returned found: ${responseGenShareGraphValue}`);
+      session.addLog(`[GenShare] Graph value returned: ${responseGenShareGraphValue}`);
       if (activeGenShareGraphValue.indexOf(responseGenShareGraphValue) > -1) {
-        session.addLog(`GenShare graph values match: (${activeGenShareGraphValue} - ${responseGenShareGraphValue})`);
+        session.addLog(`[GenShare] Graph values match: (${activeGenShareGraphValue} - ${responseGenShareGraphValue})`);
       } else {
-        session.addLog(`GenShare graph values don't match (${activeGenShareGraphValue} - ${responseGenShareGraphValue})`);
+        session.addLog(`[GenShare] Graph values don't match: (${activeGenShareGraphValue} - ${responseGenShareGraphValue})`, 'WARN');
       }
     }
 
     activeGenShareGraphValue = responseGenShareGraphValue;
 
-    session.addLog(`Received response from GenShare service with status: ${response.status}`);
+    session.addLog(`[GenShare] Received response with status: ${response.status}`);
 
-    // Store complete response in the session
+    // Snapshot the immutable original genshare payload BEFORE any cache
+    // substitution mutates the working copy. This is what will be written to
+    // S3 at genshare/response.original.json.
+    session.setGenshareOriginalResponse(response.data);
+
+    // Apply the snapshot-api-side cache layer (if enabled). When a curator has
+    // patched the canonical cached response for this cache_key, this call
+    // substitutes `response.data.response` in place so every downstream
+    // consumer (filter, Sheets log, snapshot-reports, saveToS3) sees the
+    // patched array. No-op when cache is disabled or genshare provided no
+    // cache block.
+    try {
+      // cacheManager emits its own session log lines ("[cache] …") so we
+      // just need to stash the resulting cache-ref on the session.
+      const cacheResult = await cacheManager.applyCacheToGenshareResponse(
+        response.data,
+        activeGenShareVersion,
+        session
+      );
+      if (cacheResult.applied && cacheResult.cacheKey) {
+        session.cacheKey = cacheResult.cacheKey;
+        session.setCacheRef(cacheResult.cacheRef);
+      }
+    } catch (cacheError) {
+      // Cache must never break the main path — log and continue with the raw
+      // genshare response.
+      session.addLog(`[cache] Error applying cache layer: ${cacheError.message}`, 'WARN');
+      console.error(`[${session.requestId}] [cache] Error applying cache layer:`, cacheError);
+    }
+
+    // Store complete response in the session (now carries the possibly-
+    // substituted response array — originalResponse preserves the raw one).
     session.setGenshareResponse({
       status: response.status,
       headers: response.headers,
@@ -981,7 +1026,7 @@ const processPDF = async (data, session) => {
     // - create a snapshot-reports report
     // - create the JSON data
     if (errorStatus === "No" && !!activeReportVersion && response.data.response) {
-      session.addLog(`Using report: ${activeReportVersion}`);
+      session.addLog(`[Reports] Using report kind: ${activeReportVersion}`);
       try {
         // Create snapshot-reports Report
         const snapshotReport = await snapshotReportsManager.createReport(activeReportVersion, session.requestId, session);
@@ -994,7 +1039,7 @@ const processPDF = async (data, session) => {
         session.setReport(jsonReport);
 
       } catch (reportCreationError) {
-        session.addLog(`Error creating snapshot-reports report: ${reportCreationError.message}`);
+        session.addLog(`[Reports] Error creating snapshot-reports report: ${reportCreationError.message}`, 'ERROR');
         console.error(`[${session.requestId}] Error creating snapshot-reports report:`, reportCreationError);
         // Don't fail the request if report creation fails, just log it
       }
@@ -1021,11 +1066,46 @@ const processPDF = async (data, session) => {
       await requestsManager.addOrUpdateRequest(user.id, dbArticleId, session.requestId);
     }
 
+    // If the cache layer attached a cache_key to this session, persist the
+    // link on the requests row so GC and the cache API can enumerate consumers.
+    if (session.cacheKey) {
+      try {
+        await dbManager.setRequestCacheKey(session.requestId, session.cacheKey);
+        session.addLog(`[DB] cache_key set on request row: ${session.cacheKey}`);
+      } catch (cacheDbError) {
+        session.addLog(`[DB] Failed to set cache_key: ${cacheDbError.message}`, 'WARN');
+        console.error(`[${session.requestId}] [DB] Failed to set cache_key:`, cacheDbError);
+      }
+    }
+
+    // Persist the pdf_hash on every request so future /processPDF calls can
+    // detect demo matches by PDF binary alone.
+    if (session.pdfHash) {
+      try {
+        await dbManager.setRequestPdfHash(session.requestId, session.pdfHash);
+        session.addLog('[DB] pdf_hash saved');
+      } catch (hashDbError) {
+        session.addLog(`[DB] Failed to set pdf_hash: ${hashDbError.message}`, 'WARN');
+        console.error(`[${session.requestId}] [DB] Failed to set pdf_hash:`, hashDbError);
+      }
+    }
+
+    // Curator-initiated requests are immediately flagged as demo.
+    if (data.isCuratorDemo === true) {
+      try {
+        await dbManager.setRequestIsDemo(session.requestId, true);
+        session.addLog('[DB] Request marked as demo (is_demo=1)');
+      } catch (demoDbError) {
+        session.addLog(`[DB] Failed to set is_demo: ${demoDbError.message}`, 'WARN');
+        console.error(`[${session.requestId}] [DB] Failed to set is_demo:`, demoDbError);
+      }
+    }
+
     // Validate action_required field
     const actionRequiredItem = response.data.response.find(item => item.name === "action_required");
     if (actionRequiredItem && actionRequiredItem.value === "") {
       const validationError = new Error('Snapshot response contains invalid action_required value (empty string)');
-      session.addLog('Error: action_required value is empty in Snapshot response');
+      session.addLog('[Validation] action_required value is empty in Snapshot response', 'ERROR');
       errorStatus = 'Validation error: action_required is empty';
       
       // Log to summary sheet with error status
@@ -1041,7 +1121,7 @@ const processPDF = async (data, session) => {
           articleId: articleId || ""
         });
       } catch (summaryError) {
-        session.addLog(`Error logging validation error to summary: ${summaryError.message}`);
+        session.addLog(`[Sheets] Error logging validation error to summary: ${summaryError.message}`, 'WARN');
         console.error(`[${session.requestId}] Error logging validation error to summary:`, summaryError);
       }
 
@@ -1051,7 +1131,7 @@ const processPDF = async (data, session) => {
     }
 
     // Session data preparation is complete
-    session.addLog('Response processing completed');
+    session.addLog('[API] Response processing completed');
 
     // Apply user-specific filtering to the response
     const filteredData = filterAndSortResponseForUser(response.data.response, user);
@@ -1083,7 +1163,7 @@ const processPDF = async (data, session) => {
         articleId: articleId || ""
       });
     } catch (summaryError) {
-      session.addLog(`Error logging to summary: ${summaryError.message}`);
+      session.addLog(`[Sheets] Error logging to summary: ${summaryError.message}`, 'WARN');
       console.error(`[${session.requestId}] Error logging to summary:`, summaryError);
     }
 
@@ -1101,7 +1181,7 @@ const processPDF = async (data, session) => {
         articleId: articleId || ""
       });
     } catch (userLogError) {
-      session.addLog(`Error logging to user sheet: ${userLogError.message}`);
+      session.addLog(`[User Sheets] Error logging to user sheet: ${userLogError.message}`, 'WARN');
       console.error(`[${session.requestId}] Error logging to user sheet:`, userLogError);
     }
 
@@ -1164,8 +1244,8 @@ const processPDF = async (data, session) => {
     }
 
     // Log error
-    session.addLog(`Error processing request: ${error.message}`);
-    session.addLog(`Stack: ${error.stack}`);
+    session.addLog(`[API] Error processing request: ${error.message}`, 'ERROR');
+    session.addLog(`[API] Stack: ${error.stack}`, 'ERROR');
 
     // Store failed request in DB so it appears in s3-manager logs
     try {
@@ -1190,7 +1270,7 @@ const processPDF = async (data, session) => {
         articleId: data.options?.article_id || ""
       });
     } catch (summaryError) {
-      session.addLog(`Error logging error to summary: ${summaryError.message}`);
+      session.addLog(`[Sheets] Error logging error to summary: ${summaryError.message}`, 'WARN');
       console.error(`[${session.requestId}] Error logging error to summary:`, summaryError);
     }
 
@@ -1208,7 +1288,7 @@ const processPDF = async (data, session) => {
         articleId: data.options?.article_id || ""
       });
     } catch (userLogError) {
-      session.addLog(`Error logging error to user sheet: ${userLogError.message}`);
+      session.addLog(`[User Sheets] Error logging error to user sheet: ${userLogError.message}`, 'WARN');
       console.error(`[${session.requestId}] Error logging error to user sheet:`, userLogError);
     }
 
@@ -1245,7 +1325,7 @@ const processGenshareSubmissionJob = async (job) => {
   const tempFilePaths = [];
 
   try {
-    session.addLog('Starting background processing of GenShare submission');
+    session.addLog('[API] Starting background processing of GenShare submission');
 
     // Reconstruct file objects from stored paths
     const mainFile = data.file || null;
@@ -1278,7 +1358,7 @@ const processGenshareSubmissionJob = async (job) => {
     });
     await session.saveToS3();
 
-    session.addLog('Background GenShare processing completed');
+    session.addLog('[API] Background GenShare processing completed');
 
     return {
       status: result.status,
@@ -1286,7 +1366,7 @@ const processGenshareSubmissionJob = async (job) => {
       errorStatus: result.errorStatus
     };
   } catch (error) {
-    session.addLog(`Error in background processing: ${error.message}`);
+    session.addLog(`[API] Error in background processing: ${error.message}`, 'ERROR');
 
     try {
       session.setAPIResponse({

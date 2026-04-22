@@ -16,11 +16,18 @@ const refreshRequests = async (req, res) => {
       return res.status(401).json({ error: 'User authentication required' });
     }
 
-    // Refresh requests from S3
-    await requestsManager.refreshRequestsFromS3();
+    // Opt-in flag: when ?rehash=true (or { rehash: true } in body), any row
+    // whose per-file metadata is missing `sha256` is rehashed by downloading
+    // the PDF, computing SHA-256, and writing it back to S3 + DB. Slow — use
+    // sparingly.
+    const rehashMissing =
+      req.query.rehash === 'true' || req.query.rehash === '1' || req.body?.rehash === true;
 
-    res.json({ 
+    await requestsManager.refreshRequestsFromS3({ rehashMissing });
+
+    res.json({
       message: 'Requests refreshed successfully',
+      rehashMissing,
       timestamp: new Date().toISOString()
     });
 

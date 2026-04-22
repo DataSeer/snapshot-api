@@ -8,6 +8,7 @@ const { initDatabase, refreshRequestsFromS3 } = require('./utils/requestsManager
 const jwtManager = require('./utils/jwtManager');
 const queueManager = require('./utils/queueManager');
 const scholaroneManager = require('./utils/scholaroneManager');
+const cacheGcWorker = require('./utils/cacheGcWorker');
 
 const app = express();
 
@@ -45,6 +46,9 @@ const startServer = async () => {
     console.log('Starting ScholarOne periodic polling...');
     scholaroneManager.startPeriodicPolling();
     console.log('ScholarOne periodic polling started');
+
+    // Start the genshare cache GC worker (no-op when cache disabled)
+    cacheGcWorker.start();
     
     // Setup periodic token cleanup (every hour)
     setInterval(async () => {

@@ -28,6 +28,13 @@
         "blocked": []
       }
     },
+    "/processPDF/demo": {
+      "POST": {
+        "description": "Curator-mode PDF processing: creates a demo-flagged request whose PDF binary will short-circuit future /processPDF calls",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
     "/jobs/:requestId": {
       "GET": {
         "description": "Get job status by request ID",
@@ -310,6 +317,56 @@
       },
       "PATCH": {
         "description": "Update email alerts configuration",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/demo-requests": {
+      "GET": {
+        "description": "List all demo-flagged requests (is_demo = 1)",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/demo-requests/:request_id": {
+      "GET": {
+        "description": "Get a single request row (demo or not) for the demo-requests UI",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      },
+      "PATCH": {
+        "description": "Toggle the is_demo flag on a request (body: { is_demo: boolean })",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/cache": {
+      "GET": {
+        "description": "List all cache entries with basic metadata",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/cache/:cache_key": {
+      "GET": {
+        "description": "Get a cache entry (meta, current, full patch history, consumer requests)",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      },
+      "PATCH": {
+        "description": "Update a cache entry's response; optionally propagate to selected requests",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      },
+      "DELETE": {
+        "description": "Force-delete a cache entry (bypasses TTL; normally managed by GC)",
+        "allowed": ["admin"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/cache/:cache_key/original": {
+      "GET": {
+        "description": "Get the immutable original genshare payload for a cache entry",
         "allowed": ["admin", "snapshot-s3-manager"],
         "blocked": []
       }

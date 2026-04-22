@@ -3,6 +3,13 @@
   "versions": {
     "previous": {
       "version": "v81.2.1",
+      "cache": {
+        "enabled": true,
+        "ttlAfterZeroConsumersMs": 172800000,
+        "gcIntervalMs": 3600000,
+        "s3Prefix": "_cache",
+        "patchHistoryLimit": 0
+      },
       "processPDF": {
         "url": "http://localhost:5000/snapshot",
         "method": "POST",
@@ -11,11 +18,6 @@
       "health": {
         "url": "http://localhost:5000/health",
         "method": "GET"
-      },
-      "googleSheets": {
-        "spreadsheetId": "your-spreadsheet-id-for-v1",
-        "templateSheetName": "Template",
-        "folderId": "your-google-drive-folder-id"
       },
       "responseMapping": {
         "getPath": [

@@ -164,8 +164,16 @@ const main = async () => {
       }
 
       case 'refresh': {
-        console.log('Refreshing requests from S3...');
-        await refreshRequestsFromS3();
+        // Opt-in flag: --rehash (or --rehash-missing) downloads the PDF for
+        // any row whose per-file metadata has no sha256, computes SHA-256,
+        // rewrites the metadata on S3, and updates the DB.
+        const rehashMissing = process.argv.slice(3).some((arg) =>
+          arg === '--rehash' || arg === '--rehash-missing'
+        );
+        console.log(
+          `Refreshing requests from S3${rehashMissing ? ' (rehashing missing SHA-256)' : ''}...`
+        );
+        await refreshRequestsFromS3({ rehashMissing });
         console.log('Requests refreshed successfully');
         break;
       }
@@ -310,6 +318,7 @@ const main = async () => {
         console.log('Usage:');
         console.log('  npm run db:init                - Initialize database');
         console.log('  npm run db:refresh             - Refresh requests from S3');
+        console.log('  npm run db:refresh -- --rehash - Refresh + rehash any row missing sha256');
         console.log('  npm run db:check <userName> <articleId> - Check request IDs for an article');
         console.log('');
         console.log('ScholarOne Submissions commands:');

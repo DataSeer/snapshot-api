@@ -66,9 +66,12 @@ const getGenshareData = async (req, res) => {
       });
     }
 
-    // Extract the response data from the GenShare response file
-    // The file structure should contain: { status, headers, data: { response: [...] } }
-    const responseData = genshareResponseData.data?.response;
+    // Extract the response array from the GenShare response file.
+    // New (slim) shape: { response: [...] }
+    // Legacy shape (pre-cache refactor): { status, headers, data: { response: [...] } }
+    const responseData = Array.isArray(genshareResponseData.response)
+      ? genshareResponseData.response
+      : genshareResponseData.data?.response;
     
     if (!responseData) {
       return res.status(404).json({ 

@@ -1,10 +1,106 @@
 // File: src/utils/requestsManager.js
+const crypto = require('crypto');
 const dbManager = require('./dbManager');
-const { getAllGenshareRequestsFiles, getReportFile, deleteObjectsByPrefix, s3Config } = require('./s3Storage');
+const {
+  getAllGenshareRequestsFiles,
+  getReportFile,
+  getCacheRefFile,
+  getFilesListFile,
+  getFileMetadataFile,
+  getFileBuffer,
+  uploadBatchToS3,
+  deleteObjectsByPrefix,
+  s3Config
+} = require('./s3Storage');
 const config = require('../config');
+const { watchConfig } = require('./configWatcher');
 
-// Load the report configuration
-const reportsConfig = require(config.reportsConfigPath);
+/**
+ * Compute SHA-256 hex digest of a Buffer. Used by the refresh --rehash path
+ * to regenerate a missing pdf_hash without touching the disk.
+ */
+const sha256OfBuffer = (buffer) => {
+  const hash = crypto.createHash('sha256');
+  hash.update(buffer);
+  return hash.digest('hex');
+};
+
+/**
+ * Rebuild the S3 key for a file inside a request folder.
+ */
+const requestFileKey = (userId, requestId, tail) =>
+  `${s3Config.s3Folder}/${userId}/${requestId}/${tail}`;
+
+/**
+ * Try to rehash a single request: download PDF, compute SHA-256, rewrite the
+ * metadata.json on S3 and update the DB row. Returns true on success, false
+ * when the PDF can't be located / fetched. Never throws — the caller logs.
+ */
+const rehashRequestPdf = async (userId, requestId, filesList, metadata, pdfFileIndex) => {
+  // Resolve the main file entry (non-supplementary).
+  const mainFile = Array.isArray(filesList)
+    ? filesList.find((f) => f.id === pdfFileIndex)
+    : null;
+  const originalName = mainFile?.originalName || metadata?.originalName;
+  if (!originalName) {
+    console.warn(`[rehash] ${requestId}: no originalName on file metadata, skipping`);
+    return false;
+  }
+  const extension = originalName.split('.').pop();
+  if (!extension) {
+    console.warn(`[rehash] ${requestId}: could not derive extension from "${originalName}"`);
+    return false;
+  }
+  const pdfKey = requestFileKey(userId, requestId, `files/file_${pdfFileIndex}.${extension}`);
+  const metaKey = requestFileKey(userId, requestId, `files/file_${pdfFileIndex}.metadata.json`);
+
+  // 1. Download the PDF into memory.
+  let buffer;
+  try {
+    buffer = await getFileBuffer(pdfKey);
+  } catch (error) {
+    if (error.$metadata?.httpStatusCode === 404 || error.name === 'NoSuchKey') {
+      console.warn(`[rehash] ${requestId}: PDF not found at ${pdfKey}`);
+      return false;
+    }
+    console.error(`[rehash] ${requestId}: failed to download PDF: ${error.message}`);
+    return false;
+  }
+
+  // 2. Compute SHA-256.
+  const sha256 = sha256OfBuffer(buffer);
+
+  // 3. Write an updated metadata.json back to S3 (preserving existing fields).
+  const updatedMetadata = { ...(metadata || {}), sha256 };
+  try {
+    await uploadBatchToS3([
+      {
+        key: metaKey,
+        data: JSON.stringify(updatedMetadata, null, 2),
+        contentType: 'application/json'
+      }
+    ]);
+  } catch (error) {
+    console.error(`[rehash] ${requestId}: failed to update metadata.json: ${error.message}`);
+    return false;
+  }
+
+  // 4. Update DB.
+  try {
+    await dbManager.setRequestPdfHash(requestId, sha256);
+  } catch (error) {
+    console.error(`[rehash] ${requestId}: failed to update DB pdf_hash: ${error.message}`);
+    return false;
+  }
+
+  // 5. Drop the in-memory buffer (explicit hint to GC — user asked to "delete
+  // the PDF" after hashing; we never touch disk, so this is all that's left).
+  buffer = null;
+  return true;
+};
+
+// Auto-reloads on file change
+const reportsConfig = watchConfig(config.reportsConfigPath, { versions: {} });
 
 /**
  * Initialize database
@@ -15,12 +111,22 @@ const initDatabase = async () => {
 };
 
 /**
- * Refresh all requests from S3 and update report data
+ * Refresh all requests from S3 and update report data.
+ *
+ * @param {Object} [options]
+ * @param {boolean} [options.rehashMissing=false] When true, for any request
+ *   whose per-file metadata.json is missing `sha256`, download the PDF,
+ *   compute SHA-256, write the updated metadata back to S3, and update the
+ *   DB's pdf_hash column. Slow (per-request PDF download) — only run on
+ *   demand via the CLI flag or query param.
  * @returns {Promise<boolean>} - True if refresh successful
  */
-const refreshRequestsFromS3 = async () => {
+const refreshRequestsFromS3 = async (options = {}) => {
+  const rehashMissing = options.rehashMissing === true;
   try {
-    console.log("Starting refreshRequestsFromS3...");
+    console.log(
+      `Starting refreshRequestsFromS3${rehashMissing ? ' (rehash missing SHA-256)' : ''}...`
+    );
     
     // Get all options files from S3
     const requestsFiles = await getAllGenshareRequestsFiles();
@@ -49,6 +155,10 @@ const refreshRequestsFromS3 = async () => {
     let errorCount = 0;
     let reportUpdatedCount = 0;
     let reportErrorCount = 0;
+    let pdfHashBackfilled = 0;
+    let pdfHashRehashed = 0;
+    let pdfHashRehashSkipped = 0;
+    let cacheKeyBackfilled = 0;
 
     for (const file of requestsFiles) {
       if (file.content) {
@@ -69,8 +179,9 @@ const refreshRequestsFromS3 = async () => {
             reportErrorCount++;
           }
 
-          // Add/update request with report data if available
-          // Use empty string for missing article_id
+          // Add/update request with report data if available. Use empty string
+          // for missing article_id. Note: addOrUpdateRequest never clobbers
+          // the is_demo flag — demo state survives a refresh untouched.
           await dbManager.addOrUpdateRequest(
             file.userId,
             file.content.article_id || '',
@@ -78,6 +189,60 @@ const refreshRequestsFromS3 = async () => {
             reportData,
             formattedDate
           );
+
+          // Backfill pdf_hash from the per-file metadata written at upload
+          // time. Only the main PDF file (non-supplementary) carries the
+          // hash the demo-bypass layer keys on.
+          try {
+            const filesList = await getFilesListFile(file.userId, file.requestId);
+            let pdfFileIndex = null;
+            if (Array.isArray(filesList) && filesList.length > 0) {
+              const mainFile = filesList.find((f) => f.fieldname !== 'supplementary_file') || filesList[0];
+              if (mainFile && typeof mainFile.id === 'number') {
+                pdfFileIndex = mainFile.id;
+              }
+            }
+            // Older sessions have no files.json; fall back to file_1.
+            const resolvedIndex = pdfFileIndex || 1;
+            const metadata = await getFileMetadataFile(
+              file.userId,
+              file.requestId,
+              resolvedIndex
+            );
+            if (metadata && typeof metadata.sha256 === 'string' && metadata.sha256) {
+              await dbManager.setRequestPdfHash(file.requestId, metadata.sha256);
+              pdfHashBackfilled++;
+            } else if (rehashMissing) {
+              // Opt-in: download PDF, compute SHA-256, rewrite metadata.json
+              // on S3, update DB.
+              const rehashed = await rehashRequestPdf(
+                file.userId,
+                file.requestId,
+                filesList,
+                metadata,
+                resolvedIndex
+              );
+              if (rehashed) {
+                pdfHashRehashed++;
+              } else {
+                pdfHashRehashSkipped++;
+              }
+            }
+          } catch (hashError) {
+            console.error(`[refresh] Failed to backfill pdf_hash for ${file.requestId}:`, hashError.message);
+          }
+
+          // Backfill cache_key from cache-ref.json when the cache-substitution
+          // layer ran for this request.
+          try {
+            const cacheRef = await getCacheRefFile(file.userId, file.requestId);
+            if (cacheRef && typeof cacheRef.cache_key === 'string' && cacheRef.cache_key) {
+              await dbManager.setRequestCacheKey(file.requestId, cacheRef.cache_key);
+              cacheKeyBackfilled++;
+            }
+          } catch (cacheError) {
+            console.error(`[refresh] Failed to backfill cache_key for ${file.requestId}:`, cacheError.message);
+          }
 
           insertedCount++;
         } catch (error) {
@@ -87,7 +252,14 @@ const refreshRequestsFromS3 = async () => {
       }
     }
 
-    console.log(`S3 refresh complete: ${insertedCount} processed, ${reportUpdatedCount} reports found, ${reportErrorCount} reports missing, ${errorCount} errors`);
+    const rehashSummary = rehashMissing
+      ? `, ${pdfHashRehashed} rehashed, ${pdfHashRehashSkipped} rehash-skipped`
+      : '';
+    console.log(
+      `S3 refresh complete: ${insertedCount} processed, ${reportUpdatedCount} reports found, ` +
+      `${reportErrorCount} reports missing, ${pdfHashBackfilled} pdf_hash backfilled${rehashSummary}, ` +
+      `${cacheKeyBackfilled} cache_key backfilled, ${errorCount} errors`
+    );
     
     return true;
   } catch (error) {
@@ -435,7 +607,14 @@ const getRequestsWithReportDataByArticleId = async (userName, articleId) => {
  * @returns {Object} - Object containing the report JSON data
  */
 const buildJSON = (version, responseData, reportURL) => {
-  if (!reportsConfig.versions[version]) return new Error(`Error requesting Report version: ${version}`);
+  const versions = reportsConfig.versions || {};
+  if (!versions[version]) {
+    const known = Object.keys(versions);
+    return new Error(
+      `Report version '${version}' not found in conf/reports.json. ` +
+        `Currently configured: ${known.length ? known.join(', ') : '(none)'}.`
+    );
+  }
 
   // Prepare JSON data based on JSON report available/restricted fields
   const result = {};
@@ -460,14 +639,21 @@ const buildJSON = (version, responseData, reportURL) => {
  * @returns {Array} - Filtered response
  */
 const filterResponseForJSON = (version, responseData) => {
-  if (!version || !reportsConfig.versions[version]) return new Error(`Error requesting Report version: ${version}`);
-  
+  const versions = reportsConfig.versions || {};
+  if (!version || !versions[version]) {
+    const known = Object.keys(versions);
+    return new Error(
+      `Report version '${version}' not found in conf/reports.json. ` +
+        `Currently configured: ${known.length ? known.join(', ') : '(none)'}.`
+    );
+  }
+
   // If no response data or no filter settings, return as is
-  if (!responseData || !reportsConfig.versions[version].JSON) {
+  if (!responseData || !versions[version].JSON) {
     return responseData;
   }
 
-  const { availableFields, restrictedFields } = reportsConfig.versions[version].JSON;
+  const { availableFields, restrictedFields } = versions[version].JSON;
 
   // If no filter restrictions, return full response
   if ((!availableFields || availableFields.length === 0) && 

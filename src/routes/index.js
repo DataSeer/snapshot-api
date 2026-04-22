@@ -1,7 +1,7 @@
 // File: src/routes/index.js
 const express = require('express');
 const multer = require('multer');
-const { processPDF, getGenShareHealth, processPDFAsync, getJobStatus: getGenshareJobStatus } = require('../controllers/genshareController');
+const { processPDF, processPDFDemo, getGenShareHealth, processPDFAsync, getJobStatus: getGenshareJobStatus } = require('../controllers/genshareController');
 const { getGrobidHealth } = require('../controllers/grobidController');
 const { getPing } = require('../controllers/healthController');
 const { getApiRoutes } = require('../controllers/apiController');
@@ -64,6 +64,18 @@ const {
   rebuildUserLogs,
   rebuildAllLogs
 } = require('../controllers/snapshotS3ManagerController');
+const {
+  listCacheEntries,
+  getCacheEntry,
+  getCacheEntryOriginal,
+  patchCacheEntry,
+  deleteCacheEntry
+} = require('../controllers/cacheController');
+const {
+  listDemoRequests,
+  getDemoRequest,
+  patchDemoRequest
+} = require('../controllers/demoRequestsController');
 const { authenticateToken } = require('../middleware/auth');
 const { checkPermissions } = require('../middleware/permissions');
 const rateLimiter = require('../utils/rateLimiter');
@@ -147,6 +159,18 @@ authenticatedRouter.post('/processPDF/async',
   processPDFAsync
 );
 
+// Curator-mode processPDF — creates a request with is_demo = 1 so future
+// regular /processPDF calls with the same PDF binary bypass genshare and
+// return the curator's (possibly edited) response directly.
+authenticatedRouter.post('/processPDF/demo',
+  upload.fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'supplementary_file', maxCount: 1 }
+  ]),
+  validateSupplementaryFiles,
+  processPDFDemo
+);
+
 // Health check endpoints
 authenticatedRouter.get('/ping', getPing);
 authenticatedRouter.get('/genshare/health', getGenShareHealth);
@@ -227,6 +251,18 @@ authenticatedRouter.post('/snapshot-s3-manager/logs/rebuild-user', rebuildUserLo
 authenticatedRouter.get('/snapshot-s3-manager/reports', getReports);
 authenticatedRouter.get('/snapshot-s3-manager/reports/kinds', getReportKinds);
 authenticatedRouter.patch('/snapshot-s3-manager/reports/:reportId/kind', updateReportKind);
+
+// Demo requests management (demo-bypass flag on existing requests)
+authenticatedRouter.get('/snapshot-s3-manager/demo-requests', listDemoRequests);
+authenticatedRouter.get('/snapshot-s3-manager/demo-requests/:request_id', getDemoRequest);
+authenticatedRouter.patch('/snapshot-s3-manager/demo-requests/:request_id', patchDemoRequest);
+
+// Genshare cache management (substitution layer for genshare-service cache)
+authenticatedRouter.get('/snapshot-s3-manager/cache', listCacheEntries);
+authenticatedRouter.get('/snapshot-s3-manager/cache/:cache_key/original', getCacheEntryOriginal);
+authenticatedRouter.get('/snapshot-s3-manager/cache/:cache_key', getCacheEntry);
+authenticatedRouter.patch('/snapshot-s3-manager/cache/:cache_key', patchCacheEntry);
+authenticatedRouter.delete('/snapshot-s3-manager/cache/:cache_key', deleteCacheEntry);
 
 // Mount the authenticated router
 unauthenticatedRouter.use('/', authenticatedRouter);

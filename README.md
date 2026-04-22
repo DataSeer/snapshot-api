@@ -42,8 +42,9 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - **Job status tracking and retry mechanism** with exponential backoff
 - **Event-driven job completion callbacks** for reliable external notifications
 - **Configurable graph parameters** for publication-specific GenShare processing
-- Comprehensive logging system
-- SQLite database for article-request mapping and job queue management
+- **GenShare cache substitution layer** — when genshare-service reports a cache hit, snapshot-api serves a curator-patched canonical response from a shared `_cache/<key>/` S3 prefix and keeps consumer tracking + TTL-based garbage collection
+- **Prefixed session logs** (`[S3]`, `[cache]`, `[GenShare]`, `[Reports]`, …) make the process log and combined log greppable by subsystem
+- SQLite database for article-request mapping, job queue management, and cache consumer bookkeeping
 - Endpoints for report retrieval by article ID or request ID
 
 ## Prerequisites
@@ -141,12 +142,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
         "url": "https://genshare-service/health",
         "method": "GET"
       },
-      "googleSheets": {
-        "spreadsheetId": "your-spreadsheet-id",
-        "sheetName": "Sheet1"
-      },
       "responseMapping": {
-        "getPath": ["Path element", "Score", "Other fields"],
         "getResponse": {
           "article_id": 0,
           "das_presence": 1,
@@ -602,6 +598,37 @@ The system provides comprehensive logging for graph configuration:
 }
 ```
 
+12. **Google Sheets Logs Configuration:**
+```json
+// conf/googleSheets.logs.json
+{
+  "folderId": "GOOGLE_DRIVE_FOLDER_ID",
+  "templates": {
+    "genshare": {
+      "spreadsheetId": "GOOGLE_TEMPLATE_SPREADSHEET_ID",
+      "sheetName": "Template"
+    },
+    "users": {
+      "spreadsheetId": "GOOGLE_TEMPLATE_SPREADSHEET_ID",
+      "sheetName": "Template"
+    }
+  },
+  "genshare": {},
+  "users": {
+    "KWG": {}
+  }
+}
+```
+
+- **`folderId`**: Google Drive folder where all log spreadsheets are stored.
+- **`templates.genshare`**: Template spreadsheet copied to create the genshare (admin) log file. `sheetName` is the tab duplicated for new log pages.
+- **`templates.users`**: Template spreadsheet copied to create per-user log files.
+- **`genshare.spreadsheetId`**: Auto-populated when the genshare log spreadsheet is created from the template.
+- **`users.<userId>.folderId`**: Auto-populated when a subfolder is created for the user inside the main folder.
+- **`users.<userId>.spreadsheetId`**: Auto-populated when the user's log spreadsheet is created from the template.
+
+Google Sheets logging is **automatic**: when a user or genshare entry exists in the config, the system creates the necessary Google Drive folders and spreadsheets on first use. Use `node scripts/rebuild_logs.js --init` to pre-create all resources.
+
 ## API Architecture
 
 ### Available Endpoints
@@ -653,6 +680,19 @@ POST   /snapshot-mails/retry/:requestId  - Retry a failed email submission job
 
 # Snapshot Reports endpoints
 GET    /snapshot-reports/:requestId/genshare - Get GenShare data for a request
+
+# Snapshot S3 Manager cache (admin + snapshot-s3-manager roles)
+GET    /snapshot-s3-manager/cache                        - List cache entries with consumer counts
+GET    /snapshot-s3-manager/cache/:cache_key             - Detail view (meta, current response, patches, consumers)
+GET    /snapshot-s3-manager/cache/:cache_key/original    - Immutable original full genshare payload
+PATCH  /snapshot-s3-manager/cache/:cache_key             - Update the canonical response; optional propagate_to[]
+DELETE /snapshot-s3-manager/cache/:cache_key             - Force-purge a cache entry (admin only)
+
+# Curator demo-bypass (admin + snapshot-s3-manager roles)
+POST   /processPDF/demo                                  - Curator-mode PDF processing that flags the resulting request as a demo
+GET    /snapshot-s3-manager/demo-requests                - List every request currently flagged as a demo
+GET    /snapshot-s3-manager/demo-requests/:request_id    - Get a single request row (for the demo-requests UI)
+PATCH  /snapshot-s3-manager/demo-requests/:request_id    - Toggle the is_demo flag (body: { is_demo: boolean })
 ```
 
 ## Queue System
@@ -1097,7 +1137,7 @@ npm run manage-users -- remove snapshot-mails
 npm run manage-genshare -- list
 
 # Add a new GenShare version
-npm run manage-genshare -- add v2.0.0 "https://genshare-service/snapshot" "https://genshare-service/health" "spreadsheet-id" "Sheet1" "api-key"
+npm run manage-genshare -- add v2.0.0 "https://genshare-service/snapshot" "https://genshare-service/health" "api-key"
 
 # Update a GenShare version
 npm run manage-genshare -- update v2.0.0 --processPdfUrl "https://new-genshare-service/snapshot"
@@ -1197,6 +1237,31 @@ Output includes:
 - All GenShare response fields based on version configuration
 - Proper CSV formatting with special character handling
 
+### Google Sheets Logs Management
+
+Initialize, rebuild, or manage Google Sheets log files:
+
+```bash
+# Initialize all log files from templates (creates folders, spreadsheets, and updates config)
+node scripts/rebuild_logs.js --init
+
+# Rebuild all logs (admin + all configured users) from S3 data
+node scripts/rebuild_logs.js --all
+
+# Rebuild admin/genshare logs only
+node scripts/rebuild_logs.js --admin
+
+# Rebuild logs for a specific user
+node scripts/rebuild_logs.js --user KWG
+```
+
+The `--init` command:
+- Creates a Google Drive subfolder per user inside the main logs folder
+- Creates genshare and user log spreadsheets by copying the configured templates
+- Persists the created folder IDs and spreadsheet IDs back to `googleSheets.logs.json`
+
+The rebuild commands (`--all`, `--admin`, `--user`) create new spreadsheets from S3 data. They also auto-create any missing folders or spreadsheets before rebuilding.
+
 ### Log Analysis
 
 ```bash
@@ -1255,7 +1320,8 @@ snapshot-api/
 │   │   ├── dbManager.js
 │   │   ├── emManager.js
 │   │   ├── genshareManager.js # Updated exports for DS logs
-│   │   ├── googleSheets.js # Updated with CSV utilities
+│   │   ├── googleSheets.js # Google Sheets & Drive API integration
+│   │   ├── googleSheetsRebuild.js # Rebuild log spreadsheets from S3 data
 │   │   ├── jwtManager.js
 │   │   ├── logger.js
 │   │   ├── permissionsManager.js

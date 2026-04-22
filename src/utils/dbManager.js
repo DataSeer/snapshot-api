@@ -53,6 +53,7 @@ const initDatabase = async () => {
         article_id TEXT NOT NULL,
         request_id TEXT NOT NULL UNIQUE,
         report_data TEXT NULL,
+        cache_key TEXT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )`, (err) => {
@@ -64,10 +65,85 @@ const initDatabase = async () => {
         }
       });
     });
-    
+
+    // Ensure added columns exist on pre-existing databases (SQLite ADD COLUMN
+    // is one-shot, so we guard each add with pragma_table_info).
+    const ensureRequestsColumn = (name, ddl) =>
+      new Promise((resolve) => {
+        db.all(`PRAGMA table_info(requests)`, (err, columns) => {
+          if (err) {
+            console.error(`Error inspecting requests table columns for ${name}:`, err);
+            resolve();
+            return;
+          }
+          const exists = Array.isArray(columns) && columns.some((c) => c.name === name);
+          if (exists) {
+            resolve();
+            return;
+          }
+          db.run(`ALTER TABLE requests ADD COLUMN ${ddl}`, (alterErr) => {
+            if (alterErr) {
+              console.error(`Error adding ${name} column to requests table:`, alterErr);
+            }
+            resolve();
+          });
+        });
+      });
+
+    await ensureRequestsColumn('cache_key', 'cache_key TEXT NULL');
+    await ensureRequestsColumn('pdf_hash', 'pdf_hash TEXT NULL');
+    await ensureRequestsColumn('is_demo', 'is_demo INTEGER NOT NULL DEFAULT 0');
+
+    // Create cache_entries table
+    await new Promise((resolve, reject) => {
+      db.run(`CREATE TABLE IF NOT EXISTS cache_entries (
+        cache_key TEXT PRIMARY KEY,
+        pdf_hash TEXT NOT NULL,
+        supplementary_hash TEXT,
+        graph_slug TEXT NOT NULL,
+        graph_version TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_patched_at DATETIME,
+        ttl_expires_at DATETIME
+      )`, (err) => {
+        if (err) {
+          console.error('Error creating cache_entries table:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    // Create index on requests.cache_key for the consumer-count query
+    await new Promise((resolve, reject) => {
+      db.run(`CREATE INDEX IF NOT EXISTS idx_requests_cache_key
+              ON requests(cache_key)`, (err) => {
+        if (err) {
+          console.error('Error creating idx_requests_cache_key:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    // Create index for the demo-bypass lookup (pdf_hash + is_demo)
+    await new Promise((resolve, reject) => {
+      db.run(`CREATE INDEX IF NOT EXISTS idx_requests_pdf_hash_demo
+              ON requests(pdf_hash, is_demo)`, (err) => {
+        if (err) {
+          console.error('Error creating idx_requests_pdf_hash_demo:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+
     // Create index for better performance
     await new Promise((resolve, reject) => {
-      db.run(`CREATE INDEX IF NOT EXISTS idx_requests_user_article 
+      db.run(`CREATE INDEX IF NOT EXISTS idx_requests_user_article
               ON requests(user_name, article_id)`, (err) => {
         if (err) {
           console.error('Error creating index:', err);
@@ -2288,10 +2364,329 @@ const getScholaroneNotificationsBySubmissionId = async (submissionId) => {
   });
 };
 
+/*
+ * GENSHARE CACHE METHODS
+ */
+
+/**
+ * Set the cache_key for a request row.
+ * Safe to call before or after the row exists (UPDATE WHERE request_id = ?).
+ */
+const setRequestCacheKey = async (requestId, cacheKey) => {
+  const db = await getDBConnection();
+  try {
+    await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE requests SET cache_key = ?, updated_at = CURRENT_TIMESTAMP WHERE request_id = ?`,
+        [cacheKey, requestId],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
+ * Insert a new cache_entries row or update metadata on an existing one.
+ * Never clobbers created_at. ttl_expires_at is cleared on insert/update because
+ * a new consumer just arrived.
+ */
+const upsertCacheEntry = async ({
+  cacheKey,
+  pdfHash,
+  supplementaryHash,
+  graphSlug,
+  graphVersion
+}) => {
+  if (!cacheKey) throw new Error('cache_key is required');
+  const db = await getDBConnection();
+  try {
+    await new Promise((resolve, reject) => {
+      db.run(
+        `INSERT INTO cache_entries
+           (cache_key, pdf_hash, supplementary_hash, graph_slug, graph_version, ttl_expires_at)
+         VALUES (?, ?, ?, ?, ?, NULL)
+         ON CONFLICT(cache_key) DO UPDATE SET
+           pdf_hash = excluded.pdf_hash,
+           supplementary_hash = excluded.supplementary_hash,
+           graph_slug = excluded.graph_slug,
+           graph_version = excluded.graph_version,
+           ttl_expires_at = NULL`,
+        [cacheKey, pdfHash || '', supplementaryHash || null, graphSlug || '', graphVersion || ''],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
+ * Update last_patched_at on a cache entry. No-op if the row is missing.
+ */
+const touchCacheEntryPatched = async (cacheKey) => {
+  const db = await getDBConnection();
+  try {
+    await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE cache_entries SET last_patched_at = CURRENT_TIMESTAMP WHERE cache_key = ?`,
+        [cacheKey],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
+ * Get a single cache_entries row by key.
+ */
+const getCacheEntry = async (cacheKey) => {
+  const db = await getDBConnection();
+  try {
+    return await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT * FROM cache_entries WHERE cache_key = ?`,
+        [cacheKey],
+        (err, row) => (err ? reject(err) : resolve(row || null))
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
+ * List every cache_entries row joined with its live consumer count.
+ */
+const listCacheEntriesWithCounts = async () => {
+  const db = await getDBConnection();
+  try {
+    return await new Promise((resolve, reject) => {
+      db.all(
+        `SELECT c.*,
+                (SELECT COUNT(*) FROM requests r WHERE r.cache_key = c.cache_key) AS consumer_count
+         FROM cache_entries c
+         ORDER BY c.created_at DESC`,
+        [],
+        (err, rows) => (err ? reject(err) : resolve(rows || []))
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
+ * Count requests currently pointing at the given cache_key.
+ */
+const countCacheConsumers = async (cacheKey) => {
+  const db = await getDBConnection();
+  try {
+    const row = await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT COUNT(*) AS n FROM requests WHERE cache_key = ?`,
+        [cacheKey],
+        (err, r) => (err ? reject(err) : resolve(r))
+      );
+    });
+    return row && typeof row.n === 'number' ? row.n : 0;
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
+ * List every request linked to a cache_key (for the detail view + propagation).
+ * Orders by created_at DESC.
+ */
+const listCacheConsumers = async (cacheKey) => {
+  const db = await getDBConnection();
+  try {
+    return await new Promise((resolve, reject) => {
+      db.all(
+        `SELECT request_id, user_name, article_id, created_at
+         FROM requests
+         WHERE cache_key = ?
+         ORDER BY created_at DESC`,
+        [cacheKey],
+        (err, rows) => (err ? reject(err) : resolve(rows || []))
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
+ * Verify a given request is currently attached to the given cache_key.
+ * Returns null if no match, the user_name otherwise — used by the PATCH flow
+ * to compute the S3 prefix for propagation.
+ */
+const getCacheConsumerOwner = async (cacheKey, requestId) => {
+  const db = await getDBConnection();
+  try {
+    const row = await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT user_name FROM requests WHERE cache_key = ? AND request_id = ?`,
+        [cacheKey, requestId],
+        (err, r) => (err ? reject(err) : resolve(r || null))
+      );
+    });
+    return row ? row.user_name : null;
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
+ * Set ttl_expires_at on a cache entry.
+ */
+const setCacheEntryTtl = async (cacheKey, ttlExpiresAt) => {
+  const db = await getDBConnection();
+  try {
+    await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE cache_entries SET ttl_expires_at = ? WHERE cache_key = ?`,
+        [ttlExpiresAt ? ttlExpiresAt.toISOString() : null, cacheKey],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
+ * Delete a cache_entries row by key.
+ */
+const deleteCacheEntry = async (cacheKey) => {
+  const db = await getDBConnection();
+  try {
+    await new Promise((resolve, reject) => {
+      db.run(`DELETE FROM cache_entries WHERE cache_key = ?`, [cacheKey], (err) =>
+        err ? reject(err) : resolve()
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/*
+ * DEMO-BYPASS METHODS
+ */
+
+/**
+ * Set (or clear) the pdf_hash on an existing request row.
+ * Called from genshareManager.processPDF once the PDF has been hashed.
+ */
+const setRequestPdfHash = async (requestId, pdfHash) => {
+  const db = await getDBConnection();
+  try {
+    await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE requests SET pdf_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE request_id = ?`,
+        [pdfHash || null, requestId],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
+ * Flip the is_demo flag on a request row. Non-demo requests aren't eligible
+ * for runtime bypass; only rows where is_demo = 1 are considered.
+ */
+const setRequestIsDemo = async (requestId, isDemo) => {
+  const db = await getDBConnection();
+  try {
+    await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE requests SET is_demo = ?, updated_at = CURRENT_TIMESTAMP WHERE request_id = ?`,
+        [isDemo ? 1 : 0, requestId],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
+ * Find the demo-flagged request whose PDF hash matches. Returns the full row
+ * (including user_name + report_data so the bypass layer can read the source
+ * response from S3 and extract the report_link). When multiple rows match,
+ * the most recently updated one wins.
+ */
+const findDemoRequestByPdfHash = async (pdfHash) => {
+  if (!pdfHash) return null;
+  const db = await getDBConnection();
+  try {
+    return await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT * FROM requests
+         WHERE pdf_hash = ? AND is_demo = 1
+         ORDER BY updated_at DESC, created_at DESC
+         LIMIT 1`,
+        [pdfHash],
+        (err, row) => (err ? reject(err) : resolve(row || null))
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
+ * List every request currently flagged as a demo (for the s3-manager UI).
+ */
+const listDemoRequests = async () => {
+  const db = await getDBConnection();
+  try {
+    return await new Promise((resolve, reject) => {
+      db.all(
+        `SELECT id, user_name, article_id, request_id, pdf_hash, report_data,
+                created_at, updated_at
+         FROM requests
+         WHERE is_demo = 1
+         ORDER BY updated_at DESC`,
+        [],
+        (err, rows) => (err ? reject(err) : resolve(rows || []))
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
+ * Get a single request row by request_id (used by the demo-requests controller
+ * for the GET /:request_id detail endpoint).
+ */
+const getRequestByRequestIdAnyUser = async (requestId) => {
+  const db = await getDBConnection();
+  try {
+    return await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT * FROM requests WHERE request_id = ?`,
+        [requestId],
+        (err, row) => (err ? reject(err) : resolve(row || null))
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
 module.exports = {
   initDatabase,
   getDBConnection,
-  
+
   // Token management methods
   getValidToken,
   storeToken,
@@ -2359,5 +2754,24 @@ module.exports = {
   getStuckJobs,
   markStuckJobsAsFailed,
   getAllJobs,
-  cleanupOldJobs
+  cleanupOldJobs,
+
+  // Genshare cache methods
+  setRequestCacheKey,
+  upsertCacheEntry,
+  touchCacheEntryPatched,
+  getCacheEntry,
+  listCacheEntriesWithCounts,
+  countCacheConsumers,
+  listCacheConsumers,
+  getCacheConsumerOwner,
+  setCacheEntryTtl,
+  deleteCacheEntry,
+
+  // Demo-bypass methods
+  setRequestPdfHash,
+  setRequestIsDemo,
+  findDemoRequestByPdfHash,
+  listDemoRequests,
+  getRequestByRequestIdAnyUser
 };
