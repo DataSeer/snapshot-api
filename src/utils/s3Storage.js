@@ -386,9 +386,19 @@ class ProcessingSession {
     // runs. Stored as-is in cache-ref.json on S3.
     this.cacheRef = null;
 
+    // Terminal outcome of the request. Set by callers via setResult() before
+    // saveToS3(). Written to process.json under `result`.
+    //   { status: 'success', error: null }
+    //   { status: 'error',   error: '<message>' }
+    this.result = null;
+
+    // Demo flag. Written to process.json under `is_demo`. Mirrors
+    // requests.is_demo in the DB. Set via setIsDemo().
+    this.isDemo = false;
+
     // Report data
     this.report = null;
-    
+
     this.startTime = new Date();
     this.endTime = null;
     this.duration = -1;
@@ -450,6 +460,25 @@ class ProcessingSession {
   setAPIResponse(response) {
     this.apiResponse = response;
     this.addLog('[S3] API response stored', 'INFO');
+    return this;
+  }
+
+  // Record the terminal outcome of the request. Persisted to process.json.
+  setResult(status, error = null) {
+    this.result = {
+      status: status || null,
+      error: error || null
+    };
+    this.addLog(`[S3] Result set: ${status}${error ? ` — ${error}` : ''}`, 'INFO');
+    return this;
+  }
+
+  // Mark the request as a demo (curator-initiated or operator-flagged).
+  // Persisted to process.json under `is_demo` and mirrored to the DB
+  // by refreshRequestsFromS3.
+  setIsDemo(isDemo) {
+    this.isDemo = isDemo === true;
+    this.addLog(`[S3] is_demo set: ${this.isDemo}`, 'INFO');
     return this;
   }
   
@@ -600,7 +629,13 @@ class ProcessingSession {
         services: {
           genshare: this.genshare.isActive
         },
-        timeline: this.timeline
+        timeline: this.timeline,
+        hashes: {
+          demo: this.pdfHash || null,
+          cache: this.cacheKey || null
+        },
+        result: this.result || { status: null, error: null },
+        is_demo: this.isDemo === true
       };
 
       // Add process files

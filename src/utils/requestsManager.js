@@ -1,5 +1,4 @@
 // File: src/utils/requestsManager.js
-const crypto = require('crypto');
 const dbManager = require('./dbManager');
 const {
   getAllGenshareRequestsFiles,
@@ -7,97 +6,12 @@ const {
   getCacheRefFile,
   getFilesListFile,
   getFileMetadataFile,
-  getFileBuffer,
-  uploadBatchToS3,
+  getProcessFile,
   deleteObjectsByPrefix,
   s3Config
 } = require('./s3Storage');
 const config = require('../config');
 const { watchConfig } = require('./configWatcher');
-
-/**
- * Compute SHA-256 hex digest of a Buffer. Used by the refresh --rehash path
- * to regenerate a missing pdf_hash without touching the disk.
- */
-const sha256OfBuffer = (buffer) => {
-  const hash = crypto.createHash('sha256');
-  hash.update(buffer);
-  return hash.digest('hex');
-};
-
-/**
- * Rebuild the S3 key for a file inside a request folder.
- */
-const requestFileKey = (userId, requestId, tail) =>
-  `${s3Config.s3Folder}/${userId}/${requestId}/${tail}`;
-
-/**
- * Try to rehash a single request: download PDF, compute SHA-256, rewrite the
- * metadata.json on S3 and update the DB row. Returns true on success, false
- * when the PDF can't be located / fetched. Never throws — the caller logs.
- */
-const rehashRequestPdf = async (userId, requestId, filesList, metadata, pdfFileIndex) => {
-  // Resolve the main file entry (non-supplementary).
-  const mainFile = Array.isArray(filesList)
-    ? filesList.find((f) => f.id === pdfFileIndex)
-    : null;
-  const originalName = mainFile?.originalName || metadata?.originalName;
-  if (!originalName) {
-    console.warn(`[rehash] ${requestId}: no originalName on file metadata, skipping`);
-    return false;
-  }
-  const extension = originalName.split('.').pop();
-  if (!extension) {
-    console.warn(`[rehash] ${requestId}: could not derive extension from "${originalName}"`);
-    return false;
-  }
-  const pdfKey = requestFileKey(userId, requestId, `files/file_${pdfFileIndex}.${extension}`);
-  const metaKey = requestFileKey(userId, requestId, `files/file_${pdfFileIndex}.metadata.json`);
-
-  // 1. Download the PDF into memory.
-  let buffer;
-  try {
-    buffer = await getFileBuffer(pdfKey);
-  } catch (error) {
-    if (error.$metadata?.httpStatusCode === 404 || error.name === 'NoSuchKey') {
-      console.warn(`[rehash] ${requestId}: PDF not found at ${pdfKey}`);
-      return false;
-    }
-    console.error(`[rehash] ${requestId}: failed to download PDF: ${error.message}`);
-    return false;
-  }
-
-  // 2. Compute SHA-256.
-  const sha256 = sha256OfBuffer(buffer);
-
-  // 3. Write an updated metadata.json back to S3 (preserving existing fields).
-  const updatedMetadata = { ...(metadata || {}), sha256 };
-  try {
-    await uploadBatchToS3([
-      {
-        key: metaKey,
-        data: JSON.stringify(updatedMetadata, null, 2),
-        contentType: 'application/json'
-      }
-    ]);
-  } catch (error) {
-    console.error(`[rehash] ${requestId}: failed to update metadata.json: ${error.message}`);
-    return false;
-  }
-
-  // 4. Update DB.
-  try {
-    await dbManager.setRequestPdfHash(requestId, sha256);
-  } catch (error) {
-    console.error(`[rehash] ${requestId}: failed to update DB pdf_hash: ${error.message}`);
-    return false;
-  }
-
-  // 5. Drop the in-memory buffer (explicit hint to GC — user asked to "delete
-  // the PDF" after hashing; we never touch disk, so this is all that's left).
-  buffer = null;
-  return true;
-};
 
 // Auto-reloads on file change
 const reportsConfig = watchConfig(config.reportsConfigPath, { versions: {} });
@@ -111,27 +25,24 @@ const initDatabase = async () => {
 };
 
 /**
- * Refresh all requests from S3 and update report data.
+ * Refresh all requests from S3 and update the DB.
  *
- * @param {Object} [options]
- * @param {boolean} [options.rehashMissing=false] When true, for any request
- *   whose per-file metadata.json is missing `sha256`, download the PDF,
- *   compute SHA-256, write the updated metadata back to S3, and update the
- *   DB's pdf_hash column. Slow (per-request PDF download) — only run on
- *   demand via the CLI flag or query param.
+ * Strictly read-only on S3: walks genshare/request.json files, mirrors
+ * each request's report / pdf_hash / cache_key into the DB. No PDF
+ * downloads, no hash computation — those live in the dedicated
+ * scripts/maintenance/refresh_s3_data.js script (run beforehand if
+ * metadata is missing).
+ *
  * @returns {Promise<boolean>} - True if refresh successful
  */
-const refreshRequestsFromS3 = async (options = {}) => {
-  const rehashMissing = options.rehashMissing === true;
+const refreshRequestsFromS3 = async () => {
   try {
-    console.log(
-      `Starting refreshRequestsFromS3${rehashMissing ? ' (rehash missing SHA-256)' : ''}...`
-    );
-    
+    console.log('Starting refreshRequestsFromS3...');
+
     // Get all options files from S3
     const requestsFiles = await getAllGenshareRequestsFiles();
     console.log(`Total S3 options files retrieved: ${requestsFiles.length}`);
-    
+
     // Filter to files with valid content
     const validFiles = requestsFiles.filter(file => file.content);
     const withArticleId = validFiles.filter(file => file.content.article_id);
@@ -156,9 +67,8 @@ const refreshRequestsFromS3 = async (options = {}) => {
     let reportUpdatedCount = 0;
     let reportErrorCount = 0;
     let pdfHashBackfilled = 0;
-    let pdfHashRehashed = 0;
-    let pdfHashRehashSkipped = 0;
     let cacheKeyBackfilled = 0;
+    let isDemoBackfilled = 0;
 
     for (const file of requestsFiles) {
       if (file.content) {
@@ -181,7 +91,8 @@ const refreshRequestsFromS3 = async (options = {}) => {
 
           // Add/update request with report data if available. Use empty string
           // for missing article_id. Note: addOrUpdateRequest never clobbers
-          // the is_demo flag — demo state survives a refresh untouched.
+          // the is_demo flag — is_demo is mirrored explicitly below from
+          // process.json.is_demo so we don't lose operator-flipped demos.
           await dbManager.addOrUpdateRequest(
             file.userId,
             file.content.article_id || '',
@@ -191,8 +102,9 @@ const refreshRequestsFromS3 = async (options = {}) => {
           );
 
           // Backfill pdf_hash from the per-file metadata written at upload
-          // time. Only the main PDF file (non-supplementary) carries the
-          // hash the demo-bypass layer keys on.
+          // time. If the metadata is missing `sha256`, skip silently — the
+          // operator should run `npm run s3:refresh:rehash` to populate it
+          // on S3 first, then re-run this command.
           try {
             const filesList = await getFilesListFile(file.userId, file.requestId);
             let pdfFileIndex = null;
@@ -212,21 +124,6 @@ const refreshRequestsFromS3 = async (options = {}) => {
             if (metadata && typeof metadata.sha256 === 'string' && metadata.sha256) {
               await dbManager.setRequestPdfHash(file.requestId, metadata.sha256);
               pdfHashBackfilled++;
-            } else if (rehashMissing) {
-              // Opt-in: download PDF, compute SHA-256, rewrite metadata.json
-              // on S3, update DB.
-              const rehashed = await rehashRequestPdf(
-                file.userId,
-                file.requestId,
-                filesList,
-                metadata,
-                resolvedIndex
-              );
-              if (rehashed) {
-                pdfHashRehashed++;
-              } else {
-                pdfHashRehashSkipped++;
-              }
             }
           } catch (hashError) {
             console.error(`[refresh] Failed to backfill pdf_hash for ${file.requestId}:`, hashError.message);
@@ -244,6 +141,20 @@ const refreshRequestsFromS3 = async (options = {}) => {
             console.error(`[refresh] Failed to backfill cache_key for ${file.requestId}:`, cacheError.message);
           }
 
+          // Mirror is_demo from process.json. Skipped silently when
+          // process.json doesn't exist or has no is_demo field — the DB
+          // default (0) is fine. Run `npm run s3:refresh` first to populate
+          // process.json on legacy folders.
+          try {
+            const processData = await getProcessFile(file.userId, file.requestId);
+            if (processData && typeof processData.is_demo === 'boolean') {
+              await dbManager.setRequestIsDemo(file.requestId, processData.is_demo);
+              if (processData.is_demo) isDemoBackfilled++;
+            }
+          } catch (demoError) {
+            console.error(`[refresh] Failed to mirror is_demo for ${file.requestId}:`, demoError.message);
+          }
+
           insertedCount++;
         } catch (error) {
           console.error(`Exception processing file ${file.requestId}:`, error);
@@ -252,15 +163,13 @@ const refreshRequestsFromS3 = async (options = {}) => {
       }
     }
 
-    const rehashSummary = rehashMissing
-      ? `, ${pdfHashRehashed} rehashed, ${pdfHashRehashSkipped} rehash-skipped`
-      : '';
     console.log(
       `S3 refresh complete: ${insertedCount} processed, ${reportUpdatedCount} reports found, ` +
-      `${reportErrorCount} reports missing, ${pdfHashBackfilled} pdf_hash backfilled${rehashSummary}, ` +
-      `${cacheKeyBackfilled} cache_key backfilled, ${errorCount} errors`
+      `${reportErrorCount} reports missing, ${pdfHashBackfilled} pdf_hash backfilled, ` +
+      `${cacheKeyBackfilled} cache_key backfilled, ${isDemoBackfilled} is_demo=1 mirrored, ` +
+      `${errorCount} errors`
     );
-    
+
     return true;
   } catch (error) {
     console.error('Error refreshing requests from S3:', error);

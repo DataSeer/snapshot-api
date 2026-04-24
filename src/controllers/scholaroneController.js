@@ -37,22 +37,24 @@ module.exports.postSubmissions = async (req, res) => {
         status: 'Error',
         error_message: 'Missing required field: site_name'
       });
+      session.setResult('error', 'Missing required field: site_name');
       await session.saveToS3();
-      
+
       return res.status(400).json({
         status: 'Error',
         error_message: 'Missing required field: site_name'
       });
     }
-    
+
     if (!submissionId) {
       session.addLog('Error: Missing required field: submission_id');
       session.setAPIResponse({
         status: 'Error',
         error_message: 'Missing required field: submission_id'
       });
+      session.setResult('error', 'Missing required field: submission_id');
       await session.saveToS3();
-      
+
       return res.status(400).json({
         status: 'Error',
         error_message: 'Missing required field: submission_id'
@@ -70,7 +72,11 @@ module.exports.postSubmissions = async (req, res) => {
     
     // Store the API response
     session.setAPIResponse(result);
-    
+    session.setResult(
+      result.status === 'Success' ? 'success' : 'error',
+      result.status === 'Success' ? null : (result.error_message || null)
+    );
+
     // Save all data to S3
     await session.saveToS3();
     
@@ -96,7 +102,8 @@ module.exports.postSubmissions = async (req, res) => {
       status: "Error",
       error_message: error.message
     });
-    
+    session.setResult('error', error.message);
+
     // Log to Google Sheets if the manager job processor didn't already log (pre-processing errors)
     if (!session.loggedToSummary) {
       try {

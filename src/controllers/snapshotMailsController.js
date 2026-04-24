@@ -89,7 +89,11 @@ module.exports.postSubmissions = async (req, res) => {
     
     // Store the API response
     session.setAPIResponse(result);
-    
+    session.setResult(
+      result.status === 'Success' ? 'success' : 'error',
+      result.status === 'Success' ? null : (result.error_message || null)
+    );
+
     // Save all data to S3
     await session.saveToS3();
     
@@ -118,7 +122,8 @@ module.exports.postSubmissions = async (req, res) => {
       status: "Error",
       error_message: error.message
     });
-    
+    session.setResult('error', error.message);
+
     // Log to Google Sheets if the manager job processor didn't already log (pre-processing errors)
     if (!session.loggedToSummary) {
       try {

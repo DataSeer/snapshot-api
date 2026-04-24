@@ -33,6 +33,9 @@
     "db:check": "node scripts/maintenance/initDB.js check",
     "db:check-notification": "node scripts/maintenance/initDB.js check-scholarone-notifications",
     "db:list-notifications": "node scripts/maintenance/initDB.js list-scholarone-notifications",
+    "s3:audit": "node scripts/maintenance/refresh_s3_data.js",
+    "s3:refresh": "node scripts/maintenance/refresh_s3_data.js --apply",
+    "s3:refresh:rehash": "node scripts/maintenance/refresh_s3_data.js --apply --rehash",
     "scholarone:hold:on": "node scripts/toggle_scholarone_notifications_hold.js on",
     "scholarone:hold:off": "node scripts/toggle_scholarone_notifications_hold.js off",
     "scholarone:hold:status": "node scripts/toggle_scholarone_notifications_hold.js status"

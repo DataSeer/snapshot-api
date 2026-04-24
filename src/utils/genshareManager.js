@@ -1090,8 +1090,11 @@ const processPDF = async (data, session) => {
       }
     }
 
-    // Curator-initiated requests are immediately flagged as demo.
+    // Curator-initiated requests are immediately flagged as demo. Mirrored
+    // to the session so process.json on S3 also carries the flag (the
+    // authoritative record refreshRequestsFromS3 reads from).
     if (data.isCuratorDemo === true) {
+      session.setIsDemo(true);
       try {
         await dbManager.setRequestIsDemo(session.requestId, true);
         session.addLog('[DB] Request marked as demo (is_demo=1)');
@@ -1356,6 +1359,10 @@ const processGenshareSubmissionJob = async (job) => {
       status: result.status,
       data: result.data
     });
+    session.setResult(
+      result.errorStatus && result.errorStatus !== 'No' ? 'error' : 'success',
+      result.errorStatus && result.errorStatus !== 'No' ? result.errorStatus : null
+    );
     await session.saveToS3();
 
     session.addLog('[API] Background GenShare processing completed');
@@ -1373,6 +1380,7 @@ const processGenshareSubmissionJob = async (job) => {
         status: 'error',
         error: error.message
       });
+      session.setResult('error', error.message);
       await session.saveToS3();
     } catch (s3Error) {
       console.error(`[${job.request_id}] Error saving error session to S3:`, s3Error);

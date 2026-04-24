@@ -10,6 +10,47 @@
 
 const dbManager = require('../utils/dbManager');
 const { logger } = require('../utils/logger');
+const { getFile, uploadBatchToS3, s3Config } = require('../utils/s3Storage');
+
+/**
+ * Merge `is_demo` into the request's process.json on S3 (non-destructively).
+ * S3 is the source of truth that `refreshRequestsFromS3` reads from, so both
+ * DB and S3 must stay in sync on every toggle.
+ * Returns 'updated' | 'unchanged' | 'missing' | 'error'.
+ */
+const persistIsDemoToS3 = async (userName, requestId, isDemo) => {
+  const key = `${s3Config.s3Folder}/${userName}/${requestId}/process.json`;
+  let current;
+  try {
+    const raw = await getFile(key);
+    if (!raw) return 'missing';
+    current = JSON.parse(raw);
+  } catch (error) {
+    if (error.$metadata?.httpStatusCode === 404 || error.name === 'NoSuchKey') {
+      return 'missing';
+    }
+    logger.warn(`[demo] Failed to read process.json for ${requestId}: ${error.message}`);
+    return 'error';
+  }
+
+  if (!current || typeof current !== 'object') return 'error';
+  if (current.is_demo === !!isDemo) return 'unchanged';
+
+  const next = { ...current, is_demo: !!isDemo };
+  try {
+    await uploadBatchToS3([
+      {
+        key,
+        data: JSON.stringify(next, null, 2),
+        contentType: 'application/json'
+      }
+    ]);
+    return 'updated';
+  } catch (error) {
+    logger.warn(`[demo] Failed to write process.json for ${requestId}: ${error.message}`);
+    return 'error';
+  }
+};
 
 /**
  * Extract a `report_link` from a stored `report_data` JSON blob (best effort).
@@ -119,8 +160,19 @@ const patchDemoRequest = async (req, res) => {
         `request_id=${requestId} by=${req.user?.id || 'unknown'}`
     );
 
+    // Mirror the flag into process.json on S3 so a DB rebuild via
+    // refreshRequestsFromS3 keeps the demo state. Failure is non-fatal —
+    // the DB is already updated — but we log it so operators can retry.
+    const s3Status = await persistIsDemoToS3(row.user_name, requestId, body.is_demo);
+    if (s3Status === 'error' || s3Status === 'missing') {
+      logger.warn(
+        `[demo] process.json is_demo mirror ${s3Status} for ${requestId} — ` +
+          'DB is authoritative until next s3:refresh or manual sync'
+      );
+    }
+
     const updated = await dbManager.getRequestByRequestIdAnyUser(requestId);
-    return res.json({ success: true, entry: shapeRow(updated) });
+    return res.json({ success: true, entry: shapeRow(updated), s3_sync: s3Status });
   } catch (error) {
     logger.error(`[demo] patchDemoRequest failed for ${requestId}: ${error.message}`);
     return res.status(500).json({ success: false, error: 'Failed to update request' });

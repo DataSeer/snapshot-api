@@ -212,10 +212,16 @@ module.exports.processPDF = async (req, res) => {
       status: result.status,
       data: result.data
     });
-    
+
+    // Record terminal outcome for process.json
+    session.setResult(
+      result.errorStatus && result.errorStatus !== 'No' ? 'error' : 'success',
+      result.errorStatus && result.errorStatus !== 'No' ? result.errorStatus : null
+    );
+
     // Save session data to S3
     await session.saveToS3();
-    
+
     // Now that ALL processing is complete, we can safely clean up the temporary files
     const filesToCleanup = [mainFile, supplementaryFile].filter(f => f && f.path);
     await Promise.all(filesToCleanup.map(file => 
@@ -270,7 +276,8 @@ module.exports.processPDF = async (req, res) => {
         status: 'error',
         error: error.message
       });
-      
+      session.setResult('error', error.message);
+
       // Save session data with error information
       await session.saveToS3();
 

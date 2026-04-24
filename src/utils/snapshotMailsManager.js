@@ -267,8 +267,12 @@ const processMailSubmissionJob = async (job) => {
     }
     
     // Save session to S3
+    session.setResult(
+      errorStatus && errorStatus !== 'No' ? 'error' : 'success',
+      errorStatus && errorStatus !== 'No' ? errorStatus : null
+    );
     await session.saveToS3();
-    
+
     // Update request with report data if available
     if (session.report) {
       try {
@@ -318,6 +322,7 @@ const processMailSubmissionJob = async (job) => {
 
     try {
       // Save session data with error information
+      session.setResult('error', errorStatus && errorStatus !== 'No' ? errorStatus : error.message);
       await session.saveToS3();
     } catch (saveError) {
       console.error(`[${job.request_id}] Error in error handling:`, saveError);

@@ -74,8 +74,12 @@ module.exports.receiveNotification = async (req, res) => {
     );
     
     // Save session data
+    session.setResult(
+      result.success || result.alreadyProcessed ? 'success' : 'error',
+      result.success || result.alreadyProcessed ? null : (result.error || null)
+    );
     await session.saveToS3();
-    
+
     // ScholarOne expects HTTP 200 for successful receipt
     // We return 200 even if we decided not to process (e.g., duplicate)
     // This prevents ScholarOne from retrying
@@ -98,6 +102,7 @@ module.exports.receiveNotification = async (req, res) => {
         error_message: result.error,
         reason: result.reason
       });
+      session.setResult('error', result.error || null);
       await session.saveToS3();
       
       return res.status(200).json({

@@ -606,6 +606,10 @@ const processScholaroneSubmissionJob = async (job) => {
     session.addLog(`[Job] GenShare processing completed successfully`);
     
     // ===== SAVE SESSION BEFORE CLEANUP =====
+    session.setResult(
+      errorStatus && errorStatus !== 'No' ? 'error' : 'success',
+      errorStatus && errorStatus !== 'No' ? errorStatus : null
+    );
     await session.saveToS3();
     session.addLog(`[Job] Session data saved to S3`);
     // ===== END SAVE SESSION =====
@@ -663,6 +667,7 @@ const processScholaroneSubmissionJob = async (job) => {
     
     // ===== SAVE SESSION BEFORE CLEANUP (even on error) =====
     try {
+      session.setResult('error', errorStatus && errorStatus !== 'No' ? errorStatus : error.message);
       await session.saveToS3();
       session.addLog(`[Job] Session data saved to S3 (with error)`);
     } catch (s3Error) {
