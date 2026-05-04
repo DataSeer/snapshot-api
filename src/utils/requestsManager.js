@@ -69,6 +69,7 @@ const refreshRequestsFromS3 = async () => {
     let pdfHashBackfilled = 0;
     let cacheKeyBackfilled = 0;
     let isDemoBackfilled = 0;
+    let isDemoBypassBackfilled = 0;
 
     for (const file of requestsFiles) {
       if (file.content) {
@@ -141,18 +142,26 @@ const refreshRequestsFromS3 = async () => {
             console.error(`[refresh] Failed to backfill cache_key for ${file.requestId}:`, cacheError.message);
           }
 
-          // Mirror is_demo from process.json. Skipped silently when
-          // process.json doesn't exist or has no is_demo field — the DB
-          // default (0) is fine. Run `npm run s3:refresh` first to populate
-          // process.json on legacy folders.
+          // Mirror is_demo + is_demo_bypass + bypass_source from process.json.
+          // Skipped silently when process.json doesn't exist or lacks these
+          // fields — the DB defaults (0 / NULL) are fine. Run
+          // `npm run s3:refresh` first to populate process.json on legacy
+          // folders.
           try {
             const processData = await getProcessFile(file.userId, file.requestId);
             if (processData && typeof processData.is_demo === 'boolean') {
               await dbManager.setRequestIsDemo(file.requestId, processData.is_demo);
               if (processData.is_demo) isDemoBackfilled++;
             }
+            if (processData && typeof processData.is_demo_bypass === 'boolean') {
+              await dbManager.setRequestIsDemoBypass(file.requestId, processData.is_demo_bypass);
+              if (processData.is_demo_bypass) isDemoBypassBackfilled++;
+            }
+            if (processData && processData.bypass_source && processData.bypass_source.request_id) {
+              await dbManager.setRequestBypassSource(file.requestId, processData.bypass_source.request_id);
+            }
           } catch (demoError) {
-            console.error(`[refresh] Failed to mirror is_demo for ${file.requestId}:`, demoError.message);
+            console.error(`[refresh] Failed to mirror demo fields for ${file.requestId}:`, demoError.message);
           }
 
           insertedCount++;
@@ -167,7 +176,7 @@ const refreshRequestsFromS3 = async () => {
       `S3 refresh complete: ${insertedCount} processed, ${reportUpdatedCount} reports found, ` +
       `${reportErrorCount} reports missing, ${pdfHashBackfilled} pdf_hash backfilled, ` +
       `${cacheKeyBackfilled} cache_key backfilled, ${isDemoBackfilled} is_demo=1 mirrored, ` +
-      `${errorCount} errors`
+      `${isDemoBypassBackfilled} is_demo_bypass=1 mirrored, ${errorCount} errors`
     );
 
     return true;

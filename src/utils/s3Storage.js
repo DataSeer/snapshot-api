@@ -396,6 +396,19 @@ class ProcessingSession {
     // requests.is_demo in the DB. Set via setIsDemo().
     this.isDemo = false;
 
+    // Demo-bypass flag. Set via setIsDemoBypass() when this request was
+    // served from a demo-flagged source PDF (genshare skipped, response
+    // substituted). Written to process.json under `is_demo_bypass` and
+    // mirrored to requests.is_demo_bypass in the DB. Orthogonal to isDemo —
+    // a bypass-served request never itself becomes a demo source.
+    this.isDemoBypass = false;
+
+    // Pointer to the demo-flagged source request that supplied the response.
+    // Set via setBypassSource(). Written to process.json under
+    // `bypass_source` and the request_id mirrored to
+    // requests.bypass_source_request_id in the DB.
+    this.bypassSource = null;
+
     // Report data
     this.report = null;
 
@@ -481,7 +494,33 @@ class ProcessingSession {
     this.addLog(`[S3] is_demo set: ${this.isDemo}`, 'INFO');
     return this;
   }
-  
+
+  // Mark this request as having been served via demo-bypass (genshare was
+  // skipped and the response was substituted from a demo-flagged source PDF).
+  // Persisted to process.json under `is_demo_bypass`, mirrored to
+  // requests.is_demo_bypass.
+  setIsDemoBypass(isDemoBypass) {
+    this.isDemoBypass = isDemoBypass === true;
+    this.addLog(`[S3] is_demo_bypass set: ${this.isDemoBypass}`, 'INFO');
+    return this;
+  }
+
+  // Record which demo-flagged source request supplied the bypass response.
+  // Persisted to process.json under `bypass_source`. The request_id is also
+  // mirrored to requests.bypass_source_request_id.
+  setBypassSource({ user_name, request_id } = {}) {
+    if (!request_id) {
+      this.bypassSource = null;
+    } else {
+      this.bypassSource = { user_name: user_name || null, request_id };
+    }
+    this.addLog(
+      `[S3] bypass_source set: ${this.bypassSource ? `${this.bypassSource.user_name}/${this.bypassSource.request_id}` : 'null'}`,
+      'INFO'
+    );
+    return this;
+  }
+
   // Initialize GenShare service
   initGenShare(version = null) {
     this.genshare.isActive = true;
@@ -635,7 +674,9 @@ class ProcessingSession {
           cache: this.cacheKey || null
         },
         result: this.result || { status: null, error: null },
-        is_demo: this.isDemo === true
+        is_demo: this.isDemo === true,
+        is_demo_bypass: this.isDemoBypass === true,
+        bypass_source: this.bypassSource || null
       };
 
       // Add process files

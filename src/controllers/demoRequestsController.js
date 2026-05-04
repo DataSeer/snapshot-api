@@ -75,6 +75,8 @@ const shapeRow = (row) => ({
   article_id: row.article_id,
   pdf_hash: row.pdf_hash || null,
   is_demo: row.is_demo === 1,
+  is_demo_bypass: row.is_demo_bypass === 1,
+  bypass_source_request_id: row.bypass_source_request_id || null,
   report_link: extractReportLink(row.report_data),
   created_at: row.created_at,
   updated_at: row.updated_at

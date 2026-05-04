@@ -3,11 +3,9 @@ const fs = require('fs').promises;
 const genshareManager = require('../utils/genshareManager');
 const queueManager = require('../utils/queueManager');
 const { ProcessingSession } = require('../utils/s3Storage');
-const demoBypassManager = require('../utils/demoBypassManager');
 const { getUserById, isAdmin } = require('../utils/userManager');
 const config = require('../config');
 const { watchConfig } = require('../utils/configWatcher');
-const { logger } = require('../utils/logger');
 const genshareConfig = watchConfig(config.genshareConfigPath);
 
 /**
@@ -82,19 +80,13 @@ module.exports.getGenShareHealth = async (req, res) => {
  * @param {Object} res - Express response
  */
 module.exports.processPDF = async (req, res) => {
-  // Curator-mode requests (POST /processPDF/demo) skip the bypass check — they
-  // are the ones that create the demo-flagged source. Regular requests check
-  // the demo registry first and short-circuit when a PDF match is found.
+  // Curator-mode requests (POST /processPDF/demo) tag the resulting requests
+  // row with is_demo = 1 and reach genshare normally — they're the ones
+  // creating the demo-flagged source. Regular requests are intercepted by the
+  // demo bypass at genshareManager.processPDF (the chokepoint shared with
+  // the async/EM/ScholarOne/snapshot-mails workflows), which creates a fully
+  // logged session and substitutes the curator's response for genshare's.
   const isCuratorDemo = req.isCuratorDemo === true;
-
-  // Attempt a pre-genshare bypass ONLY for regular requests. If a match is
-  // found we respond directly with the curator's (possibly edited) response,
-  // without creating a session, DB row, Sheets entry, or snapshot-reports
-  // token.
-  if (!isCuratorDemo) {
-    const bypass = await tryDemoBypass(req, res);
-    if (bypass === true) return; // response already sent
-  }
 
   // Initialize processing session
   const session = new ProcessingSession(req.user.id);
@@ -515,61 +507,3 @@ module.exports.processPDFDemo = async (req, res) => {
   return module.exports.processPDF(req, res);
 };
 
-/**
- * Pre-session bypass check for regular `/processPDF` requests.
- *
- * - Parses the multipart body (best-effort; any structural problem falls
- *   through to the normal controller path so validation errors are uniform).
- * - Computes SHA-256 of the uploaded PDF.
- * - Calls the demo-bypass manager. On a match, cleans up temp files, logs a
- *   single `[demo] Bypass served …` line, sends the filtered response, and
- *   returns `true` to the caller so the main controller short-circuits.
- * - Returns `false` when no bypass applies (or any precondition is missing).
- *
- * Never throws: any unexpected error is logged and the function returns
- * `false` so the request falls through to the normal flow.
- */
-async function tryDemoBypass(req, res) {
-  try {
-    const mainFile = req.files && req.files.file && req.files.file[0]
-      ? req.files.file[0]
-      : null;
-    if (!mainFile || !mainFile.path) return false;
-
-    let pdfHash;
-    try {
-      pdfHash = await demoBypassManager.calculateSHA256(mainFile.path);
-    } catch (hashError) {
-      logger.warn(`[demo] Failed to hash PDF for bypass lookup: ${hashError.message}`);
-      return false;
-    }
-
-    const user = getUserById(req.user.id);
-    const bypass = await demoBypassManager.tryBypass(pdfHash, user);
-    if (!bypass) return false;
-
-    // Clean up the temp files we received — the bypass path doesn't save
-    // them anywhere.
-    const supplementaryFile = req.files.supplementary_file && req.files.supplementary_file[0];
-    const filesToCleanup = [mainFile, supplementaryFile].filter((f) => f && f.path);
-    await Promise.all(
-      filesToCleanup.map((f) =>
-        fs.unlink(f.path).catch((err) =>
-          logger.warn(`[demo] Temp file cleanup failed (${f.path}): ${err.message}`)
-        )
-      )
-    );
-
-    logger.info(
-      `[demo] Bypass served — pdf_hash=${pdfHash} ` +
-        `source_user=${bypass.sourceUserId} source_request=${bypass.sourceRequestId} ` +
-        `caller=${req.user.id}`
-    );
-
-    res.status(200).json({ response: bypass.data });
-    return true;
-  } catch (error) {
-    logger.warn(`[demo] Bypass attempt failed, falling through: ${error.message}`);
-    return false;
-  }
-}

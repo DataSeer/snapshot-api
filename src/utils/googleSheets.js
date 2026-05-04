@@ -261,9 +261,14 @@ async function appendToSheet(data, versionLabel, headers) {
     // Ensure the tab exists (create if needed, write headers on new tabs)
     await getOrCreateSheet(spreadsheetId, tabName, headers);
 
+    // Anchor the append on column A so Sheets always places new rows at the
+    // first empty row in that column. With `range: tabName` (sheet name only)
+    // Sheets infers the "table" from the widest row above and can place
+    // shorter rows at mid-row offsets — visible as leading-empty cells in
+    // the CSV export when row widths vary.
     const response = await sheetsService.spreadsheets.values.append({
       spreadsheetId,
-      range: tabName,
+      range: `'${tabName}'!A:A`,
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'OVERWRITE',
       requestBody: {
@@ -300,9 +305,12 @@ async function appendToUserSheet(data, userId, headers) {
     // Ensure the tab exists (create if needed, write headers on new tabs)
     await getOrCreateSheet(spreadsheetId, tabName, headers);
 
+    // Anchor the append on column A so Sheets always places new rows at the
+    // first empty row in that column. See the matching note in
+    // appendToSheet for why this is needed when row widths vary.
     const response = await sheetsService.spreadsheets.values.append({
       spreadsheetId,
-      range: tabName,
+      range: `'${tabName}'!A:A`,
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'OVERWRITE',
       requestBody: {

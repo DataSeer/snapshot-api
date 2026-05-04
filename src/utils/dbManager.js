@@ -93,6 +93,8 @@ const initDatabase = async () => {
     await ensureRequestsColumn('cache_key', 'cache_key TEXT NULL');
     await ensureRequestsColumn('pdf_hash', 'pdf_hash TEXT NULL');
     await ensureRequestsColumn('is_demo', 'is_demo INTEGER NOT NULL DEFAULT 0');
+    await ensureRequestsColumn('is_demo_bypass', 'is_demo_bypass INTEGER NOT NULL DEFAULT 0');
+    await ensureRequestsColumn('bypass_source_request_id', 'bypass_source_request_id TEXT NULL');
 
     // Create cache_entries table
     await new Promise((resolve, reject) => {
@@ -2618,6 +2620,45 @@ const setRequestIsDemo = async (requestId, isDemo) => {
 };
 
 /**
+ * Flag a request row as having been served via demo-bypass (genshare skipped,
+ * response substituted from a demo-flagged source PDF). Mirrors
+ * process.json.is_demo_bypass on S3.
+ */
+const setRequestIsDemoBypass = async (requestId, isDemoBypass) => {
+  const db = await getDBConnection();
+  try {
+    await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE requests SET is_demo_bypass = ?, updated_at = CURRENT_TIMESTAMP WHERE request_id = ?`,
+        [isDemoBypass ? 1 : 0, requestId],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
+ * Record which demo-flagged source request supplied the response for a
+ * bypass-served call. Mirrors process.json.bypass_source.request_id on S3.
+ */
+const setRequestBypassSource = async (requestId, sourceRequestId) => {
+  const db = await getDBConnection();
+  try {
+    await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE requests SET bypass_source_request_id = ?, updated_at = CURRENT_TIMESTAMP WHERE request_id = ?`,
+        [sourceRequestId || null, requestId],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
  * Find the demo-flagged request whose PDF hash matches. Returns the full row
  * (including user_name + report_data so the bypass layer can read the source
  * response from S3 and extract the report_link). When multiple rows match,
@@ -2651,6 +2692,7 @@ const listDemoRequests = async () => {
     return await new Promise((resolve, reject) => {
       db.all(
         `SELECT id, user_name, article_id, request_id, pdf_hash, report_data,
+                is_demo, is_demo_bypass, bypass_source_request_id,
                 created_at, updated_at
          FROM requests
          WHERE is_demo = 1
@@ -2771,6 +2813,8 @@ module.exports = {
   // Demo-bypass methods
   setRequestPdfHash,
   setRequestIsDemo,
+  setRequestIsDemoBypass,
+  setRequestBypassSource,
   findDemoRequestByPdfHash,
   listDemoRequests,
   getRequestByRequestIdAnyUser

@@ -11,6 +11,8 @@ const requestsManager = require('./requestsManager');
 const emailAlertManager = require('./emailAlertManager');
 const snapshotReportsManager = require('./snapshotReportsManager');
 const cacheManager = require('./cacheManager');
+// demoBypassManager is lazy-required inside processPDF to avoid the circular
+// dependency with this module's filterAndSortResponseForUser export.
 const dbManager = require('./dbManager');
 const { calculateSHA256 } = require('./s3Storage');
 
@@ -385,6 +387,8 @@ function filterOptions(options, user, session) {
  * @param {string} options.graphValue - Graph/editorial policy value
  * @param {string} options.articleId - Article ID
  * @param {Array} options.responseData - GenShare response data array
+ * @param {boolean} [options.isDemoBypass] - When true, prefix the displayed
+ *   request ID with "(demo) " so demo-bypass rows are visible at a glance.
  * @returns {Array} - CSV row data array (contains only genshareVersion, not alias)
  */
 const buildSummaryRowData = (options) => {
@@ -403,15 +407,21 @@ const buildSummaryRowData = (options) => {
     reportURL = "",
     graphValue = "",
     articleId = "",
-    responseData = []
+    responseData = [],
+    isDemoBypass = false
   } = options;
 
   // Format response data using existing function (use alias for config lookup)
   const response = getResponse(responseData, genshareVersionAlias);
 
+  // Display label inside the HYPERLINK formula. Bypass-served rows get a
+  // "(demo) " prefix so they're identifiable in the sheet without an extra
+  // column. The actual requestId in the link target is unchanged.
+  const displayLabel = `${isDemoBypass ? '(demo) ' : ''}${requestId}`;
+
   // Build the row data
   const rowData = [
-    s3Url ? `=HYPERLINK("${s3Url}","${requestId}")` : requestId, // Query ID with S3 link
+    s3Url ? `=HYPERLINK("${s3Url}","${displayLabel}")` : displayLabel, // Query ID with S3 link
     snapshotAPIVersion,                          // Snapshot API version
     genshareVersion || "",                       // GenShare version (returned by genshare)
     errorStatus,                                 // Error status
@@ -471,6 +481,8 @@ const getSummaryHeaders = (versionAlias) => {
  * @param {string} options.graphValue - Graph/editorial policy value
  * @param {string} options.articleId - Article ID
  * @param {Array} options.filteredData - Filtered response data array (already filtered for user)
+ * @param {boolean} [options.isDemoBypass] - When true, prefix the request ID
+ *   cell with "(demo) " so demo-bypass rows are visible at a glance.
  * @returns {Array} - CSV row data array
  */
 const buildUserLogRowData = (options) => {
@@ -484,12 +496,13 @@ const buildUserLogRowData = (options) => {
     reportURL = "",
     graphValue = "",
     articleId = "",
-    filteredData = []
+    filteredData = [],
+    isDemoBypass = false
   } = options;
 
   // Build the base row data
   const rowData = [
-    requestId,                                   // Request ID
+    `${isDemoBypass ? '(demo) ' : ''}${requestId}`, // Request ID
     convertToGoogleSheetsDate(date),             // Date
     convertToGoogleSheetsTime(date),             // Time
     convertToGoogleSheetsDuration(duration),     // Duration
@@ -587,7 +600,8 @@ const appendToSummary = async ({ session, errorStatus, data, genshareVersionAlia
       reportURL: reportURL || "",
       graphValue: graphValue || "",
       articleId: articleId || "",
-      responseData: genshareResponse?.data?.response
+      responseData: genshareResponse?.data?.response,
+      isDemoBypass: session.isDemoBypass === true
     });
 
     // Log to Google Sheets using the actual version label for the tab name
@@ -634,7 +648,8 @@ const appendToUserLog = async ({ session, userId, filteredData, reportURL, filen
       reportURL: reportURL || "",
       graphValue: graphValue || "",
       articleId: articleId || "",
-      filteredData
+      filteredData,
+      isDemoBypass: session.isDemoBypass === true
     });
 
     // Append to user's Google Sheet
@@ -831,6 +846,148 @@ const processPDF = async (data, session) => {
   } catch (hashError) {
     session.addLog(`[PDF] Failed to compute SHA-256: ${hashError.message}`, 'WARN');
     session.pdfHash = null;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Demo-bypass chokepoint.
+  //
+  // Every workflow that reaches this point — sync /processPDF, the async
+  // worker, EM, ScholarOne, snapshot-mails — first checks whether this PDF
+  // is registered as a demo. On hit we skip the genshare HTTP call entirely
+  // and substitute the curator's response, but the rest of the session
+  // (S3 write, DB row, Sheets log, snapshot-reports if applicable) runs
+  // normally so the call is fully traceable.
+  //
+  // Curator-mode requests (POST /processPDF/demo, data.isCuratorDemo=true)
+  // are the seeders themselves and must reach genshare to produce the
+  // response that future bypass lookups serve.
+  //
+  // Lazy-required to break the circular dependency with this module's
+  // filterAndSortResponseForUser export.
+  // ─────────────────────────────────────────────────────────────────────
+  if (data.isCuratorDemo !== true && session.pdfHash) {
+    const demoBypassManager = require('./demoBypassManager');
+    let bypass = null;
+    try {
+      bypass = await demoBypassManager.tryBypass(session.pdfHash, user);
+    } catch (bypassLookupError) {
+      session.addLog(`[demo] Bypass lookup failed, falling through: ${bypassLookupError.message}`, 'WARN');
+    }
+
+    if (bypass) {
+      const bypassStart = new Date();
+      session.addLog(
+        `[demo] Bypass served — pdf_hash=${session.pdfHash} ` +
+          `source_user=${bypass.sourceUserId} source_request=${bypass.sourceRequestId} ` +
+          `caller=${user.id}`
+      );
+
+      session.setIsDemoBypass(true);
+      session.setBypassSource({
+        user_name: bypass.sourceUserId,
+        request_id: bypass.sourceRequestId
+      });
+
+      // Activate the genshare service block on the session so saveToS3 writes
+      // the genshare/* files. We never actually hit the service — the
+      // response.json content is the bypass payload.
+      session.initGenShare(activeGenShareVersion);
+      session.setGenshareVersion(getActualVersion(activeGenShareVersion) || activeGenShareVersion || '');
+
+      const bypassData = Array.isArray(bypass.data) ? bypass.data : [];
+      const responseEnvelope = { response: bypassData };
+      session.setGenshareOriginalResponse(responseEnvelope);
+      session.setGenshareResponse({
+        status: 200,
+        headers: {},
+        data: { ...responseEnvelope }
+      });
+
+      // Extract article_id from the bypass response (same field name as the
+      // normal flow uses — the demo source's response carries it).
+      const articleIdItem = bypassData.find((item) => item && item.name === 'article_id');
+      const bypassArticleId = articleIdItem?.value || '';
+      if (bypassArticleId) {
+        session.addLog('[DB] Link "article_id <-> request_id" created (bypass)');
+      } else {
+        session.addLog('[DB] Warning: "article_id" not found in bypass response. Storing request with empty article_id.');
+      }
+
+      // Insert the requests row so downstream setters land on a real row.
+      try {
+        await requestsManager.addOrUpdateRequest(user.id, bypassArticleId, session.requestId);
+      } catch (dbError) {
+        session.addLog(`[DB] Failed to insert bypass request row: ${dbError.message}`, 'WARN');
+        console.error(`[${session.requestId}] [DB] Failed to insert bypass request row:`, dbError);
+      }
+
+      // Persist pdf_hash + is_demo_bypass + bypass_source on the row. Failures
+      // are non-fatal — process.json still carries the markers and a future
+      // refreshRequestsFromS3 will heal the row.
+      try {
+        await dbManager.setRequestPdfHash(session.requestId, session.pdfHash);
+        session.addLog('[DB] pdf_hash saved');
+      } catch (hashDbError) {
+        session.addLog(`[DB] Failed to set pdf_hash: ${hashDbError.message}`, 'WARN');
+      }
+      try {
+        await dbManager.setRequestIsDemoBypass(session.requestId, true);
+        await dbManager.setRequestBypassSource(session.requestId, bypass.sourceRequestId);
+        session.addLog(`[DB] Request marked as demo-bypass (source=${bypass.sourceRequestId})`);
+      } catch (bypassDbError) {
+        session.addLog(`[DB] Failed to set demo-bypass flags: ${bypassDbError.message}`, 'WARN');
+      }
+
+      // Sheets logging — bypass rows get a "(demo) " prefix on the request ID
+      // cell so they're identifiable without a schema change.
+      try {
+        await appendToSummary({
+          session,
+          errorStatus: 'No',
+          data,
+          genshareVersionAlias: activeGenShareVersion || genshareConfig.defaultVersion,
+          reportURL: bypass.reportLink || '',
+          graphValue: activeGenShareGraphValue || '',
+          reportVersion: activeReportVersion || '',
+          articleId: bypassArticleId
+        });
+      } catch (summaryError) {
+        session.addLog(`[Sheets] Error logging bypass to summary: ${summaryError.message}`, 'WARN');
+      }
+      try {
+        await appendToUserLog({
+          session,
+          userId: user.id,
+          filteredData: bypassData,
+          reportURL: bypass.reportLink || '',
+          filename: data.file?.originalname,
+          genshareVersionAlias: activeGenShareVersion || genshareConfig.defaultVersion,
+          reportVersion: activeReportVersion || '',
+          graphValue: activeGenShareGraphValue || '',
+          articleId: bypassArticleId
+        });
+      } catch (userLogError) {
+        session.addLog(`[User Sheets] Error logging bypass: ${userLogError.message}`, 'WARN');
+      }
+
+      // Record a single timeline event covering the whole bypass path so
+      // process.json's timeline isn't empty.
+      session.addTimelineEvent('snapshot-api-demo-bypass', bypassStart, new Date());
+
+      // Genshare-shaped envelope so every caller (sync controller, async
+      // worker, EM, ScholarOne, mails) sees the same return shape it would
+      // have gotten from a real genshare call.
+      return {
+        status: 200,
+        headers: {},
+        data: bypassData,
+        errorStatus: 'No',
+        activeGenShareVersion,
+        reportURL: bypass.reportLink || '',
+        activeGenShareGraphValue,
+        activeReportVersion
+      };
+    }
   }
 
   // Initialize GenShare with the active version
