@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.15.0](https://github.com/DataSeer/snapshot-api/compare/v3.14.0...v3.15.0) (2026-05-04)
+
+
+### Features
+
+* add S3 data refresh script + process.json metadata ([a12ccc9](https://github.com/DataSeer/snapshot-api/commits/a12ccc9d8ddcc2ffcd173c8d248c03d90f234d03))
+
+
+### Bug Fixes
+
+* fix test issue ([cc389ec](https://github.com/DataSeer/snapshot-api/commits/cc389ecddf6a7de49af5958ee60e57553b167d52))
+
 ## [3.14.0](https://github.com/DataSeer/snapshot-api/compare/v3.13.1...v3.14.0) (2026-04-22)
 
 
