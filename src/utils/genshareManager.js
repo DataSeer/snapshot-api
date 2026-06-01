@@ -339,23 +339,31 @@ function filterOptions(options, user, session) {
   Object.keys(optionsConfig).forEach(optionKey => {
     const config = optionsConfig[optionKey];
     
-    // Skip if config doesn't have the required structure
-    if (!config || !Array.isArray(config.available) || typeof config.default !== 'string') {
+    // Skip if config doesn't have the required structure. `default` may be a
+    // string (e.g. editorial_policy) or a boolean (e.g. no_cache) — both are
+    // validated against `available`; other types are ignored.
+    const defaultType = typeof config.default;
+    if (!config || !Array.isArray(config.available) ||
+        (defaultType !== 'string' && defaultType !== 'boolean')) {
       return;
     }
 
     // Check if this option exists in the provided options
     if (optionKey in filteredOptions) {
       const value = filteredOptions[optionKey];
-      
-      // If the value is not in the available list, use the default
+
+      // If the value is not in the available list, use the default. This is
+      // what enforces per-user limits — e.g. a non-admin with available:[false]
+      // cannot set no_cache:true (it gets clamped back to the default).
       if (!config.available.includes(value)) {
         filteredOptions[optionKey] = config.default;
         session.addLog(`[GenShare] Option "${optionKey}" with value "${value}" is not available; default value "${config.default}" will be used instead`);
       }
     } else {
-      // If the option is not provided and there's a default, set it
-      if (config.default) {
+      // If the option is not provided and there's a default, set it. Boolean
+      // defaults (including false) are always applied so the resolved value is
+      // explicit downstream.
+      if (config.default || defaultType === 'boolean') {
         filteredOptions[optionKey] = config.default;
         session.addLog(`[GenShare] Option "${optionKey}" not provided; default value "${config.default}" will be used instead`);
       }
@@ -1024,8 +1032,14 @@ const processPDF = async (data, session) => {
     session.addLog(`[S3] Added supplementary file: ${data.supplementary_file.originalname} (${data.supplementary_file.size} bytes)`);
   }
 
-  // Filter options sent by the user 
+  // Filter options sent by the user
   const filteredOptions = filterOptions(options, user, session);
+
+  // Resolve the cache-bypass decision. `no_cache` is a snapshot-api/genshare
+  // control flag (validated per-user via genshare.options.no_cache), NOT a
+  // genshare analysis option — read it, then strip it from what we forward.
+  const noCache = filteredOptions.no_cache === true;
+  delete filteredOptions.no_cache;
 
   // Add options with decision_tree_path for the request only
   const requestOptions = {
@@ -1035,6 +1049,19 @@ const processPDF = async (data, session) => {
     debug: true
   };
   formData.append('options', JSON.stringify(requestOptions));
+
+  // When bypassing, instruct genshare-service to skip ALL of its own caches.
+  // genshare manages its caches via the `config` form field (Pydantic Config).
+  if (noCache) {
+    formData.append('config', JSON.stringify({
+      skip_graph_policy_cache: true,
+      skip_genshare_cache: true,
+      skip_tei_cache: true,
+      skip_dataset_cache: true,
+      skip_analysis_cache: true
+    }));
+    session.addLog('[cache] no_cache=true — disabling genshare-service caches via config override');
+  }
 
   // Log third-party service request
   session.addLog(`[GenShare] Sending request to service: ${activeGenShareVersion} (${actualVersion})`);
@@ -1149,23 +1176,30 @@ const processPDF = async (data, session) => {
     // consumer (filter, Sheets log, snapshot-reports, saveToS3) sees the
     // patched array. No-op when cache is disabled or genshare provided no
     // cache block.
-    try {
-      // cacheManager emits its own session log lines ("[cache] …") so we
-      // just need to stash the resulting cache-ref on the session.
-      const cacheResult = await cacheManager.applyCacheToGenshareResponse(
-        response.data,
-        activeGenShareVersion,
-        session
-      );
-      if (cacheResult.applied && cacheResult.cacheKey) {
-        session.cacheKey = cacheResult.cacheKey;
-        session.setCacheRef(cacheResult.cacheRef);
+    //
+    // Full bypass when no_cache=true: skip both the read (no curator
+    // substitution) and the seed (the canonical entry is left untouched).
+    if (noCache) {
+      session.addLog('[cache] Skipping snapshot-api cache layer (no_cache=true) — no read, no seed');
+    } else {
+      try {
+        // cacheManager emits its own session log lines ("[cache] …") so we
+        // just need to stash the resulting cache-ref on the session.
+        const cacheResult = await cacheManager.applyCacheToGenshareResponse(
+          response.data,
+          activeGenShareVersion,
+          session
+        );
+        if (cacheResult.applied && cacheResult.cacheKey) {
+          session.cacheKey = cacheResult.cacheKey;
+          session.setCacheRef(cacheResult.cacheRef);
+        }
+      } catch (cacheError) {
+        // Cache must never break the main path — log and continue with the raw
+        // genshare response.
+        session.addLog(`[cache] Error applying cache layer: ${cacheError.message}`, 'WARN');
+        console.error(`[${session.requestId}] [cache] Error applying cache layer:`, cacheError);
       }
-    } catch (cacheError) {
-      // Cache must never break the main path — log and continue with the raw
-      // genshare response.
-      session.addLog(`[cache] Error applying cache layer: ${cacheError.message}`, 'WARN');
-      console.error(`[${session.requestId}] [cache] Error applying cache layer:`, cacheError);
     }
 
     // Store complete response in the session (now carries the possibly-
