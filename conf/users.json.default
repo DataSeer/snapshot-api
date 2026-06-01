@@ -24,6 +24,10 @@
         "editorial_policy": {
           "available": ["PLOS", "TFOD", "SURR"],
           "default": "TFOD"
+        },
+        "no_cache": {
+          "available": [true, false],
+          "default": false
         }
       }
     },
@@ -68,6 +72,10 @@
         "editorial_policy": {
           "available": ["PLOS", "TFOD", "SURR"],
           "default": "TFOD"
+        },
+        "no_cache": {
+          "available": [false],
+          "default": false
         }
       }
     },
