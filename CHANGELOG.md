@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.16.0](https://github.com/DataSeer/snapshot-api/compare/v3.15.1...v3.16.0) (2026-06-03)
+
+
+### Features
+
+* **cache:** add per-request no_cache option to bypass caching ([8f48663](https://github.com/DataSeer/snapshot-api/commits/8f486639e9758d3967de23af506631c1b67a2895))
+* **genshare:** map editorial_policy to feature flags ([59b89fc](https://github.com/DataSeer/snapshot-api/commits/59b89fce519bca22bf335ef0a558ab55d03f1bd0))
+
 ### [3.15.1](https://github.com/DataSeer/snapshot-api/compare/v3.15.0...v3.15.1) (2026-05-04)
 
 
