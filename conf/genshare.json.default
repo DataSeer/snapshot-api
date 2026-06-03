@@ -3,6 +3,14 @@
   "versions": {
     "previous": {
       "version": "v81.2.1",
+      "editorialPolicyOptions": {
+        "AUTH": { "suggested_das_generation": true, "funding_statement": true },
+        "TFOD": { "suggested_das_generation": false, "funding_statement": true },
+        "PLOS": { "suggested_das_generation": false, "funding_statement": true },
+        "JID": { "suggested_das_generation": false, "funding_statement": true },
+        "SURR": { "suggested_das_generation": false, "funding_statement": true },
+        "default": { "suggested_das_generation": false, "funding_statement": false }
+      },
       "cache": {
         "enabled": true,
         "ttlAfterZeroConsumersMs": 172800000,
@@ -45,6 +53,14 @@
     },
     "latest": {
       "version": "v81.3.0",
+      "editorialPolicyOptions": {
+        "AUTH": { "suggested_das_generation": true, "funding_statement": true },
+        "TFOD": { "suggested_das_generation": false, "funding_statement": true },
+        "PLOS": { "suggested_das_generation": false, "funding_statement": true },
+        "JID": { "suggested_das_generation": false, "funding_statement": true },
+        "SURR": { "suggested_das_generation": false, "funding_statement": true },
+        "default": { "suggested_das_generation": false, "funding_statement": false }
+      },
       "processPDF": {
         "url": "http://localhost:5001/snapshot",
         "method": "POST",
