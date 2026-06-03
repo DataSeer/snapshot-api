@@ -373,6 +373,31 @@ function filterOptions(options, user, session) {
   return filteredOptions;
 }
 
+/**
+ * Resolve the per-feature flags driven by the request's editorial_policy, using
+ * the active genshare version's `editorialPolicyOptions` mapping in
+ * conf/genshare.json. Falls back to the mapping's `default` entry, then to all
+ * features off. This is server-authoritative — clients cannot set these directly.
+ *
+ * @param {Object} versionConfig - the active genshare version config block
+ * @param {string} editorialPolicy - the resolved editorial_policy (e.g. "AUTH", "TFOD")
+ * @param {Object} session - session for logging
+ * @returns {{suggested_das_generation: boolean, funding_statement: boolean}}
+ */
+function resolveEditorialPolicyOptions(versionConfig, editorialPolicy, session) {
+  const mapping = (versionConfig && versionConfig.editorialPolicyOptions) || {};
+  const entry = mapping[editorialPolicy] || mapping.default || {};
+  const resolved = {
+    suggested_das_generation: entry.suggested_das_generation === true,
+    funding_statement: entry.funding_statement === true
+  };
+  session.addLog(
+    `[GenShare] editorial_policy="${editorialPolicy}" mapped to ` +
+      `suggested_das_generation=${resolved.suggested_das_generation}, funding_statement=${resolved.funding_statement}`
+  );
+  return resolved;
+}
+
 // ============================================================================
 // CSV DATA BUILDING FUNCTIONS
 // ============================================================================
@@ -1041,9 +1066,20 @@ const processPDF = async (data, session) => {
   const noCache = filteredOptions.no_cache === true;
   delete filteredOptions.no_cache;
 
+  // Resolve per-feature flags from the editorial_policy mapping (authoritative,
+  // so drop any client-supplied values before re-injecting the mapped ones).
+  delete filteredOptions.suggested_das_generation;
+  delete filteredOptions.funding_statement;
+  const editorialPolicyOptions = resolveEditorialPolicyOptions(
+    versionConfig,
+    filteredOptions.editorial_policy || '',
+    session
+  );
+
   // Add options with decision_tree_path for the request only
   const requestOptions = {
     ...filteredOptions,
+    ...editorialPolicyOptions,
     request_id: session.requestId,
     decision_tree_path: true,
     debug: true
