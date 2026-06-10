@@ -15,7 +15,7 @@ const { logger } = require('./logger');
 
 // Load S3 configuration from JSON file
 const config = require('../config');
-// eslint-disable-next-line node/no-unpublished-require
+// eslint-disable-next-line n/no-unpublished-require
 const s3Config = require(config.awsS3ConfigPath);
 
 // Initialize S3 client
