@@ -28,6 +28,11 @@ module.exports = {
     }
   ],
   rules: {
+    // eslint-plugin-node@11's resolver predates the package "exports" field, so
+    // it fails to resolve modules that only expose entries via exports maps
+    // (e.g. uuid >=9). The module is a real, declared dependency — allow it
+    // explicitly so node/no-missing-require doesn't false-positive.
+    'node/no-missing-require': ['error', { allowModules: ['uuid'] }],
     'node/no-unsupported-features/node-builtins': ['error', {
       version: '>=20.0.0'  // Added this to match your Node version
     }],
