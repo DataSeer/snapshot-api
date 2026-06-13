@@ -1060,6 +1060,16 @@ const processPDF = async (data, session) => {
   // Filter options sent by the user
   const filteredOptions = filterOptions(options, user, session);
 
+  // filterOptions applies the per-user default editorial_policy when the caller
+  // omits it. Refresh activeGenShareGraphValue from the resolved value so the
+  // later "Graph values match/don't match" check compares against the policy
+  // actually sent to GenShare, not the raw (possibly empty) request value.
+  // Without this, requests that rely on the default log a spurious
+  // "[GenShare] Graph values don't match: ( - <graph>)" warning.
+  if (filteredOptions.editorial_policy) {
+    activeGenShareGraphValue = filteredOptions.editorial_policy;
+  }
+
   // Resolve the cache-bypass decision. `no_cache` is a snapshot-api/genshare
   // control flag (validated per-user via genshare.options.no_cache), NOT a
   // genshare analysis option — read it, then strip it from what we forward.
