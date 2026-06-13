@@ -12,7 +12,7 @@
         "latest"
       ],
       "defaultVersion": "latest",
-      "fieldOrder": [],
+      "returnedFields": [],
       "availableFields": [],
       "restrictedFields": [
         "data_on_request__gs",
@@ -60,7 +60,7 @@
         "latest"
       ],
       "defaultVersion": "",
-      "fieldOrder": [],
+      "returnedFields": [],
       "availableFields": [],
       "restrictedFields": [
         "data_on_request__gs",
