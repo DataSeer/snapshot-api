@@ -184,50 +184,6 @@ const getResponse = (response = [], versionAlias) => {
 };
 
 /**
- * Sort response data based on user's configuration
- * @param {Array} responseData - Array of field objects to sort
- * @param {Array} fieldOrder - Array of field names (with suffix) in desired order
- * @returns {Array} - Sorted array
- */
-function sortResponseData(responseData, fieldOrder) {
-  // If no response data or no sort settings, return as is
-  if (!responseData || !fieldOrder) {
-    return responseData;
-  }
-
-  // Create a deep copy to avoid modifying original
-  let data = JSON.parse(JSON.stringify(responseData));
-
-
-  if (!fieldOrder || fieldOrder.length === 0) {
-    return data;
-  }
-
-  // Create a map of field names to their order index
-  const orderMap = new Map();
-  fieldOrder.forEach((fieldName, index) => {
-    orderMap.set(fieldName, index);
-  });
-
-  return data.sort((a, b) => {
-    const orderA = orderMap.has(a.name) ? orderMap.get(a.name) : Infinity;
-    const orderB = orderMap.has(b.name) ? orderMap.get(b.name) : Infinity;
-    
-    // If both have defined order, sort by order
-    if (orderA !== Infinity && orderB !== Infinity) {
-      return orderA - orderB;
-    }
-    
-    // If only one has defined order, it comes first
-    if (orderA !== Infinity) return -1;
-    if (orderB !== Infinity) return 1;
-    
-    // If neither has defined order, maintain original order
-    return 0;
-  });
-}
-
-/**
  * Filter response data based on user's configuration
  * @param {Array} responseData - Array of field objects to filter
  * @param {Array} availableFields - Array of available field names (with suffix)
@@ -335,24 +291,24 @@ const filterAndSortResponseForUser = (responseData, user, options = {}) => {
   // unchanged (returnedFields is empty for most users, making it a no-op).
   const { applyReturnedFields = true } = options;
 
-  const { availableFields, restrictedFields, fieldOrder, returnedFields } = user.genshare;
+  const { availableFields, restrictedFields, returnedFields } = user.genshare;
 
   // 1. Enforce data-access boundaries first (security): availableFields /
   //    restrictedFields decide what the user is allowed to see at all. Applied
   //    everywhere, including the snapshot-reports view.
   const filteredResponse = filterResponseData(responseData, availableFields, restrictedFields);
 
-  // 2. Sort data based on field order
-  let sortedAndFilteredResponse = sortResponseData(filteredResponse, fieldOrder);
-
-  // 3. Apply the presentation-only returnedFields whitelist within the
-  //    already access-checked set (narrows + reorders, never widens access).
-  if (applyReturnedFields) {
-    sortedAndFilteredResponse = filterByReturnedFields(sortedAndFilteredResponse, returnedFields);
-  }
+  // 2. Apply the presentation-only returnedFields whitelist within the already
+  //    access-checked set. As an ordered whitelist it both selects AND sorts
+  //    the response — the only place server-side ordering happens — for clients
+  //    that cannot filter/sort the payload on their own side. Skipped for the
+  //    snapshot-reports view (applyReturnedFields = false).
+  const shapedResponse = applyReturnedFields
+    ? filterByReturnedFields(filteredResponse, returnedFields)
+    : filteredResponse;
 
   // Clean field names
-  return cleanSnapshotFieldsName(sortedAndFilteredResponse);
+  return cleanSnapshotFieldsName(shapedResponse);
 };
 
 /**
