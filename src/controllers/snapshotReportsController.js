@@ -82,8 +82,15 @@ const getGenshareData = async (req, res) => {
       });
     }
 
-    // Apply filtering based on the original user's permissions
-    const filteredData = filterAndSortResponseForUser(responseData, originalUser);
+    // Apply filtering based on the original user's permissions.
+    // Data-access boundaries (availableFields/restrictedFields) ARE enforced,
+    // but the user's returnedFields (presentation-only response shaping for
+    // their own app) are intentionally NOT applied here: the report view must
+    // display everything the user is allowed to see, not just the subset they
+    // chose to have returned to their client.
+    const filteredData = filterAndSortResponseForUser(responseData, originalUser, {
+      applyReturnedFields: false
+    });
 
     // Return the filtered data with metadata
     res.json({
