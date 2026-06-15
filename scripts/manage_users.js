@@ -56,27 +56,53 @@ function generateClientSecret() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+/**
+ * Default per-user `genshare.options` block applied to new users.
+ *
+ * Each option is validated request-side by `genshareManager.filterOptions`:
+ * a requested value not in `available` is clamped back to `default`. These
+ * defaults are the conservative non-admin set — `editorial_policy` may be one
+ * of PLOS/TFOD/SURR (default TFOD), and `no_cache` is locked to false (the
+ * user cannot bypass the cache). Grant broader access (e.g. `no_cache`
+ * `available: [true, false]` for admins) via the `options` key of the
+ * genshareSettings argument or the `update-genshare` command.
+ * @returns {Object} a fresh copy of the default options block
+ */
+function getDefaultGenShareOptions() {
+  return {
+    editorial_policy: {
+      available: ['PLOS', 'TFOD', 'SURR'],
+      default: 'TFOD'
+    },
+    no_cache: {
+      available: [false],
+      default: false
+    }
+  };
+}
+
 function addUser(userId, rateLimit, genshareSettings = {}) {
   const users = loadUsers();
   if (users[userId]) {
     console.log(`User ${userId} already exists.`);
     return;
   }
-  
+
   // Use jwtManager to generate a permanent token
   const token = jwtManager.signPermanentToken(userId);
   const clientSecret = generateClientSecret();
-  
+
   users[userId] = {
     token,
     client_secret: clientSecret,
     rateLimit: rateLimit || { max: 100, windowMs: 15 * 60 * 1000 },
     genshare: {
-      authorizedVersions: genshareSettings.authorizedVersions || ['default'],
-      defaultVersion: genshareSettings.defaultVersion || 'default',
+      authorizedVersions: genshareSettings.authorizedVersions || ['latest'],
+      defaultVersion: genshareSettings.defaultVersion || 'latest',
+      returnedFields: genshareSettings.returnedFields || [],
       availableFields: genshareSettings.availableFields || [],
       restrictedFields: genshareSettings.restrictedFields || [],
-      returnedFields: genshareSettings.returnedFields || []
+      options: genshareSettings.options || getDefaultGenShareOptions()
     },
     reports: {
       authorizedVersions: [],
@@ -151,11 +177,12 @@ function updateUserGenShareSettings(userId, genshareSettings) {
   // Initialize genshare settings if they don't exist
   if (!users[userId].genshare) {
     users[userId].genshare = {
-      authorizedVersions: ['default'],
-      defaultVersion: 'default',
+      authorizedVersions: ['latest'],
+      defaultVersion: 'latest',
+      returnedFields: [],
       availableFields: [],
       restrictedFields: [],
-      returnedFields: []
+      options: getDefaultGenShareOptions()
     };
   }
   
@@ -182,6 +209,17 @@ function listUsers() {
       console.log(`    Restricted Fields: ${userData.genshare.restrictedFields.length ? userData.genshare.restrictedFields.join(', ') : 'none'}`);
       const returnedFields = userData.genshare.returnedFields || [];
       console.log(`    Returned Fields: ${returnedFields.length ? returnedFields.join(', ') : 'all (no response shaping)'}`);
+      const options = userData.genshare.options || {};
+      const optionKeys = Object.keys(options);
+      if (optionKeys.length) {
+        console.log(`    Options:`);
+        optionKeys.forEach(optionKey => {
+          const { available = [], default: defaultValue } = options[optionKey] || {};
+          console.log(`      ${optionKey}: available [${available.join(', ')}], default ${defaultValue}`);
+        });
+      } else {
+        console.log(`    Options: none`);
+      }
     }
     console.log('---');
   });
@@ -241,6 +279,7 @@ function main() {
       console.log('  node manage_users.js update-genshare user123 \'{"authorizedVersions": ["default", "v2"], "defaultVersion": "v2"}\'');
       console.log('  node manage_users.js update-genshare user123 \'{"availableFields": ["article_id", "das_presence", "data_url"]}\'');
       console.log('  node manage_users.js update-genshare user123 \'{"returnedFields": ["article_id", "das_presence"]}\'  # ordered whitelist: response shaping only, not access control');
+      console.log('  node manage_users.js update-genshare user123 \'{"options": {"editorial_policy": {"available": ["PLOS", "TFOD", "SURR"], "default": "TFOD"}, "no_cache": {"available": [true, false], "default": false}}}\'  # per-user option access (validated by filterOptions)');
       console.log('  node manage_users.js refresh-client-secret user123');
     }
   }
