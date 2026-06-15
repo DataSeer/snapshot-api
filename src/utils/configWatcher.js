@@ -29,29 +29,42 @@ const watchConfig = (configPath, defaultValue = {}) => {
     return watched.get(resolved).proxy;
   }
 
-  // Initial load
   let data;
-  try {
-    data = JSON.parse(fs.readFileSync(resolved, 'utf8'));
-  } catch (error) {
-    logger.warn(`[ConfigWatcher] ${path.basename(resolved)} not found or invalid, using defaults`);
-    data = defaultValue;
-  }
 
-  // Set up file watcher with debounce
+  /**
+   * (Re)read the file into `data`. On failure, keeps the previous content (or
+   * the default on first load) so a bad write never wipes the in-memory config.
+   * @param {boolean} isInitial - True for the startup load (quieter logging)
+   * @returns {boolean} True if the file was read and parsed successfully
+   */
+  const reload = (isInitial = false) => {
+    try {
+      data = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+      if (!isInitial) {
+        logger.info(`[ConfigWatcher] Reloaded ${path.basename(resolved)}`);
+      }
+      return true;
+    } catch (error) {
+      if (isInitial) {
+        logger.warn(`[ConfigWatcher] ${path.basename(resolved)} not found or invalid, using defaults`);
+        data = defaultValue;
+      } else {
+        logger.error(`[ConfigWatcher] Failed to reload ${path.basename(resolved)}: ${error.message}`);
+        // Keep previous data on error
+      }
+      return false;
+    }
+  };
+
+  // Initial load
+  reload(true);
+
+  // Set up file watcher with debounce (handles edits made outside this process)
   let debounceTimer = null;
   try {
     fs.watch(resolved, () => {
       if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        try {
-          data = JSON.parse(fs.readFileSync(resolved, 'utf8'));
-          logger.info(`[ConfigWatcher] Reloaded ${path.basename(resolved)}`);
-        } catch (err) {
-          logger.error(`[ConfigWatcher] Failed to reload ${path.basename(resolved)}: ${err.message}`);
-          // Keep previous data on error
-        }
-      }, DEBOUNCE_MS);
+      debounceTimer = setTimeout(() => reload(false), DEBOUNCE_MS);
     });
   } catch (watchError) {
     logger.warn(`[ConfigWatcher] Could not watch ${path.basename(resolved)}: ${watchError.message}`);
@@ -69,9 +82,28 @@ const watchConfig = (configPath, defaultValue = {}) => {
     }
   });
 
-  watched.set(resolved, { proxy });
+  watched.set(resolved, { proxy, reload });
 
   return proxy;
 };
 
-module.exports = { watchConfig };
+/**
+ * Force a synchronous re-read of a watched config file.
+ *
+ * fs.watch fires asynchronously (plus a debounce), so a process that writes a
+ * watched file and then reads it back through the proxy would observe stale
+ * data until the watcher catches up. Writers should call this immediately after
+ * writing so subsequent reads in the same process are consistent. No-op if the
+ * path is not currently being watched.
+ * @param {string} configPath - The path passed to watchConfig
+ * @returns {boolean} True if the file was reloaded successfully
+ */
+const reloadConfig = (configPath) => {
+  const entry = watched.get(path.resolve(configPath));
+  if (entry && typeof entry.reload === 'function') {
+    return entry.reload(false);
+  }
+  return false;
+};
+
+module.exports = { watchConfig, reloadConfig };

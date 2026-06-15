@@ -2,7 +2,34 @@
 const fs = require('fs');
 const axios = require('axios');
 const config = require('../config');
-const { getAllUsers, getUserById, updateUser } = require('../utils/userManager');
+const { getAllUsers, getUserById, updateUser, replaceUser } = require('../utils/userManager');
+
+/**
+ * User fields that must never be exposed over the admin API nor overwritten via
+ * the full-document update endpoint. Reading these back would leak credentials;
+ * the JWT token in particular must stay in sync with JWT_SECRET, so it is
+ * managed only through the dedicated CLI refresh flows.
+ */
+const PROTECTED_USER_FIELDS = ['token', 'client_secret'];
+
+/**
+ * Build a client-safe copy of a user, omitting protected credential fields and
+ * keeping every other field (rateLimit, genshare, reports, role, googleSheets,
+ * and any future config keys) so the admin UI can display and edit them.
+ * @param {string} id - The user ID
+ * @param {Object} userData - The raw user object (may include protected fields)
+ * @returns {Object} - Safe user object with `id` and all non-protected fields
+ */
+const toSafeUser = (id, userData) => {
+  const safeUser = { id };
+  Object.keys(userData).forEach((key) => {
+    if (key === 'id' || PROTECTED_USER_FIELDS.includes(key)) {
+      return;
+    }
+    safeUser[key] = userData[key];
+  });
+  return safeUser;
+};
 
 /**
  * Get snapshot-reports base URL and API key from reports config
@@ -76,13 +103,9 @@ const getUsers = async (req, res) => {
   try {
     const users = getAllUsers();
 
-    // Remove sensitive data (tokens, client_secrets)
-    const safeUsers = Object.entries(users).map(([id, userData]) => ({
-      id,
-      rateLimit: userData.rateLimit,
-      genshare: userData.genshare,
-      reports: userData.reports
-    }));
+    // Expose every field except protected credentials so the admin UI can edit
+    // the full configuration (role, googleSheets, custom keys, ...).
+    const safeUsers = Object.entries(users).map(([id, userData]) => toSafeUser(id, userData));
 
     return res.json({
       success: true,
@@ -108,13 +131,8 @@ const getUser = async (req, res) => {
     const { userId } = req.params;
     const user = getUserById(userId);
 
-    // Remove sensitive data
-    const safeUser = {
-      id: user.id,
-      rateLimit: user.rateLimit,
-      genshare: user.genshare,
-      reports: user.reports
-    };
+    // Expose every field except protected credentials.
+    const safeUser = toSafeUser(userId, user);
 
     return res.json({
       success: true,
@@ -147,37 +165,32 @@ const updateUserComplete = async (req, res) => {
     const { userId } = req.params;
     const updates = req.body;
 
-    // Get current user to verify it exists
+    if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+      return res.status(400).json({
+        success: false,
+        error: 'invalid_payload',
+        message: 'Request body must be a user configuration object'
+      });
+    }
+
+    // Get current user to verify it exists and to preserve protected fields
     const user = getUserById(userId);
 
-    // Build the update object with only allowed fields
-    const allowedUpdates = {};
+    // Full-document replace: the submitted object becomes the new user config,
+    // so removing a field in the editor removes it on disk. Protected
+    // credentials are never accepted from the client and `id` is the map key,
+    // not a stored property — strip them, then re-inject the stored secrets so
+    // they are preserved untouched.
+    const newUserData = { ...updates };
+    delete newUserData.id;
+    PROTECTED_USER_FIELDS.forEach((field) => {
+      delete newUserData[field];
+      if (user[field] !== undefined) {
+        newUserData[field] = user[field];
+      }
+    });
 
-    if (updates.rateLimit) {
-      allowedUpdates.rateLimit = {
-        ...user.rateLimit,
-        ...updates.rateLimit
-      };
-    }
-
-    if (updates.genshare) {
-      allowedUpdates.genshare = {
-        ...user.genshare,
-        ...updates.genshare
-      };
-    }
-
-    if (updates.reports) {
-      allowedUpdates.reports = {
-        ...user.reports,
-        ...updates.reports
-      };
-    }
-
-    // Update user with allowed fields only
-    if (Object.keys(allowedUpdates).length > 0) {
-      updateUser(userId, allowedUpdates);
-    }
+    replaceUser(userId, newUserData);
 
     // Get updated user data
     const updatedUser = getUserById(userId);
@@ -185,12 +198,7 @@ const updateUserComplete = async (req, res) => {
     return res.json({
       success: true,
       message: 'User updated successfully',
-      data: {
-        id: userId,
-        rateLimit: updatedUser.rateLimit,
-        genshare: updatedUser.genshare,
-        reports: updatedUser.reports
-      }
+      data: toSafeUser(userId, updatedUser)
     });
   } catch (error) {
     if (error.message.includes('not found')) {

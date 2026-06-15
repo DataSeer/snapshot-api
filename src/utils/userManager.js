@@ -1,7 +1,7 @@
 // File: src/utils/userManager.js
 const fs = require('fs');
 const config = require('../config');
-const { watchConfig } = require('./configWatcher');
+const { watchConfig, reloadConfig } = require('./configWatcher');
 
 // Watch users config (auto-reloads on file change)
 const usersConfig = watchConfig(config.usersPath);
@@ -42,7 +42,37 @@ const updateUser = (userId, userData) => {
 
   users[userId] = { ...users[userId], ...userData };
   fs.writeFileSync(config.usersPath, JSON.stringify(users, null, 2));
-  // The watcher will automatically pick up the change
+  // Refresh the in-memory copy synchronously so reads immediately after this
+  // write are consistent (fs.watch fires async + debounced). The watcher still
+  // catches external edits.
+  reloadConfig(config.usersPath);
+};
+
+/**
+ * Replace a user's full configuration.
+ *
+ * Unlike updateUser (a shallow merge), this overwrites the whole user object:
+ * top-level keys absent from userData are removed. Use this for full-document
+ * edits where the caller has already assembled the complete desired config
+ * (e.g. the admin "Edit JSON" flow). Callers are responsible for carrying over
+ * any protected fields (token, client_secret) they want preserved.
+ * @param {string} userId - The user ID to replace
+ * @param {Object} userData - The complete user object to store
+ */
+const replaceUser = (userId, userData) => {
+  // Read fresh from disk for write operations to avoid race conditions
+  const users = JSON.parse(fs.readFileSync(config.usersPath, 'utf8'));
+
+  if (!users[userId]) {
+    throw new Error(`User ${userId} not found`);
+  }
+
+  users[userId] = userData;
+  fs.writeFileSync(config.usersPath, JSON.stringify(users, null, 2));
+  // Refresh the in-memory copy synchronously so reads immediately after this
+  // write are consistent (fs.watch fires async + debounced). The watcher still
+  // catches external edits.
+  reloadConfig(config.usersPath);
 };
 
 /**
@@ -126,6 +156,7 @@ module.exports = {
   getAllUsers,
   getUserById,
   updateUser,
+  replaceUser,
   validateClientCredentials,
   getUserGenShareVersions,
   getUserDefaultGenShareVersion,
