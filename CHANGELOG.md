@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.17.0](https://github.com/DataSeer/snapshot-api/compare/v3.16.0...v3.17.0) (2026-06-15)
+
+
+### Features
+
+* add returnedFields for presentation-only response shaping ([925f8f3](https://github.com/DataSeer/snapshot-api/commits/925f8f3a9ce9c57f8949576762d1fdd6fff90fc7))
+* make returnedFields opt-in via query param on reports endpoint ([8f9029b](https://github.com/DataSeer/snapshot-api/commits/8f9029b5d9c8573022bdb8b26f677c8a10480a82))
+* **users:** support full user config editing and genshare.options ([3b7d9cc](https://github.com/DataSeer/snapshot-api/commits/3b7d9cc8fc7bff549ce9d9ca756336ab5d447638))
+
+
+### Bug Fixes
+
+* **ci:** unblock lint for uuid exports map; bump actions to v5 ([e176974](https://github.com/DataSeer/snapshot-api/commits/e1769742bde519e87da367c6722aaf8040acec34))
+* **deps:** apply safe npm audit fix (lockfile-only) ([cf2d1dd](https://github.com/DataSeer/snapshot-api/commits/cf2d1dd285b12960211719e5508cd36f09fb056f))
+* **deps:** upgrade googleapis 144->173 and uuid 8->14 (major) ([559490f](https://github.com/DataSeer/snapshot-api/commits/559490f98fd5af1ef917d4bb5576ecc3b12719e2))
+* **genshare:** avoid spurious 'Graph values don't match' warning ([582015a](https://github.com/DataSeer/snapshot-api/commits/582015acab560b52d74be31dfe3acc203f6d4a4f))
+* update default user configuration ([f3b89b1](https://github.com/DataSeer/snapshot-api/commits/f3b89b173ec4a9171e1202d5d7daae8eb7ec3a38))
+
+
+### Code Refactoring
+
+* fold fieldOrder sorting into returnedFields ([d75581e](https://github.com/DataSeer/snapshot-api/commits/d75581e4df122f58d69b3fcbd034552c72d2d74f))
+* **lint:** migrate eslint-plugin-node -> eslint-plugin-n ([ad6400b](https://github.com/DataSeer/snapshot-api/commits/ad6400bd67629f01832f0f4f150a666bfb98cdd9))
+
+
+### Documentation
+
+* document returnedFields response shaping and drop fieldOrder ([83464a3](https://github.com/DataSeer/snapshot-api/commits/83464a317bac79318d41f191ce45e7cd8fa72089))
+
 ## [3.16.0](https://github.com/DataSeer/snapshot-api/compare/v3.15.1...v3.16.0) (2026-06-03)
 
 
