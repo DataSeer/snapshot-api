@@ -89,19 +89,22 @@ const getUserDefaultGenShareVersion = (userId) => {
 };
 
 /**
- * Get user's response field restrictions
+ * Get user's response field configuration
  * @param {string} userId - The user ID to check
- * @returns {Object} Object containing availableFields and restrictedFields arrays
+ * @returns {Object} Object containing availableFields, restrictedFields and
+ *   returnedFields arrays. availableFields/restrictedFields govern data access
+ *   (security); returnedFields is a presentation-only response-shaping filter.
  */
 const getUserResponseFieldRestrictions = (userId) => {
   try {
     const user = getUserById(userId);
     return {
       availableFields: user.genshare?.availableFields || [],
-      restrictedFields: user.genshare?.restrictedFields || []
+      restrictedFields: user.genshare?.restrictedFields || [],
+      returnedFields: user.genshare?.returnedFields || []
     };
   } catch (error) {
-    return { availableFields: [], restrictedFields: [] };
+    return { availableFields: [], restrictedFields: [], returnedFields: [] };
   }
 };
 

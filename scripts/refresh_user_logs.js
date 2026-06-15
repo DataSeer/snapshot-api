@@ -233,36 +233,38 @@ const generateHeadersFromUserConfig = (user, allFieldNames) => {
   // Convert Set to Array for processing
   const fieldNamesArray = Array.from(allFieldNames);
   
-  // If user has fieldOrder configuration, use it to sort the fields
-  if (user.genshare && user.genshare.fieldOrder && Array.isArray(user.genshare.fieldOrder)) {
-    const fieldOrder = user.genshare.fieldOrder;
-    
-    // Create a map for quick lookup
+  // If the user has a returnedFields configuration, use it to order the
+  // columns. returnedFields is an ordered whitelist that both selects and sorts
+  // the response (see genshareManager.filterByReturnedFields), so the field
+  // values are emitted in that order — ordering the headers the same way keeps
+  // columns and values aligned. Field names are compared with their GenShare
+  // suffix stripped, matching the cleaned names collected from the response.
+  if (user.genshare && Array.isArray(user.genshare.returnedFields) && user.genshare.returnedFields.length > 0) {
     const orderMap = new Map();
-    fieldOrder.forEach((fieldName, index) => {
-      orderMap.set(fieldName, index);
+    user.genshare.returnedFields.forEach((fieldName, index) => {
+      orderMap.set(fieldName.replace(/__.*$/, ''), index);
     });
-    
-    // Sort field names according to fieldOrder
+
+    // Sort field names according to returnedFields order
     const sortedFields = fieldNamesArray.sort((a, b) => {
       const orderA = orderMap.has(a) ? orderMap.get(a) : Infinity;
       const orderB = orderMap.has(b) ? orderMap.get(b) : Infinity;
-      
+
       if (orderA !== Infinity && orderB !== Infinity) {
         return orderA - orderB;
       }
-      
+
       if (orderA !== Infinity) return -1;
       if (orderB !== Infinity) return 1;
-      
-      // If neither has defined order, maintain alphabetical order
+
+      // If neither has defined order, fall back to alphabetical order
       return a.localeCompare(b);
     });
-    
+
     return baseHeaders.concat(sortedFields);
   }
-  
-  // If no fieldOrder, just use alphabetical order
+
+  // No returnedFields ordering — use alphabetical order
   return baseHeaders.concat(fieldNamesArray.sort());
 };
 

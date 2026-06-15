@@ -191,9 +191,9 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
     "genshare": {
       "authorizedVersions": ["v1.0.0", "v2.0.0"],
       "defaultVersion": "v1.0.0",
-      "fieldOrder": [],
       "availableFields": [],
-      "restrictedFields": []
+      "restrictedFields": [],
+      "returnedFields": []
     },
     "reports": {
       "authorizedVersions": ["Report v1"],
@@ -210,9 +210,9 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
     "genshare": {
       "authorizedVersions": ["v1.0.0"],
       "defaultVersion": "v1.0.0",
-      "fieldOrder": [],
       "availableFields": [],
-      "restrictedFields": []
+      "restrictedFields": [],
+      "returnedFields": []
     },
     "reports": {
       "authorizedVersions": ["Report v1"],
@@ -339,48 +339,53 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-### Response Filtering and Sorting
+### Response Filtering, Sorting, and Shaping
 
-The API provides granular control over GenShare response data through user-specific filtering and sorting configurations. This allows different clients to receive customized response formats tailored to their needs.
+GenShare response handling separates two distinct concerns:
+
+- **Data access (security)** — what a user is *allowed* to see. Controlled by `availableFields` / `restrictedFields`, and enforced on **every** path, including the snapshot-reports view.
+- **Response shaping (presentation)** — what a client *wants returned*, and in what order. Controlled by `returnedFields`. This is a convenience for clients that cannot filter or sort the response array on their own side; it is **not** a security mechanism.
+
+> In a normal workflow clients filter and sort the response themselves. `returnedFields` exists only for clients that cannot, so it is empty for almost every user.
 
 #### Configuration Options
 
-Each user in `conf/users.json` can configure their GenShare response handling through three properties:
+Each user in `conf/users.json` configures their GenShare response handling through three properties:
 ```json
 {
   "username": {
     "genshare": {
-      "availableFields": [],      // Whitelist: only include these fields
-      "restrictedFields": [],     // Blacklist: exclude these fields
-      "fieldOrder": []            // Custom sort order for response fields
+      "availableFields": [],    // Security whitelist: only these fields are accessible
+      "restrictedFields": [],   // Security blacklist: these fields are never accessible
+      "returnedFields": []      // Presentation: ordered whitelist applied to the client response only
     }
   }
 }
 ```
 
-#### Field Filtering
+#### Field Access (security)
 
-Two mutually exclusive filtering modes are available:
+`availableFields` and `restrictedFields` define the maximum set of fields a user is allowed to see. They are mutually exclusive:
 
 1. **Whitelist Mode** (`availableFields`):
-   - Only fields listed in `availableFields` will be included in the response
-   - Use this when you want to explicitly control which fields are returned
+   - Only fields listed in `availableFields` are accessible.
    - Example: `["article_id__gs", "title__gs", "authors__gs"]`
 
 2. **Blacklist Mode** (`restrictedFields`):
-   - All fields except those listed in `restrictedFields` will be included
-   - Use this when you want to exclude specific sensitive fields
+   - All fields except those listed are accessible.
    - Example: `["data_on_request__gs", "data_url__gs"]`
 
-> **Note**: Field names in `availableFields` and `restrictedFields` must include the `__gs` suffix (internal field naming convention).
+These boundaries are enforced everywhere, including the snapshot-reports report view.
 
-#### Response Sorting
+> **Note**: Field names must include the `__gs` suffix (internal field naming convention).
 
-The `fieldOrder` property allows you to customize the order in which fields appear in the response:
+#### Response Shaping (`returnedFields`)
+
+`returnedFields` is an **ordered strict whitelist** that both *selects* and *sorts* the fields returned in the response. It only ever narrows an already access-checked set — it can never re-introduce a field excluded by `restrictedFields` or absent from `availableFields`.
 ```json
 {
   "genshare": {
-    "fieldOrder": [
+    "returnedFields": [
       "article_id__gs",
       "title__gs",
       "authors__gs",
@@ -391,20 +396,32 @@ The `fieldOrder` property allows you to customize the order in which fields appe
 }
 ```
 
-**Sorting Behavior:**
-- Fields listed in `fieldOrder` appear first, in the specified order
-- Fields not listed in `fieldOrder` appear after, maintaining their original order
-- Sorting is applied to internal field names (with `__gs` suffix)
-- Field name cleanup happens after sorting, so clients receive clean field names
+**Behavior:**
+- Only the listed fields are returned, in the exact order given (this is also the only place server-side ordering happens).
+- Fields not listed are dropped — unlike a pure sort, there is no "remaining fields appended at the end".
+- A listed field that is not present in the access-checked response is simply skipped.
+- Applied to internal field names (with the `__gs` suffix); suffix cleanup happens afterward, so clients still receive clean field names.
+- Leave `returnedFields` empty (`[]`, the default) to return the full access-checked set in GenShare's native order — the case for every client that manages filtering/sorting itself.
+
+> **Where it applies:** `returnedFields` shapes the client-facing API response (e.g. `POST /processPDF`). It is **bypassed by default** for the snapshot-reports view, so reports always render every field the user is allowed to see. See the `apply_returned_fields` query parameter below.
 
 #### Processing Pipeline
 
-The response goes through the following pipeline:
+1. **Access filtering (security)**: apply `availableFields` / `restrictedFields`.
+2. **Response shaping (presentation)**: apply the `returnedFields` ordered whitelist — client response only; skipped for snapshot-reports.
+3. **Field Name Cleanup**: remove internal suffixes (e.g. `__gs`) for client consumption.
+4. **Report Link Addition**: append `report_link` field if applicable.
 
-1. **Filtering**: Apply whitelist or blacklist rules based on user configuration
-2. **Sorting**: Reorder fields according to `fieldOrder` configuration
-3. **Field Name Cleanup**: Remove internal suffixes (e.g., `__gs`) for client consumption
-4. **Report Link Addition**: Append `report_link` field if applicable
+#### snapshot-reports endpoint: `apply_returned_fields`
+
+`GET /snapshot-reports/:requestId/genshare` exposes both views through a single query parameter:
+
+| Request | Returns |
+| --- | --- |
+| `…/genshare` (default) | Access-filtered data only (`returnedFields` bypassed) — the report view |
+| `…/genshare?apply_returned_fields=true` | The exact client-facing response (`returnedFields` applied) |
+
+The response `meta.returned_fields_applied` boolean reports which mode was used. Defaulting to bypass means snapshot-api can be deployed independently without the report view losing fields.
 
 #### Example Configuration
 ```json
@@ -421,7 +438,7 @@ The response goes through the following pipeline:
         "data_url__gs",
         "non-functional_urls__gs"
       ],
-      "fieldOrder": [
+      "returnedFields": [
         "article_id__gs",
         "title__gs",
         "authors__gs",
@@ -435,17 +452,18 @@ The response goes through the following pipeline:
 ```
 
 This configuration will:
-1. Exclude the four restricted fields
-2. Return remaining fields with `article_id` first, followed by `title`, `authors`, etc.
-3. Any other fields not in `fieldOrder` will appear after, in their original order
-4. All field names will have their `__gs` suffix removed in the final response
+1. Make the four restricted fields inaccessible (security) — they never appear, in any view.
+2. For the client-facing response, return **only** the six `returnedFields`, in that exact order.
+3. For the snapshot-reports view, return every accessible field (the `returnedFields` shaping is bypassed).
+4. Remove the `__gs` suffix from all field names in the final response.
 
 #### Implementation Details
 
-- **Function**: `filterAndSortResponseForUser()` in `src/utils/genshareManager.js`
-- **Helper**: `sortResponseData()` handles the sorting logic
-- **Validation**: Empty or missing `fieldOrder` arrays are handled gracefully
-- **Performance**: Sorting uses a Map-based approach for O(n log n) complexity
+- **Function**: `filterAndSortResponseForUser(responseData, user, { applyReturnedFields = true })` in `src/utils/genshareManager.js`
+- **Access filter**: `filterResponseData()` — enforces `availableFields` / `restrictedFields`
+- **Response shaping**: `filterByReturnedFields()` — ordered whitelist; `applyReturnedFields` defaults to `true` and is set to `false` by the snapshot-reports controller
+- **Validation**: empty or missing `returnedFields` arrays are handled gracefully (the full access-checked set is returned)
+- **Performance**: shaping uses a Map-based lookup, O(n) over the response fields
 
 ### Report Configuration
 

@@ -184,50 +184,6 @@ const getResponse = (response = [], versionAlias) => {
 };
 
 /**
- * Sort response data based on user's configuration
- * @param {Array} responseData - Array of field objects to sort
- * @param {Array} fieldOrder - Array of field names (with suffix) in desired order
- * @returns {Array} - Sorted array
- */
-function sortResponseData(responseData, fieldOrder) {
-  // If no response data or no sort settings, return as is
-  if (!responseData || !fieldOrder) {
-    return responseData;
-  }
-
-  // Create a deep copy to avoid modifying original
-  let data = JSON.parse(JSON.stringify(responseData));
-
-
-  if (!fieldOrder || fieldOrder.length === 0) {
-    return data;
-  }
-
-  // Create a map of field names to their order index
-  const orderMap = new Map();
-  fieldOrder.forEach((fieldName, index) => {
-    orderMap.set(fieldName, index);
-  });
-
-  return data.sort((a, b) => {
-    const orderA = orderMap.has(a.name) ? orderMap.get(a.name) : Infinity;
-    const orderB = orderMap.has(b.name) ? orderMap.get(b.name) : Infinity;
-    
-    // If both have defined order, sort by order
-    if (orderA !== Infinity && orderB !== Infinity) {
-      return orderA - orderB;
-    }
-    
-    // If only one has defined order, it comes first
-    if (orderA !== Infinity) return -1;
-    if (orderB !== Infinity) return 1;
-    
-    // If neither has defined order, maintain original order
-    return 0;
-  });
-}
-
-/**
  * Filter response data based on user's configuration
  * @param {Array} responseData - Array of field objects to filter
  * @param {Array} availableFields - Array of available field names (with suffix)
@@ -268,27 +224,91 @@ function filterResponseData(responseData, availableFields, restrictedFields) {
 }
 
 /**
+ * Reduce a response to an ordered whitelist of fields.
+ *
+ * Unlike availableFields/restrictedFields — which enforce data-access
+ * (security) boundaries — returnedFields is a presentation-only filter used to
+ * shape the response delivered to a client app that cannot filter or sort the
+ * payload on its own side. A single ordered list both selects (whitelist) and
+ * orders the returned fields. It must only ever narrow an already
+ * access-checked set, never widen it: fields not present in the input are
+ * simply skipped, so it can never re-introduce restricted data.
+ *
+ * @param {Array} responseData - Array of field objects (already access-filtered)
+ * @param {Array} returnedFields - Ordered array of field names (with suffix) to return
+ * @returns {Array} - Filtered and ordered array
+ */
+function filterByReturnedFields(responseData, returnedFields) {
+  // If no response data or no returnedFields config, return as is
+  if (!responseData || !returnedFields || returnedFields.length === 0) {
+    return responseData;
+  }
+
+  // Only applies to array responses
+  if (!Array.isArray(responseData)) {
+    return responseData;
+  }
+
+  // Create a deep copy to avoid modifying original
+  const data = JSON.parse(JSON.stringify(responseData));
+
+  // Index the (access-checked) items by name for ordered lookup
+  const itemsByName = new Map();
+  data.forEach(item => {
+    if (item && item.name) itemsByName.set(item.name, item);
+  });
+
+  // Build the result in the exact order declared by returnedFields, skipping
+  // any field that is not present in the access-checked response
+  const result = [];
+  returnedFields.forEach(fieldName => {
+    if (itemsByName.has(fieldName)) {
+      result.push(itemsByName.get(fieldName));
+    }
+  });
+
+  return result;
+}
+
+/**
  * Filter, sort and clean GenShare response based on user's permissions
  * @param {Object} responseData - Response property of the full GenShare response
  * @param {Object} user - User object with filter settings
+ * @param {Object} [options] - Behavior flags
+ * @param {boolean} [options.applyReturnedFields=true] - Whether to apply the
+ *   user's presentation-only returnedFields whitelist. Enabled for the API
+ *   response delivered to the client; disabled for the snapshot-reports view,
+ *   which must show everything the user is allowed (access) to see.
  * @returns {Object} - Filtered response
  */
-const filterAndSortResponseForUser = (responseData, user) => {
+const filterAndSortResponseForUser = (responseData, user, options = {}) => {
   // If no response data or no filter settings, return as is
   if (!responseData || !user.genshare) {
     return cleanSnapshotFieldsName(responseData);
   }
 
-  const { availableFields, restrictedFields, fieldOrder } = user.genshare;
+  // Default to applying returnedFields so existing response paths are
+  // unchanged (returnedFields is empty for most users, making it a no-op).
+  const { applyReturnedFields = true } = options;
 
-  // Filter data based on filter config
+  const { availableFields, restrictedFields, returnedFields } = user.genshare;
+
+  // 1. Enforce data-access boundaries first (security): availableFields /
+  //    restrictedFields decide what the user is allowed to see at all. Applied
+  //    everywhere, including the snapshot-reports view.
   const filteredResponse = filterResponseData(responseData, availableFields, restrictedFields);
 
-  // Sort data based on field order
-  const sortedAndFilteredResponse = sortResponseData(filteredResponse, fieldOrder);
+  // 2. Apply the presentation-only returnedFields whitelist within the already
+  //    access-checked set. As an ordered whitelist it both selects AND sorts
+  //    the response — the only place server-side ordering happens — for clients
+  //    that cannot filter/sort the payload on their own side. Skipped for the
+  //    snapshot-reports view (applyReturnedFields = false).
+  const shapedResponse = applyReturnedFields
+    ? filterByReturnedFields(filteredResponse, returnedFields)
+    : filteredResponse;
 
   // Clean field names
-  return cleanSnapshotFieldsName(sortedAndFilteredResponse);
+  return cleanSnapshotFieldsName(shapedResponse);
 };
 
 /**

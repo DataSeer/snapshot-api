@@ -75,7 +75,8 @@ function addUser(userId, rateLimit, genshareSettings = {}) {
       authorizedVersions: genshareSettings.authorizedVersions || ['default'],
       defaultVersion: genshareSettings.defaultVersion || 'default',
       availableFields: genshareSettings.availableFields || [],
-      restrictedFields: genshareSettings.restrictedFields || []
+      restrictedFields: genshareSettings.restrictedFields || [],
+      returnedFields: genshareSettings.returnedFields || []
     },
     reports: {
       authorizedVersions: [],
@@ -153,7 +154,8 @@ function updateUserGenShareSettings(userId, genshareSettings) {
       authorizedVersions: ['default'],
       defaultVersion: 'default',
       availableFields: [],
-      restrictedFields: []
+      restrictedFields: [],
+      returnedFields: []
     };
   }
   
@@ -178,6 +180,8 @@ function listUsers() {
       console.log(`    Default Version: ${userData.genshare.defaultVersion}`);
       console.log(`    Available Fields: ${userData.genshare.availableFields.length ? userData.genshare.availableFields.join(', ') : 'all'}`);
       console.log(`    Restricted Fields: ${userData.genshare.restrictedFields.length ? userData.genshare.restrictedFields.join(', ') : 'none'}`);
+      const returnedFields = userData.genshare.returnedFields || [];
+      console.log(`    Returned Fields: ${returnedFields.length ? returnedFields.join(', ') : 'all (no response shaping)'}`);
     }
     console.log('---');
   });
@@ -236,6 +240,7 @@ function main() {
       console.log('  node manage_users.js add user123 \'{"max": 200, "windowMs": 900000}\'');
       console.log('  node manage_users.js update-genshare user123 \'{"authorizedVersions": ["default", "v2"], "defaultVersion": "v2"}\'');
       console.log('  node manage_users.js update-genshare user123 \'{"availableFields": ["article_id", "das_presence", "data_url"]}\'');
+      console.log('  node manage_users.js update-genshare user123 \'{"returnedFields": ["article_id", "das_presence"]}\'  # ordered whitelist: response shaping only, not access control');
       console.log('  node manage_users.js refresh-client-secret user123');
     }
   }
