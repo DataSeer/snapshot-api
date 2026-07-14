@@ -2,7 +2,6 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
 
 // Since this is a script, we need to require paths differently
 const configPath = path.join(__dirname, '../src/config.js');
@@ -228,7 +227,7 @@ function listUsers() {
 function main() {
   const args = process.argv.slice(2);
   const command = args[0];
-  const userId = args[1] || uuidv4();
+  const userId = args[1] || crypto.randomUUID();
 
   switch (command) {
     case 'add': {
