@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.17.1](https://github.com/DataSeer/snapshot-api/compare/v3.17.0...v3.17.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* **scripts:** replace ESM-only uuid dependency with crypto.randomUUID ([e4714b3](https://github.com/DataSeer/snapshot-api/commits/e4714b3a302c10d43c8c2c3b39dd7a656690197c))
+
 ## [3.17.0](https://github.com/DataSeer/snapshot-api/compare/v3.16.0...v3.17.0) (2026-06-15)
 
 
