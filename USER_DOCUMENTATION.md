@@ -28,14 +28,18 @@ bounded to a specific user.
 
 ## API Endpoints
 
-| Endpoint                 | Method | Content-Type          | Description                                           |
-|--------------------------|--------|-----------------------|-------------------------------------------------------|
-| `/`                      | GET    | N/A                   | Return information about available API routes.        |
-| `/processPDF`            | POST   | `multipart/form-data` | Process a PDF document (sync, backward compatible)    |
-| `/processPDF/sync`       | POST   | `multipart/form-data` | Process a PDF document synchronously                  |
-| `/processPDF/async`      | POST   | `multipart/form-data` | Process a PDF document asynchronously with callback   |
-| `/jobs/:requestId`       | GET    | N/A                   | Get job status for async processing                   |
-| `/requests/:requestId`   | DELETE | N/A                   | Delete a request and all associated data              |
+| Endpoint                 | Method | Content-Type          | Description                                                   |
+|--------------------------|--------|-----------------------|---------------------------------------------------------------|
+| `/`                      | GET    | N/A                   | Return information about available API routes.                |
+| `/processPDF`            | POST   | `multipart/form-data` | Process a PDF document (sync, backward compatible)            |
+| `/processPDF/sync`       | POST   | `multipart/form-data` | Process a PDF document synchronously                          |
+| `/processPDF/async`      | POST   | `multipart/form-data` | Process a PDF document asynchronously with callback           |
+| `/jobs/:requestId`       | GET    | N/A                   | Get job status for async processing                           |
+| `/requests/:requestId`   | GET    | N/A                   | Get the record of a single request (made using my token)      |
+| `/requests/:requestId`   | DELETE | N/A                   | Delete a request (made with my token) and all associated data |
+
+Access to each endpoint is granted per API token — a token that is not allow-listed for a route
+receives `403`. Ask DataSeer support which routes your token covers.
 
 ### API Information (GET)
 
@@ -92,19 +96,37 @@ fetch('https://snapshot.dataseer.ai/', {
 
 The `options` parameter is a JSON object with following properties:
 
-- `document_type` (required): specify the type of the document sent (see example below), the accepted values are
-  `article`, `research-article`, `research_article`, `original-article`, `original_article`. Invalid values will be
-  rejected by the API with error code 400.
-- `article_id` (required): specify the article ID of the document sent, the API will return 400 if the ID is empty or
-  null
-- `das` (optional): specify the DAS of the document sent. If provided, the value will be stored in `das_custom_ms` & `das_custom_presence_ms` will be set to `true`. If not provided, `N/A` will be stored in `das_custom_ms` & `das_custom_presence_ms` will be set to `false`.
-- `journal_name` (optional): specify the name of the journal. If not provided, `N/A` will be stored in `journal_name`.
-- `editorial_policy` (optional): specify the editorial policy requested for this document (e.g. `TFOD`, `SURR`, `PLOS`). A list of available values will be attached to your API key, and a default value will be assigned in case of error (or absence).
-- `submission_number` (optional): An identifier of the submission. Will be returned as is.
-- `filename` (optional): The name of the file. Will be returned as is.
-- `article_title` (optional): Title of the article. Will be returned as is.
-- `subject_area` (optional): Subject area. Will be returned as is.
-- `abstract` (optional): Abstract of the article. Will be returned as is.
+#### Required
+
+- `article_id` (required): specify the article ID of the document sent. The request is rejected with
+  `400` if the ID is empty or null.
+- `document_type` (required): specify the type of the document sent. The accepted values are
+  `article`, `research-article`, `research_article`, `original-article`, `original_article`,
+  `Original Article`, `Original Study`, `Research Article`. Invalid values are rejected with `400`.
+
+#### Analysis inputs
+
+- `das` (optional): specify the DAS of the document sent. If provided, the value will be stored in
+  `das_custom_ms` and `das_custom_presence_ms` will be set to `true`. If not provided, `N/A` will be
+  stored in `das_custom_ms` and `das_custom_presence_ms` will be set to `false`.
+- `editorial_policy` (optional): specify the editorial policy requested for this document (e.g.
+  `TFOD`, `SURR`, `PLOS`, `AUTH`, `JID`). The values available to you are attached to your API key;
+  an unavailable or missing value is silently replaced by your key's default. The policy actually
+  applied is echoed back in the `editorial_policy` response field, and it determines which
+  policy-dependent fields you receive (see
+  [Policy-dependent fields](#policy-dependent-fields)).
+
+#### Echoed metadata
+
+These are stored, logged and returned unchanged. They do not influence the analysis.
+
+- `journal_name` (optional): name of the journal. `N/A` when not provided.
+- `submission_number` (optional): an identifier of the submission.
+- `filename` (optional): the name of the file.
+- `article_title` (optional): title of the article.
+- `subject_area` (optional): subject area — an array of strings. Returned as the string `"N/A"` when
+  not provided.
+- `abstract` (optional): abstract of the article.
 
 ```json
 {
@@ -186,60 +208,117 @@ The 'response' key is an array of objects. Each item is structured as follows:
 
 ***Note: the value of `cumulated_score` is between -10 and 32***
 
-Here is the list of all available fields
+#### Identity and echoed metadata
 
 | name | description | value | comments |
 | --- | --- | --- | --- |
-| report_link | Report link | String | URL to the report page |
+| report_link | Report link | String | URL to the report page. Added by snapshot-api; absent if report creation was skipped or failed. |
 | article_id | Article ID | String | An identifier for the document |
 | filename | The name of the file | String | The name of the file |
-| submission_number | An identifier of the submission from Editorial Manager or ScholarOne | String | An identifier for the submission |
-| article_title | Title of the article | String | Title of the article as provided by the authors |
-| subject_area | Subject area | Array<String> | The classification selected by the author |
-| abstract | Abstract of the article | String | Abstract as it entered by the author |
-| editorial_policy | Editorial policy to use | String | The policy to specify used in the process |
-| das_custom_ms | Data availability in the metadata | String | Custom Data Availability Statement (to replace the DAS from the PDF) |
-| das_custom_presence_ms | Is there a DAS in the metadata? | Boolean | Is there a custom DAS provided? |
-| das_original_ms | Data Availability Statement in the manuscript | String | Data Availability Statement in the manuscript |
-| das_original_presence_ms | Have the authors provided a Data Availability Statement (DAS) in the manuscript? | Boolean | Have the authors provided a Data Availability Statement (DAS) in the manuscript? |
+| submission_number | An identifier of the submission from Editorial Manager or ScholarOne | String | `"N/A"` when not supplied |
+| article_title | Title of the article | String | `"N/A"` when not supplied |
+| subject_area | Subject area | Array\<String\> \| String | The classification selected by the author. The string `"N/A"` when not supplied. |
+| abstract | Abstract of the article | String | `"N/A"` when not supplied |
+| journal_name | The name of the journal | String | `"N/A"` when not supplied |
+| editorial_policy | Editorial policy to use | String | The policy **actually applied** — not necessarily the one requested |
+
+#### Data Availability Statement
+
+| name | description | value | comments |
+| --- | --- | --- | --- |
+| das_original_ms | Data Availability Statement in the manuscript | String | The DAS text extracted from the PDF. `"N/A"` when none found. |
+| das_original_presence_ms | Have the authors provided a Data Availability Statement (DAS) in the manuscript? | Boolean | Derived from `das_original_ms` |
+| das_custom_ms | Data Availability Statement provided in the metadata of Editorial Manager or ScholarOne? | String | The DAS you passed in `options.das`. `"N/A"` when not supplied. |
+| das_custom_presence_ms | Is there a Data Availability Statement provided in the metadata of Editorial Manager or ScholarOne? | Boolean | Whether `options.das` was supplied |
+
+#### Where the data are
+
+| name | description | value | comments |
+| --- | --- | --- | --- |
 | data_on_request | Are any data available on request? | Boolean | Does the article indicate that data is available on request? |
-| data_in_manuscript | Does the article indicate that data is available inside the manuscript? | Boolean | Does the article indicate that data is available inside the manuscript? |
-| data_in_si | Does the DAS say that the data are shared in the 'Supplementary material' section? | Boolean | Does the DAS say that the data are shared in the 'Supplementary material' section? |
-| data_in_repository | Does the article indicate that data is stored in an online repository? | Boolean | Does the article indicate that data is stored in an online repository? |
-| data_not_generated | Does the article indicate that data sharing does not apply? | Boolean | Does the article say that data sharing does not apply? ("yes" means the study did not generate data) |
+| data_in_manuscript | Does the article indicate that data is available inside the manuscript? | Boolean | |
+| das_in_si | Does the DAS say that the data are shared in the 'Supplementary material' section? | Boolean | **Distinct from `data_in_si`** — this one is about what the DAS *states*. |
+| data_in_si | Does the article indicate that data is available in one of the supplemental files? | Boolean | **Distinct from `das_in_si`** — this one is about the article as a whole. |
+| data_in_ms_or_si | Is the DAS stating that 'All data are in the manuscript and/or supporting information files? | Boolean | Computed as `data_in_manuscript OR data_in_si` |
+| data_in_repository | Does the article indicate that data is stored in an online repository? | Boolean | |
+| data_not_generated | Does the article indicate that data sharing does not apply? | Boolean | `true` means the study did not generate data |
+| claims_no_data_shared | Claims no data shared | Boolean | |
+| data_generalist | Are any data shared on a generalist repository? | Boolean | e.g. Zenodo, figshare, Dryad |
+| warrant_generalist | URL(s) and PID(s) for any generalist repositories | Array\<String\> | Evidence backing `data_generalist` |
+| data_specialist | Are any data shared on a specialist repository? | Boolean | e.g. GEO, PDB, GenBank |
+| warrant_specialist | URL(s) and PID(s) for any specialist repositories | Array\<String\> | Evidence backing `data_specialist` |
+| is_dryad | If there is a repository found in the manuscript text, is it Dryad? | Boolean \| `"N/A"` | Returns the string `"N/A"` when no repository was found |
+| data_on_community_repo | True if TFOD node 18 is answered Yes; False if node 18 is answered No; NA if node 18 is not reached | Boolean \| `"NA"` | TFOD policy only |
+
+#### Exemption claims
+
+| name | description | value | comments |
+| --- | --- | --- | --- |
 | exemption_requested | Do the authors claim an exemption from sharing their data on a repository? | Boolean | Did the authors request an exemption from data sharing? |
-| exemption_sensitive_ethics_protection | Do the authors claim an exemption because their data are too sensitive to share OR it would unethical to share them OR covered by a data protection agreement? | Boolean | Did the authors request an exemption for any of the following reasons: data too sensitive, ethical concerns, or data privacy/protection issues? |
-| exemption_large | Do the authors claim an exemption because their dataset is too large to fit onto a suitable repository? | Boolean | Did the authors request an exemption because the data is too large to share? |
-| exemption_no_suitable_repository | Do the authors claim an exemption because there is no suitable repository for their dataset? | Boolean | Did the authors request an exemption because there is no suitable repository for the data? |
-| exemption_third_party | Do the authors claim an exemption because a third party controls access to their dataset? | Boolean | Did the authors request an exemption because the data is owned or held by a third party? |
-| exemption_reasons | List of the reasons did authors gave for their exemption claim. | Array<String> | List of the reasons did authors gave for their exemption claim. |
-| das_exemption_reasons | List of the reasons did authors gave for their exemption claim. | Array<String> | List of the reasons did authors gave for their exemption claim. |
-| action_required | Action required after the analysis of manuscript | String | If the user has provided a data sharing policy, it will have a list of requirements (separate from the recommendations): a list of short statements explaining what action is **required** from the authors to comply with the policy. If no action is required, the list will be empty. This field is only for the "Requirements", not the "Recommendations". |
-| action_recommended | Action recommended after the analysis of manuscript | String | If the user has provided a data sharing policy, it will have a list of recommendations (separate from the requirements): a list of short statements explaining what action is **recommended** from the authors to comply with the policy. If no action is recommended, the list will be empty. This field is only for the "Recommendations", not the "Requirements". |
-| reasoning_summary | A summary paragraph explaining the decisions for the above fields | String | A summary paragraph explaining the decisions for the above fields |
-| reasoning | Detailed explanation of your reasoning for the answers. | String | Detailed explanation of your reasoning for the answers. |
-| data_generalist | Are any data shared on a generalist repository? | Boolean | Are any data shared on a generalist repository? |
-| warrant_generalist | URL(s) and PID(s) for any generalist repositories | Array<String> | URL(s) and PID(s) for any generalist repositories |
-| data_specialist | Are any data shared on a specialist repository? | Boolean | URL(s) and PID(s) for any generalist repositories found in either the DAS or full text |
-| warrant_specialist | URL(s) and PID(s) for any specialist repositories | Array<String> | URL(s) and PID(s) for any specialist repositories |
-| data_url | Does the DAS contains one or more URLs? | Boolean | Does the DAS contain a URL? |
-| is_dryad | List of Non-functional repository URLs | Boolean | If there is a repository found in the manuscript text, is it Dryad? |
-| non-functional_urls | List of non functional URLs found in the DAS | Array<String> | List of non functional URLs found in the DAS |
-| das_urls | List of all URLs found in the DAS | Array<String> | List of URLs found in the DAS: “url” (string), “valid” (boolean) & "is_landing_page" (boolean) |
-| das_url_details | List of all URLs found in the DAS | Array<Object> | List of URLs found in the DAS. Each URL has additional properties: “url” (string), “valid” (boolean) & "is_landing_page" (boolean) |
-| das_dois | List of all DOIs found in the DAS | Array<String> | List of all DOIs found in the DAS |
-| data_on_accept | Does the DAS state that the data will be made available upon acceptance/publication? | Boolean | Does the DAS state that the data will be made available upon acceptance/publication? |
-| computer_gen | Was shareable computer code generated? | Boolean | Was shareable computer code generated? |
-| computer_si | Is any computer code shared as Supplemental Material? | Boolean | Is any computer code shared as Supplemental Material? |
-| computer_online | Is any computer code shared online? | Boolean | Is any computer code shared online? |
-| data_in_ms_or_si | Is the DAS stating that 'All data are in the manuscript and/or supporting information files? | Boolean | Is the DAS stating that 'All data are in the manuscript and/or supporting information files? |
-| data_share_si | Check for the minimal dataset in the Supporting Information files. | Boolean | Check for the minimal dataset in the Supporting Information files. |
-| cumulated_score | Cumulated score from snapshot | Integer | Cumulated score from snapshot |
-| warrants_code_online | URL(s) and PID(s) for any online code sharing locations | Array<String> | URL(s) and PID(s) for any online code sharing locations |
-| warrants_code_online | URL(s) and PID(s) for any online code sharing locations | Array<String> | URL(s) and PID(s) for any online code sharing locations |
-| claims_no_data_shared | Claims no data shared | Boolean | Claims no data shared |
-| data_in_reference | Map of Data Availability URLs to whether the same URL is also cited in References | Dictionary<String, Boolean> | Whether each Data Availability URL also appears in the References section |
-| accepted_license | Map of repository name/database to a list of normalized data license names | Dictionary<String, Array<String>> | Licenses detected per repository |
+| exemption_sensitive_ethics_protection | Do the authors claim an exemption because their data are too sensitive to share OR it would unethical to share them OR covered by a data protection agreement? | Boolean | Data too sensitive, ethical concerns, or data privacy/protection issues |
+| exemption_large | Do the authors claim an exemption because their dataset is too large to fit onto a suitable repository? | Boolean | |
+| exemption_no_suitable_repository | Do the authors claim an exemption because there is no suitable repository for their dataset? | Boolean | |
+| exemption_third_party | Do the authors claim an exemption because a third party controls access to their dataset? | Boolean | Data owned or held by a third party |
+| exemption_reasons | List of the reasons did authors gave for their exemption claim. | Array\<String\> | |
+
+#### Links, DOIs and identifiers found in the DAS
+
+| name | description | value | comments |
+| --- | --- | --- | --- |
+| data_url | Does the DAS contains one or more URLs? | Boolean | |
+| das_urls | List of all URLs found in the DAS | Array\<String\> | Plain URL strings |
+| das_urls_details | List of all URLs found in the DAS | Array\<Object\> | Each entry carries `url` (string), `valid` (boolean) and `is_landing_page` (boolean). **This is the field report templates read** — note the plural `urls`. |
+| das_dois | List of all DOIs found in the DAS | Array\<String\> | |
+| non-functional_urls | List of Non-functional repository URLs | Array\<String\> | Note the hyphen in the name |
+| data_in_reference | Mapping of Data Availability URLs to whether they are also cited in References | Dictionary\<String, Boolean\> | |
+| das_url | True if there are one or more URLs with section=Data Availability; False if DAS present but no URLs; NA if DAS absent | Boolean \| `"NA"` | Singular — distinct from `das_urls` and from `data_url` |
+| das_doi | True if there are one or more DOIs with section=Data Availability; False if DAS present but no DOIs; NA if DAS absent | Boolean \| `"NA"` | Singular — distinct from `das_dois` |
+| das_data_url | True if there is a valid Data Availability URL with established_data_repository=True; False if DAS present but none; NA if DAS absent | Boolean \| `"NA"` | |
+| das_data_doi | True if there is a valid DOI in Additional Information; False if DAS present but none; NA if DAS absent | Boolean \| `"NA"` | |
+| das_data_url_doi | True if either das_data_url or das_data_doi is True; NA if DAS absent | Boolean \| `"NA"` | |
+| accepted_PID | True if the DAS contains a DOI/URL PID or accession-like persistent identifier | Boolean | |
+
+#### Licences
+
+| name | description | value | comments |
+| --- | --- | --- | --- |
+| dataset_licenses | Acceptable dataset licenses only, e.g. CC0 or CC-BY | Dictionary\<String, Array\<String\>\> | Repository/database → normalised licence names |
+| unacceptable_dataset_licences | Dataset licenses that are not acceptable | Array | Note the British spelling — this is intentional |
+
+> `accepted_license` was replaced by the two fields above in June 2026. It still appears in archived
+> responses produced before that change.
+
+#### Code sharing
+
+| name | description | value | comments |
+| --- | --- | --- | --- |
+| computer_gen | Was shareable computer code generated? | Boolean \| String | Has been observed returning the string `"Yes"` |
+| computer_si | Is any computer code shared as Supplemental Material? | Boolean | |
+| computer_online | Is any computer code shared online? | Boolean | |
+| warrants_code_online | URL(s) and PID(s) for any online code sharing locations | Array\<String\> | Note the plural `warrants_` prefix |
+
+#### Narrative output and score
+
+| name | description | value | comments |
+| --- | --- | --- | --- |
+| action_required | Action required after the analysis of manuscript | String \| Array\<String\> | A list of short statements explaining what action is **required** from the authors to comply with the policy. Empty (or containing "Pass Checks") means compliant. Requirements only — never recommendations. |
+| action_recommended | Action recommended after the analysis of manuscript | String \| Array\<String\> | A list of short statements explaining what action is **recommended**. Recommendations only — never requirements. |
+| reasoning_summary | A summary paragraph explaining the decisions for the above fields | String | Markdown |
+| reasoning | Detailed explanation of your reasoning for the answers. | String | Long-form; often `"N/A"` |
+| reasoning_summary_authors | A summary paragraph explaining the decisions for the above fields for authors | String | Author-facing wording |
+| reasoning_summary_email | Email to send based on reasonings summaries | String | Drives the "draft email to authors" block in reports |
+| si_summary | A summary of SI files | String | Markdown |
+| cumulated_score | Cumulated score from snapshot | Integer | Between −10 and 32 |
+
+#### Policy-dependent fields
+
+Returned **only when the applied `editorial_policy` enables them**:
+
+| name | description | value | enabled for |
+| --- | --- | --- | --- |
+| funding_statement | Funding statement extracted from the manuscript | String | `AUTH`, `TFOD`, `PLOS`, `JID`, `SURR`. `"N/A"` when the section is absent. |
+| suggested_das | Suggested Data Availability Statement generated for AUTH policy based on graph traversal output | String | `AUTH` only |
+| suggested_das_reasoning | Reasoning for the suggested AUTH Data Availability Statement | String | `AUTH` only |
 
 
 ```json
@@ -411,7 +490,7 @@ Here is the list of all available fields
       "value": ["..."]
     },
     {
-      "name": "das_url_details",
+      "name": "das_urls_details",
       "description": "List of all URLs found in the DAS",
       "value": [
         {
@@ -467,11 +546,6 @@ Here is the list of all available fields
       "value": true || false || "N/A"
     },
     {
-      "name": "data_share_si",
-      "description": "Check for the minimal dataset in the Supporting Information files. ",
-      "value": true || false || "N/A"
-    },
-    {
       "name": "claims_no_data_shared",
       "description": "Claims no data shared",
       "value": true || false || "N/A"
@@ -485,16 +559,31 @@ Here is the list of all available fields
       }
     },
     {
-      "name": "accepted_license",
-      "description": "Map of repository name/database to a list of normalized data license names",
+      "name": "dataset_licenses",
+      "description": "Acceptable dataset licenses only, e.g. CC0 or CC-BY",
       "value": {
         "data repository": ["license name"],
         "...":["..."]
       }
+    },
+    {
+      "name": "unacceptable_dataset_licences",
+      "description": "Dataset licenses that are not acceptable",
+      "value": ["..."]
+    },
+    {
+      "name": "report_link",
+      "description": "Report link",
+      "value": "https://snapshot-reports.dataseer.ai/r/..."
     }
   ]
 }
 ```
+
+> This example lists the fields a key with no field restrictions receives. The set of fields
+> delivered to your key — and, for some integrations, their order — is configured per key. If a field
+> documented above is missing from your responses, contact DataSeer support (support@dataseer.ai) to
+> have it enabled for your key.
 
 ### Process PDF Async (POST)
 
@@ -659,6 +748,22 @@ curl -X DELETE -H "Authorization: Bearer <your_token>" \
 ## Error Handling
 
 The API uses standard HTTP status codes to indicate the success or failure of requests.
+
+### Transport-level errors
+
+| Error code | Meaning | What to do |
+|---|---|---|
+| 401 | Missing, malformed or expired `Authorization` header | Check the `Bearer <token>` header. Temporary tokens expire — request a new one. |
+| 403 | Your token is not allow-listed for this route | Contact DataSeer support to have the route added to your key. |
+| 429 | Rate limit exceeded for your token | Back off and retry. Limits are per token and configurable — contact support if yours is too low. |
+| 502 / 503 | A downstream service (GenShare, GROBID) is unavailable | Retry later. `GET /ping` reports which service is down. |
+| 500 | Unexpected server error | Report the `request_id` to DataSeer support — the full processing log is archived under it. |
+
+### Request-validation errors
+
+Content validation of the PDF and of `options` is performed by the analysis engine, so these
+messages are produced downstream and passed through by the API with status `400`. The only
+validation performed by the API itself is the supplementary-file format check.
 
 | Description                                                                                                                                            | Error code | Message                                                                                                                                                                                                                                                                |
 |--------------------------------------------------------------------------------------------------------------------------------------------------------|------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|

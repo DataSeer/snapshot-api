@@ -1,6 +1,12 @@
 # Snapshot API
 
-A Node.js REST API for processing PDF documents through OSI (Open Science Indicators) verification system. This API integrates with GenShare (DataSeer AI), GROBID, and DataStet services to analyze scientific documents, detect data statements, and generate reports. It features JWT authentication, user-specific rate limiting, S3 storage for complete request traceability, SQLite database for request mapping, Google Sheets integration for reporting, and an asynchronous job queue system for background processing.
+A Node.js REST API for processing PDF documents through OSI (Open Science Indicators) verification system. This API integrates with GenShare (DataSeer AI) and GROBID to analyze scientific documents, detect data statements, and generate reports. It features JWT authentication, user-specific rate limiting, S3 storage for complete request traceability, SQLite database for request mapping, Google Sheets integration for reporting, and an asynchronous job queue system for background processing.
+
+### Related documentation
+
+| Document | Covers |
+|---|---|
+| [`USER_DOCUMENTATION.md`](./USER_DOCUMENTATION.md) | the API contract — endpoints, request options, response fields, errors |
 
 ## Table of Contents
 
@@ -55,7 +61,6 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - Google Cloud Account (for Google Sheets API)
 - Access to:
   - GROBID service
-  - DataStet service
   - GenShare service (multiple versions supported)
 
 ## Installation
@@ -105,6 +110,34 @@ PORT=3000
 NODE_ENV=production    # 'development' or 'production'
 NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 ```
+
+### Hot-reloaded vs. restart-required configuration
+
+`src/utils/configWatcher.js` watches a subset of `conf/*.json` and reloads them in place. Everything
+else is `require`d once at boot and needs a process restart to take effect.
+
+| File | Hot-reloaded | Controls |
+|---|---|---|
+| `conf/users.json` | ✅ | users, tokens, rate limits, field/option permissions |
+| `conf/permissions.json` | ✅ | per-route access control |
+| `conf/genshare.json` | ✅ | engine aliases, per-policy flags, cache settings, Sheets mapping |
+| `conf/reports.json` | ✅ | report kinds and the snapshot-reports endpoint |
+| `conf/emailAlerts.json` | ✅ | alert recipients / watched users |
+| `conf/instance.json` | ✅ | instance name, admin console URL |
+| `conf/em.json` | ❌ | Editorial Manager integration |
+| `conf/scholarone.json` | ❌ | ScholarOne integration |
+| `conf/queueManager.json` | ❌ | queue concurrency, retries, backoff |
+| `conf/aws.s3.json` | ❌ | bucket, region, prefix |
+| `conf/smtp.json` | ❌ | outbound alert mail |
+| `conf/snapshotMails.json` | ❌ | snapshot-mails callback target |
+| `conf/grobid.json` | ❌ | GROBID health endpoint |
+| `conf/googleSheets.credentials.json` | ❌ | Google service-account key |
+| `conf/googleSheets.logs.json` | ❌ | Drive folder + spreadsheet IDs |
+| `.env` | ❌ | `JWT_SECRET`, `TOKEN_EXPIRATION`, `PORT`, `NODE_ENV`, `NO_DB_REFRESH` |
+
+> `conf/scholarone.json` is the one exception worth knowing: `notifications.endpoint_on_hold` **is**
+> flipped at runtime by `npm run scholarone:hold:on|off`. Use those commands rather than editing
+> the file by hand.
 
 ### Required Configuration Files
 
@@ -165,18 +198,11 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-4. **DataStet Configuration:**
-```json
-// conf/datastet.json
-{
-  "health": {
-    "url": "https://datastet-service/health",
-    "method": "GET"
-  }
-}
-```
+> **Note:** `conf/datastet.json` may still exist on deployed instances. It is **inert** — DataStet is
+> no longer health-checked by snapshot-api and there is no `/datastet/health` route. `GET /ping`
+> reports GenShare and GROBID only.
 
-5. **Users Configuration:**
+4. **Users Configuration:**
 ```json
 // conf/users.json
 {
@@ -222,7 +248,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-6. **Reports Configuration:**
+5. **Reports Configuration:**
 ```json
 // conf/reports.json
 {
@@ -243,7 +269,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-7. **Permissions Configuration:**
+6. **Permissions Configuration:**
 ```json
 // conf/permissions.json
 {
@@ -287,7 +313,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-8. **AWS S3 Configuration:**
+7. **AWS S3 Configuration:**
 ```json
 // conf/aws.s3.json
 {
@@ -299,7 +325,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-9. **Editorial Manager Configuration:**
+8. **Editorial Manager Configuration:**
 ```json
 // conf/em.json
 {
@@ -499,9 +525,16 @@ The Editorial Manager and ScholarOne configurations support publication-specific
 #### How Graph Selection Works:
 
 1. **Custom Mapping Check**: System first checks if the submission's `publication_code` has a custom mapping in the `graph.custom` object
-2. **Default Fallback**: If no custom mapping exists (or is not avaialble), the system uses the value from `graph.default`  
+2. **Default Fallback**: If no custom mapping exists (or is not available), the system uses the value from `graph.default`
 3. **Validation**: The selected graph value is validated against the `graph.available` array
-4. **GenShare Integration**: The graph value is included in the GenShare request options as `"graph": "<selected_value>"`
+4. **GenShare Integration**: The selected value is included in the GenShare request options as
+   **`"editorial_policy": "<selected_value>"`**
+
+> **Naming note:** the configuration key is historically called `graph`, but the option sent to
+> genshare-service is `editorial_policy`. The two names refer to the same thing — a journal policy
+> decision graph. `editorial_policy` is the name used everywhere else (API options, response field,
+> per-user config), so prefer it in conversation; `graph` survives only as the `em.json` /
+> `scholarone.json` config key.
 
 #### Example Graph Configuration:
 
@@ -534,7 +567,7 @@ The system provides comprehensive logging for graph configuration:
 - Tracks when graph values are sent to GenShare
 - Handles configuration errors gracefully with fallback behavior
 
-10. **ScholarOne Configuration:**
+9. **ScholarOne Configuration:**
 ```json
 // conf/scholarone.json
 {
@@ -599,7 +632,7 @@ The system provides comprehensive logging for graph configuration:
 }
 ```
 
-11. **Google Sheets Credentials:**
+10. **Google Sheets Credentials:**
 ```json
 // conf/googleSheets.credentials.json
 {
@@ -616,7 +649,7 @@ The system provides comprehensive logging for graph configuration:
 }
 ```
 
-12. **Google Sheets Logs Configuration:**
+11. **Google Sheets Logs Configuration:**
 ```json
 // conf/googleSheets.logs.json
 {
@@ -667,13 +700,13 @@ POST   /processPDF/sync                  - Process a PDF file synchronously
 POST   /processPDF/async                 - Process a PDF file asynchronously with callback
 GET    /jobs/:requestId                  - Get job status for async processing
 GET    /requests/search                  - Search for reports by article_id or request_id
+GET    /requests/:requestId              - Get a single request record
 POST   /requests/refresh                 - Refresh article-request ID mapping from S3
 DELETE /requests/:requestId              - Delete a request and all associated data
 
 # Service health checks
 GET    /genshare/health                  - Check GenShare service health
 GET    /grobid/health                    - Check GROBID service health
-GET    /datastet/health                  - Check DataStet service health
 
 # Editorial Manager integration
 POST   /editorial-manager/submissions    - Handle submissions from Editorial Manager (asynchronous)
@@ -698,6 +731,18 @@ POST   /snapshot-mails/retry/:requestId  - Retry a failed email submission job
 
 # Snapshot Reports endpoints
 GET    /snapshot-reports/:requestId/genshare - Get GenShare data for a request
+
+# Snapshot S3 Manager admin (admin + snapshot-s3-manager roles)
+PUT    /snapshot-s3-manager/users/:userId                - Replace a user's full configuration
+GET    /snapshot-s3-manager/instance                     - Get the instance config (name, console URL)
+PATCH  /snapshot-s3-manager/instance                     - Update the instance config
+GET    /snapshot-s3-manager/requests                     - List requests (console log dashboard)
+GET    /snapshot-s3-manager/email-alerts                 - Get the email-alert configuration
+PATCH  /snapshot-s3-manager/email-alerts                 - Update the email-alert configuration
+GET    /snapshot-s3-manager/logs/config                  - Get the Google Sheets logs configuration
+POST   /snapshot-s3-manager/logs/rebuild-all             - Rebuild every log spreadsheet from S3
+POST   /snapshot-s3-manager/logs/rebuild-admin           - Rebuild the admin/genshare log spreadsheet
+POST   /snapshot-s3-manager/logs/rebuild-user            - Rebuild one user's log spreadsheet
 
 # Snapshot S3 Manager cache (admin + snapshot-s3-manager roles)
 GET    /snapshot-s3-manager/cache                        - List cache entries with consumer counts
@@ -1318,7 +1363,8 @@ snapshot-api/
 │   ├── controllers/       # Request handlers
 │   │   ├── apiController.js
 │   │   ├── authController.js
-│   │   ├── datastetController.js
+│   │   ├── cacheController.js   # Genshare cache substitution layer
+│   │   ├── demoRequestsController.js # Curator demo-bypass requests
 │   │   ├── emController.js      # Editorial Manager with queue integration
 │   │   ├── genshareController.js
 │   │   ├── grobidController.js
@@ -1328,6 +1374,7 @@ snapshot-api/
 │   │   ├── scholaroneNotificationsController.js # ScholarOne webhook controller
 │   │   ├── snapshotMailsController.js # Snapshot mails controller
 │   │   ├── snapshotReportsController.js # Snapshot reports controller
+│   │   ├── snapshotS3ManagerController.js # Admin console endpoints
 │   │   └── versionsController.js
 │   ├── middleware/        # Express middleware
 │   │   ├── auth.js
@@ -1335,7 +1382,12 @@ snapshot-api/
 │   ├── routes/            # API routes
 │   │   └── index.js
 │   ├── utils/             # Utility functions
+│   │   ├── cacheGcWorker.js     # TTL garbage collection for the cache layer
+│   │   ├── cacheManager.js      # Shared canonical response store
+│   │   ├── configWatcher.js     # Hot-reload for watched conf/*.json files
 │   │   ├── dbManager.js
+│   │   ├── demoBypassManager.js # Curator demo-mode processing
+│   │   ├── emailAlertManager.js # Outbound alert e-mails
 │   │   ├── emManager.js
 │   │   ├── genshareManager.js # Updated exports for DS logs
 │   │   ├── googleSheets.js # Google Sheets & Drive API integration
@@ -1346,6 +1398,7 @@ snapshot-api/
 │   │   ├── queueManager.js      # Job queue system
 │   │   ├── rateLimiter.js
 │   │   ├── requestsManager.js
+│   │   ├── s3DataRefresher.js   # Rebuilds the request index from S3
 │   │   ├── s3Storage.js
 │   │   ├── scholaroneManager.js # ScholarOne submissions manager
 │   │   ├── scholaroneNotificationsManager.js # ScholarOne notifications manager
