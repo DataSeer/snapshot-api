@@ -1,6 +1,11 @@
 // File: src/utils/snapshotReportsManager.js
 const axios = require('axios');
 const config = require('../config');
+const { watchConfig } = require('./configWatcher');
+
+// Auto-reloads on file change so edits to conf/reports.json don't require a
+// server restart.
+const reportsConfig = watchConfig(config.reportsConfigPath, { versions: {} });
 
 /**
  * Create a report using the snapshot-reports service
@@ -11,16 +16,20 @@ const config = require('../config');
  */
 const createReport = async (reportVersion, requestId, session) => {
   try {
-    // Load the reports configuration
-    const reportsConfig = require(config.reportsConfigPath);
-    
-    if (!reportsConfig.versions[reportVersion]) {
-      throw new Error(`Report version '${reportVersion}' not found in configuration`);
+    const versions = reportsConfig.versions || {};
+
+    if (!versions[reportVersion]) {
+      const known = Object.keys(versions);
+      throw new Error(
+        `Report version '${reportVersion}' not found in conf/reports.json. ` +
+          `Add an entry for it under "versions". ` +
+          `Currently configured: ${known.length ? known.join(', ') : '(none)'}.`
+      );
     }
 
-    const versionConfig = reportsConfig.versions[reportVersion];
+    const versionConfig = versions[reportVersion];
     const snapshotReportsConfig = versionConfig['snapshot-reports'];
-    
+
     if (!snapshotReportsConfig) {
       throw new Error(`snapshot-reports configuration not found for version '${reportVersion}'`);
     }
@@ -31,8 +40,8 @@ const createReport = async (reportVersion, requestId, session) => {
       report_kind: reportVersion
     };
 
-    session.addLog(`Creating snapshot-reports report with kind: ${reportVersion}`);
-    session.addLog(`URL: ${snapshotReportsConfig.url}`);
+    session.addLog(`[Reports] Creating snapshot-reports report with kind: ${reportVersion}`);
+    session.addLog(`[Reports] URL: ${snapshotReportsConfig.url}`);
 
     // Make the API call to snapshot-reports service
     const response = await axios({
@@ -54,7 +63,7 @@ const createReport = async (reportVersion, requestId, session) => {
     }
 
     const reportData = response.data.data;
-    session.addLog(`snapshot-reports report created successfully: ${reportData.url}`);
+    session.addLog(`[Reports] Report created successfully: ${reportData.url}`);
 
     return {
       url: reportData.url,
@@ -67,7 +76,7 @@ const createReport = async (reportVersion, requestId, session) => {
     };
 
   } catch (error) {
-    session.addLog(`Error creating snapshot-reports report: ${error.message}`);
+    session.addLog(`[Reports] Error creating snapshot-reports report: ${error.message}`, 'ERROR');
     console.error('Error creating snapshot-reports report:', error);
     throw error;
   }

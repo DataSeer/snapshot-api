@@ -1,14 +1,17 @@
 // File: src/utils/userManager.js
 const fs = require('fs');
 const config = require('../config');
+const { watchConfig, reloadConfig } = require('./configWatcher');
+
+// Watch users config (auto-reloads on file change)
+const usersConfig = watchConfig(config.usersPath);
 
 /**
  * Get all users from the configuration
  * @returns {Object} Object containing all users with their configurations
  */
 const getAllUsers = () => {
-  const users = JSON.parse(fs.readFileSync(config.usersPath, 'utf8'));
-  return users;
+  return usersConfig;
 };
 
 /**
@@ -17,13 +20,11 @@ const getAllUsers = () => {
  * @returns {Object} User object with user data
  */
 const getUserById = (userId) => {
-  const users = JSON.parse(fs.readFileSync(config.usersPath, 'utf8'));
-  
-  if (!users[userId]) {
+  if (!usersConfig[userId]) {
     throw new Error(`User ${userId} not found`);
   }
-  
-  return { id: userId, ...users[userId] };
+
+  return { id: userId, ...usersConfig[userId] };
 };
 
 /**
@@ -32,14 +33,46 @@ const getUserById = (userId) => {
  * @param {Object} userData - The user data to update
  */
 const updateUser = (userId, userData) => {
+  // Read fresh from disk for write operations to avoid race conditions
   const users = JSON.parse(fs.readFileSync(config.usersPath, 'utf8'));
-  
+
   if (!users[userId]) {
     throw new Error(`User ${userId} not found`);
   }
-  
+
   users[userId] = { ...users[userId], ...userData };
   fs.writeFileSync(config.usersPath, JSON.stringify(users, null, 2));
+  // Refresh the in-memory copy synchronously so reads immediately after this
+  // write are consistent (fs.watch fires async + debounced). The watcher still
+  // catches external edits.
+  reloadConfig(config.usersPath);
+};
+
+/**
+ * Replace a user's full configuration.
+ *
+ * Unlike updateUser (a shallow merge), this overwrites the whole user object:
+ * top-level keys absent from userData are removed. Use this for full-document
+ * edits where the caller has already assembled the complete desired config
+ * (e.g. the admin "Edit JSON" flow). Callers are responsible for carrying over
+ * any protected fields (token, client_secret) they want preserved.
+ * @param {string} userId - The user ID to replace
+ * @param {Object} userData - The complete user object to store
+ */
+const replaceUser = (userId, userData) => {
+  // Read fresh from disk for write operations to avoid race conditions
+  const users = JSON.parse(fs.readFileSync(config.usersPath, 'utf8'));
+
+  if (!users[userId]) {
+    throw new Error(`User ${userId} not found`);
+  }
+
+  users[userId] = userData;
+  fs.writeFileSync(config.usersPath, JSON.stringify(users, null, 2));
+  // Refresh the in-memory copy synchronously so reads immediately after this
+  // write are consistent (fs.watch fires async + debounced). The watcher still
+  // catches external edits.
+  reloadConfig(config.usersPath);
 };
 
 /**
@@ -86,19 +119,22 @@ const getUserDefaultGenShareVersion = (userId) => {
 };
 
 /**
- * Get user's response field restrictions
+ * Get user's response field configuration
  * @param {string} userId - The user ID to check
- * @returns {Object} Object containing availableFields and restrictedFields arrays
+ * @returns {Object} Object containing availableFields, restrictedFields and
+ *   returnedFields arrays. availableFields/restrictedFields govern data access
+ *   (security); returnedFields is a presentation-only response-shaping filter.
  */
 const getUserResponseFieldRestrictions = (userId) => {
   try {
     const user = getUserById(userId);
     return {
       availableFields: user.genshare?.availableFields || [],
-      restrictedFields: user.genshare?.restrictedFields || []
+      restrictedFields: user.genshare?.restrictedFields || [],
+      returnedFields: user.genshare?.returnedFields || []
     };
   } catch (error) {
-    return { availableFields: [], restrictedFields: [] };
+    return { availableFields: [], restrictedFields: [], returnedFields: [] };
   }
 };
 
@@ -120,6 +156,7 @@ module.exports = {
   getAllUsers,
   getUserById,
   updateUser,
+  replaceUser,
   validateClientCredentials,
   getUserGenShareVersions,
   getUserDefaultGenShareVersion,

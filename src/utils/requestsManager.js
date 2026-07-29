@@ -1,10 +1,20 @@
 // File: src/utils/requestsManager.js
 const dbManager = require('./dbManager');
-const { getAllGenshareRequestsFiles, getReportFile, deleteObjectsByPrefix, s3Config } = require('./s3Storage');
+const {
+  getAllGenshareRequestsFiles,
+  getReportFile,
+  getCacheRefFile,
+  getFilesListFile,
+  getFileMetadataFile,
+  getProcessFile,
+  deleteObjectsByPrefix,
+  s3Config
+} = require('./s3Storage');
 const config = require('../config');
+const { watchConfig } = require('./configWatcher');
 
-// Load the report configuration
-const reportsConfig = require(config.reportsConfigPath);
+// Auto-reloads on file change
+const reportsConfig = watchConfig(config.reportsConfigPath, { versions: {} });
 
 /**
  * Initialize database
@@ -15,26 +25,34 @@ const initDatabase = async () => {
 };
 
 /**
- * Refresh all requests from S3 and update report data
+ * Refresh all requests from S3 and update the DB.
+ *
+ * Strictly read-only on S3: walks genshare/request.json files, mirrors
+ * each request's report / pdf_hash / cache_key into the DB. No PDF
+ * downloads, no hash computation — those live in the dedicated
+ * scripts/maintenance/refresh_s3_data.js script (run beforehand if
+ * metadata is missing).
+ *
  * @returns {Promise<boolean>} - True if refresh successful
  */
 const refreshRequestsFromS3 = async () => {
   try {
-    console.log("Starting refreshRequestsFromS3...");
-    
+    console.log('Starting refreshRequestsFromS3...');
+
     // Get all options files from S3
     const requestsFiles = await getAllGenshareRequestsFiles();
     console.log(`Total S3 options files retrieved: ${requestsFiles.length}`);
-    
-    // Count how many have valid article_id
-    const validFiles = requestsFiles.filter(file => file.content && file.content.article_id);
-    console.log(`Files with valid article_id: ${validFiles.length}`);
-    
+
+    // Filter to files with valid content
+    const validFiles = requestsFiles.filter(file => file.content);
+    const withArticleId = validFiles.filter(file => file.content.article_id);
+    console.log(`Files with valid content: ${validFiles.length} (${withArticleId.length} with article_id)`);
+
     // Check for duplicate request_ids
     const requestIds = validFiles.map(file => file.requestId);
     const uniqueRequestIds = new Set(requestIds);
     console.log(`Unique request_ids: ${uniqueRequestIds.size} out of ${requestIds.length}`);
-    
+
     // Find duplicates
     const duplicateIds = requestIds.filter((id, index) => requestIds.indexOf(id) !== index);
     const uniqueDuplicateIds = [...new Set(duplicateIds)];
@@ -42,20 +60,25 @@ const refreshRequestsFromS3 = async () => {
     if (uniqueDuplicateIds.length > 0) {
       console.log(`First few duplicate IDs: ${uniqueDuplicateIds.slice(0, 5).join(', ')}`);
     }
-    
-    // Process each file
+
+    // Process each file (including those without article_id)
     let insertedCount = 0;
     let errorCount = 0;
     let reportUpdatedCount = 0;
-    
+    let reportErrorCount = 0;
+    let pdfHashBackfilled = 0;
+    let cacheKeyBackfilled = 0;
+    let isDemoBackfilled = 0;
+    let isDemoBypassBackfilled = 0;
+
     for (const file of requestsFiles) {
-      if (file.content && file.content.article_id) {
+      if (file.content) {
         try {
           // Format the date for record
           const formattedDate = file.lastModified instanceof Date
             ? file.lastModified.toISOString().replace('T', ' ').split('.')[0]
             : new Date(file.lastModified).toISOString().replace('T', ' ').split('.')[0];
-          
+
           // Try to get report data from S3
           let reportData = null;
           try {
@@ -64,19 +87,83 @@ const refreshRequestsFromS3 = async () => {
               reportUpdatedCount++;
             }
           } catch (reportError) {
-            // Report file doesn't exist, that's okay
-            console.log(`No report file found for ${file.requestId}: ${reportError.message}`);
+            reportErrorCount++;
           }
-          
-          // Add/update request with report data if available
+
+          // Add/update request with report data if available. Use empty string
+          // for missing article_id. Note: addOrUpdateRequest never clobbers
+          // the is_demo flag — is_demo is mirrored explicitly below from
+          // process.json.is_demo so we don't lose operator-flipped demos.
           await dbManager.addOrUpdateRequest(
-            file.userId, 
-            file.content.article_id, 
+            file.userId,
+            file.content.article_id || '',
             file.requestId,
-            reportData, // Include report data if available
+            reportData,
             formattedDate
           );
-          
+
+          // Backfill pdf_hash from the per-file metadata written at upload
+          // time. If the metadata is missing `sha256`, skip silently — the
+          // operator should run `npm run s3:refresh:rehash` to populate it
+          // on S3 first, then re-run this command.
+          try {
+            const filesList = await getFilesListFile(file.userId, file.requestId);
+            let pdfFileIndex = null;
+            if (Array.isArray(filesList) && filesList.length > 0) {
+              const mainFile = filesList.find((f) => f.fieldname !== 'supplementary_file') || filesList[0];
+              if (mainFile && typeof mainFile.id === 'number') {
+                pdfFileIndex = mainFile.id;
+              }
+            }
+            // Older sessions have no files.json; fall back to file_1.
+            const resolvedIndex = pdfFileIndex || 1;
+            const metadata = await getFileMetadataFile(
+              file.userId,
+              file.requestId,
+              resolvedIndex
+            );
+            if (metadata && typeof metadata.sha256 === 'string' && metadata.sha256) {
+              await dbManager.setRequestPdfHash(file.requestId, metadata.sha256);
+              pdfHashBackfilled++;
+            }
+          } catch (hashError) {
+            console.error(`[refresh] Failed to backfill pdf_hash for ${file.requestId}:`, hashError.message);
+          }
+
+          // Backfill cache_key from cache-ref.json when the cache-substitution
+          // layer ran for this request.
+          try {
+            const cacheRef = await getCacheRefFile(file.userId, file.requestId);
+            if (cacheRef && typeof cacheRef.cache_key === 'string' && cacheRef.cache_key) {
+              await dbManager.setRequestCacheKey(file.requestId, cacheRef.cache_key);
+              cacheKeyBackfilled++;
+            }
+          } catch (cacheError) {
+            console.error(`[refresh] Failed to backfill cache_key for ${file.requestId}:`, cacheError.message);
+          }
+
+          // Mirror is_demo + is_demo_bypass + bypass_source from process.json.
+          // Skipped silently when process.json doesn't exist or lacks these
+          // fields — the DB defaults (0 / NULL) are fine. Run
+          // `npm run s3:refresh` first to populate process.json on legacy
+          // folders.
+          try {
+            const processData = await getProcessFile(file.userId, file.requestId);
+            if (processData && typeof processData.is_demo === 'boolean') {
+              await dbManager.setRequestIsDemo(file.requestId, processData.is_demo);
+              if (processData.is_demo) isDemoBackfilled++;
+            }
+            if (processData && typeof processData.is_demo_bypass === 'boolean') {
+              await dbManager.setRequestIsDemoBypass(file.requestId, processData.is_demo_bypass);
+              if (processData.is_demo_bypass) isDemoBypassBackfilled++;
+            }
+            if (processData && processData.bypass_source && processData.bypass_source.request_id) {
+              await dbManager.setRequestBypassSource(file.requestId, processData.bypass_source.request_id);
+            }
+          } catch (demoError) {
+            console.error(`[refresh] Failed to mirror demo fields for ${file.requestId}:`, demoError.message);
+          }
+
           insertedCount++;
         } catch (error) {
           console.error(`Exception processing file ${file.requestId}:`, error);
@@ -84,9 +171,14 @@ const refreshRequestsFromS3 = async () => {
         }
       }
     }
-    
-    console.log(`Inserted/updated ${insertedCount} records, Reports updated: ${reportUpdatedCount}, Errors: ${errorCount}`);
-    
+
+    console.log(
+      `S3 refresh complete: ${insertedCount} processed, ${reportUpdatedCount} reports found, ` +
+      `${reportErrorCount} reports missing, ${pdfHashBackfilled} pdf_hash backfilled, ` +
+      `${cacheKeyBackfilled} cache_key backfilled, ${isDemoBackfilled} is_demo=1 mirrored, ` +
+      `${isDemoBypassBackfilled} is_demo_bypass=1 mirrored, ${errorCount} errors`
+    );
+
     return true;
   } catch (error) {
     console.error('Error refreshing requests from S3:', error);
@@ -433,7 +525,14 @@ const getRequestsWithReportDataByArticleId = async (userName, articleId) => {
  * @returns {Object} - Object containing the report JSON data
  */
 const buildJSON = (version, responseData, reportURL) => {
-  if (!reportsConfig.versions[version]) return new Error(`Error requesting Report version: ${version}`);
+  const versions = reportsConfig.versions || {};
+  if (!versions[version]) {
+    const known = Object.keys(versions);
+    return new Error(
+      `Report version '${version}' not found in conf/reports.json. ` +
+        `Currently configured: ${known.length ? known.join(', ') : '(none)'}.`
+    );
+  }
 
   // Prepare JSON data based on JSON report available/restricted fields
   const result = {};
@@ -458,14 +557,21 @@ const buildJSON = (version, responseData, reportURL) => {
  * @returns {Array} - Filtered response
  */
 const filterResponseForJSON = (version, responseData) => {
-  if (!version || !reportsConfig.versions[version]) return new Error(`Error requesting Report version: ${version}`);
-  
+  const versions = reportsConfig.versions || {};
+  if (!version || !versions[version]) {
+    const known = Object.keys(versions);
+    return new Error(
+      `Report version '${version}' not found in conf/reports.json. ` +
+        `Currently configured: ${known.length ? known.join(', ') : '(none)'}.`
+    );
+  }
+
   // If no response data or no filter settings, return as is
-  if (!responseData || !reportsConfig.versions[version].JSON) {
+  if (!responseData || !versions[version].JSON) {
     return responseData;
   }
 
-  const { availableFields, restrictedFields } = reportsConfig.versions[version].JSON;
+  const { availableFields, restrictedFields } = versions[version].JSON;
 
   // If no filter restrictions, return full response
   if ((!availableFields || availableFields.length === 0) && 

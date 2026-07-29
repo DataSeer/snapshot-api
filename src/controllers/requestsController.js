@@ -16,10 +16,13 @@ const refreshRequests = async (req, res) => {
       return res.status(401).json({ error: 'User authentication required' });
     }
 
-    // Refresh requests from S3
+    // Read-only on S3: mirrors existing S3 metadata into the DB. PDF hashing
+    // and the S3-side layout migration live in the dedicated refresh_s3_data.js
+    // script (npm run s3:refresh / s3:refresh:rehash) — run those first if the
+    // metadata is missing fields.
     await requestsManager.refreshRequestsFromS3();
 
-    res.json({ 
+    res.json({
       message: 'Requests refreshed successfully',
       timestamp: new Date().toISOString()
     });

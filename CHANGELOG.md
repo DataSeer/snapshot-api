@@ -2,6 +2,111 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.17.1](https://github.com/DataSeer/snapshot-api/compare/v3.17.0...v3.17.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* **scripts:** replace ESM-only uuid dependency with crypto.randomUUID ([e4714b3](https://github.com/DataSeer/snapshot-api/commits/e4714b3a302c10d43c8c2c3b39dd7a656690197c))
+
+## [3.17.0](https://github.com/DataSeer/snapshot-api/compare/v3.16.0...v3.17.0) (2026-06-15)
+
+
+### Features
+
+* add returnedFields for presentation-only response shaping ([925f8f3](https://github.com/DataSeer/snapshot-api/commits/925f8f3a9ce9c57f8949576762d1fdd6fff90fc7))
+* make returnedFields opt-in via query param on reports endpoint ([8f9029b](https://github.com/DataSeer/snapshot-api/commits/8f9029b5d9c8573022bdb8b26f677c8a10480a82))
+* **users:** support full user config editing and genshare.options ([3b7d9cc](https://github.com/DataSeer/snapshot-api/commits/3b7d9cc8fc7bff549ce9d9ca756336ab5d447638))
+
+
+### Bug Fixes
+
+* **ci:** unblock lint for uuid exports map; bump actions to v5 ([e176974](https://github.com/DataSeer/snapshot-api/commits/e1769742bde519e87da367c6722aaf8040acec34))
+* **deps:** apply safe npm audit fix (lockfile-only) ([cf2d1dd](https://github.com/DataSeer/snapshot-api/commits/cf2d1dd285b12960211719e5508cd36f09fb056f))
+* **deps:** upgrade googleapis 144->173 and uuid 8->14 (major) ([559490f](https://github.com/DataSeer/snapshot-api/commits/559490f98fd5af1ef917d4bb5576ecc3b12719e2))
+* **genshare:** avoid spurious 'Graph values don't match' warning ([582015a](https://github.com/DataSeer/snapshot-api/commits/582015acab560b52d74be31dfe3acc203f6d4a4f))
+* update default user configuration ([f3b89b1](https://github.com/DataSeer/snapshot-api/commits/f3b89b173ec4a9171e1202d5d7daae8eb7ec3a38))
+
+
+### Code Refactoring
+
+* fold fieldOrder sorting into returnedFields ([d75581e](https://github.com/DataSeer/snapshot-api/commits/d75581e4df122f58d69b3fcbd034552c72d2d74f))
+* **lint:** migrate eslint-plugin-node -> eslint-plugin-n ([ad6400b](https://github.com/DataSeer/snapshot-api/commits/ad6400bd67629f01832f0f4f150a666bfb98cdd9))
+
+
+### Documentation
+
+* document returnedFields response shaping and drop fieldOrder ([83464a3](https://github.com/DataSeer/snapshot-api/commits/83464a317bac79318d41f191ce45e7cd8fa72089))
+
+## [3.16.0](https://github.com/DataSeer/snapshot-api/compare/v3.15.1...v3.16.0) (2026-06-03)
+
+
+### Features
+
+* **cache:** add per-request no_cache option to bypass caching ([8f48663](https://github.com/DataSeer/snapshot-api/commits/8f486639e9758d3967de23af506631c1b67a2895))
+* **genshare:** map editorial_policy to feature flags ([59b89fc](https://github.com/DataSeer/snapshot-api/commits/59b89fce519bca22bf335ef0a558ab55d03f1bd0))
+
+### [3.15.1](https://github.com/DataSeer/snapshot-api/compare/v3.15.0...v3.15.1) (2026-05-04)
+
+
+### Bug Fixes
+
+* fix demo issue ([f8a31a1](https://github.com/DataSeer/snapshot-api/commits/f8a31a17213397fc3ad0d172087906a6e0aa7998))
+
+## [3.15.0](https://github.com/DataSeer/snapshot-api/compare/v3.14.0...v3.15.0) (2026-05-04)
+
+
+### Features
+
+* add S3 data refresh script + process.json metadata ([a12ccc9](https://github.com/DataSeer/snapshot-api/commits/a12ccc9d8ddcc2ffcd173c8d248c03d90f234d03))
+
+
+### Bug Fixes
+
+* fix test issue ([cc389ec](https://github.com/DataSeer/snapshot-api/commits/cc389ecddf6a7de49af5958ee60e57553b167d52))
+
+## [3.14.0](https://github.com/DataSeer/snapshot-api/compare/v3.13.1...v3.14.0) (2026-04-22)
+
+
+### Features
+
+* implement cache & bypass ([966b9bd](https://github.com/DataSeer/snapshot-api/commits/966b9bdd6a59c8c0b4e3942ea2a0a810807fe8e5))
+
+
+### Bug Fixes
+
+* fix date management ([b9b01c0](https://github.com/DataSeer/snapshot-api/commits/b9b01c055c605c14a2953ee51372c8836b61968f))
+
+### [3.13.1](https://github.com/DataSeer/snapshot-api/compare/v3.13.0...v3.13.1) (2026-03-18)
+
+
+### Bug Fixes
+
+* fix User Logs system ([6ed3274](https://github.com/DataSeer/snapshot-api/commits/6ed32743c79e79046fce2e8b5a40c486f12bccb0))
+
+## [3.13.0](https://github.com/DataSeer/snapshot-api/compare/v3.12.0...v3.13.0) (2026-03-18)
+
+
+### Features
+
+* improve logging system ([a8a04ba](https://github.com/DataSeer/snapshot-api/commits/a8a04ba9ab11e3949d66d0e36da8b35e79ae43a5))
+
+
+### Bug Fixes
+
+* fix docker issue ([569fef4](https://github.com/DataSeer/snapshot-api/commits/569fef47f65b74e38c2cd2cee86a2783152ac60f))
+* manage missing item.value in genshare data ([b9c218c](https://github.com/DataSeer/snapshot-api/commits/b9c218ca3f99beb8641392b60e7c74645cf82a54))
+
+## [3.12.0](https://github.com/DataSeer/snapshot-api/compare/v3.11.0...v3.12.0) (2026-03-09)
+
+
+### Features
+
+* add Integration & E2E tests + CI integration ([c8d7920](https://github.com/DataSeer/snapshot-api/commits/c8d792019a38548a3b22fe73a050f3e06dd2b2ee))
+* add Snapshot Timelines ([51578db](https://github.com/DataSeer/snapshot-api/commits/51578db167c6125df54d961b44fe6f9ce6ddd95e))
+* add user logs in the editorial manager PDF processing ([57e45d4](https://github.com/DataSeer/snapshot-api/commits/57e45d400290b1086777d8e659e8a731ecd018bf))
+* update tests ([465970e](https://github.com/DataSeer/snapshot-api/commits/465970e84b351fbb8c00d956639fed77bd9690b0))
+
 ## [3.11.0](https://github.com/DataSeer/snapshot-api/compare/v3.10.0...v3.11.0) (2026-02-10)
 
 

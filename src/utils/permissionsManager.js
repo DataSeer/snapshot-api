@@ -1,14 +1,17 @@
 // File: src/utils/permissionsManager.js
 const fs = require('fs');
 const config = require('../config');
+const { watchConfig } = require('./configWatcher');
+
+// Watch permissions config (auto-reloads on file change)
+const permissionsConfig = watchConfig(config.permissionsConfigPath);
 
 /**
  * Get all route permissions
  * @returns {Object} Permissions configuration object
  */
 const getPermissions = () => {
-  const permissions = JSON.parse(fs.readFileSync(config.permissionsConfigPath, 'utf8'));
-  return permissions.routes;
+  return permissionsConfig.routes;
 };
 
 /**
@@ -18,12 +21,14 @@ const getPermissions = () => {
  * @param {Object} permissionData - The permission data to set
  */
 const updatePermissions = (path, method, permissionData) => {
+  // Read fresh from disk for write operations to avoid race conditions
   const permissions = JSON.parse(fs.readFileSync(config.permissionsConfigPath, 'utf8'));
   if (!permissions.routes[path]) {
     permissions.routes[path] = {};
   }
   permissions.routes[path][method] = permissionData;
   fs.writeFileSync(config.permissionsConfigPath, JSON.stringify(permissions, null, 2));
+  // The watcher will automatically pick up the change
 };
 
 /**
@@ -52,63 +57,63 @@ const checkUserPermission = (userId, path, method) => {
       };
     }
 
-    const permissionsConfig = getPermissions();
+    const routes = getPermissions();
     const normalizedPath = normalizeUrl(path);
-    
+
     // Try direct path match first
-    if (permissionsConfig[normalizedPath] && permissionsConfig[normalizedPath][method]) {
-      const { allowed, blocked } = permissionsConfig[normalizedPath][method];
-      
+    if (routes[normalizedPath] && routes[normalizedPath][method]) {
+      const { allowed, blocked } = routes[normalizedPath][method];
+
       if (blocked.includes(userId)) {
         return {
           isAllowed: false,
           message: "Your account is blocked from accessing this resource"
         };
       }
-      
+
       if (allowed.length > 0 && !allowed.includes(userId)) {
         return {
           isAllowed: false,
           message: "Your account is not allowed to access this resource"
         };
       }
-      
+
       return {
         isAllowed: true,
         message: "Access allowed"
       };
     }
-    
+
     // Try to find a matching route with path parameters
-    const configuredRoutes = Object.keys(permissionsConfig);
+    const configuredRoutes = Object.keys(routes);
     const matchingRoute = configuredRoutes.find(route => {
       const routeRegex = new RegExp('^' + route.replace(/:\w+/g, '[^/]+') + '$');
       return routeRegex.test(normalizedPath);
     });
-    
-    if (matchingRoute && permissionsConfig[matchingRoute][method]) {
-      const { allowed, blocked } = permissionsConfig[matchingRoute][method];
-      
+
+    if (matchingRoute && routes[matchingRoute][method]) {
+      const { allowed, blocked } = routes[matchingRoute][method];
+
       if (blocked.includes(userId)) {
         return {
           isAllowed: false,
           message: "Your account is blocked from accessing this resource"
         };
       }
-      
+
       if (allowed.length > 0 && !allowed.includes(userId)) {
         return {
           isAllowed: false,
           message: "Your account is not allowed to access this resource"
         };
       }
-      
+
       return {
         isAllowed: true,
         message: "Access allowed"
       };
     }
-    
+
     // If route not found in permissions, we should deny by default
     return {
       isAllowed: false,
@@ -123,8 +128,8 @@ const checkUserPermission = (userId, path, method) => {
   }
 };
 
-module.exports = { 
-  getPermissions, 
+module.exports = {
+  getPermissions,
   updatePermissions,
   normalizeUrl,
   checkUserPermission

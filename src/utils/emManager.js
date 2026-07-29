@@ -14,8 +14,9 @@ const { ProcessingSession } = require('./s3Storage');
 // Load Editorial Manager configuration
 const emConfig = require(config.emConfigPath);
 
-// Load the genshare configuration
-const genshareConfig = require(config.genshareConfigPath);
+// Load the genshare configuration (auto-reloads on file change)
+const { watchConfig } = require('./configWatcher');
+const genshareConfig = watchConfig(config.genshareConfigPath);
 
 /**
  * Get report value based on publication code
@@ -77,6 +78,32 @@ const getReportValue = (publicationCode) => {
     return null;
   }
 };
+/**
+ * @deprecated Legacy function — Google Sheets logging is now centralized in googleSheets.logs.json.
+ * Kept for backward compatibility but no longer used.
+ */
+const getGoogleSheetsConfig = (publicationCode) => {
+  try {
+    if (!emConfig.googleSheets || !emConfig.googleSheets.custom) {
+      return null;
+    }
+
+    const config = emConfig.googleSheets.custom[publicationCode];
+    if (!config || !config.enabled) {
+      return null;
+    }
+
+    if (!config.spreadsheetId || !config.templateSheetName) {
+      return null;
+    }
+
+    return config;
+  } catch (error) {
+    console.error(`[EM] Error getting Google Sheets config for publication code "${publicationCode}":`, error);
+    return null;
+  }
+};
+
 /**
  * Get graph value based on publication code
  * @param {string} publicationCode - Publication code from submission
@@ -552,7 +579,7 @@ const processEmSubmissionJob = async (job) => {
       
       try {
         // Process the PDF with GenShare - DON'T log to summary here (pass false)
-        genshareResult = await genshareManager.processPDF(genshareData, session, false);
+        genshareResult = await genshareManager.processPDF(genshareData, session);
         session.addLog(`GenShare processing completed with status: ${genshareResult.status}`);
         
         if (supplementaryFilesZip) {
@@ -572,8 +599,12 @@ const processEmSubmissionJob = async (job) => {
     }
     
     // Save session to S3
+    session.setResult(
+      errorStatus && errorStatus !== 'No' ? 'error' : 'success',
+      errorStatus && errorStatus !== 'No' ? errorStatus : null
+    );
     await session.saveToS3();
-    
+
     // Update request with report data if available
     if (session.report) {
       try {
@@ -584,26 +615,27 @@ const processEmSubmissionJob = async (job) => {
       }
     }
     
-    // Log to summary sheet ONCE at the end - SUCCESS case
-    try {
-      await genshareManager.appendToSummary({
-        session,
-        errorStatus,
-        data: {
-          file: data.reviewerPdfFile,
-          user: { id: data.user_id }
-        },
-        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
-        reportURL,
-        graphValue,
-        reportVersion,
-        articleId: data.document_id || ""
-      });
-    } catch (summaryError) {
-      session.addLog(`Error logging to summary: ${summaryError.message}`);
-      console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
+    // Note: Genshare summary + system user logging is handled by processPDF
+
+    // Log to publication-specific Google Sheet (internal user: publication_code)
+    if (data.publication_code) {
+      try {
+        await genshareManager.appendToUserLog({
+          session,
+          userId: data.publication_code,
+          filteredData: genshareResult ? genshareResult.data : [],
+          reportURL,
+          filename: data.reviewerPdfFile ? data.reviewerPdfFile.originalname : 'N/A',
+          genshareVersionAlias: genshareResult?.activeGenShareVersion || genshareConfig.defaultVersion,
+          reportVersion,
+          graphValue,
+          articleId: data.document_id || ""
+        });
+      } catch (pubLogError) {
+        session.addLog(`[EM] Error logging to publication Google Sheet (${data.publication_code}): ${pubLogError.message}`);
+      }
     }
-    
+
     // NOTE: Notification will be sent in the completion callback
     // after the job is marked as completed in the database
     
@@ -633,28 +665,30 @@ const processEmSubmissionJob = async (job) => {
       errorStatus = `Job Error: ${error.message}`;
     }
     
-    // Log to summary sheet ONCE at the end - ERROR case
-    try {
-      await genshareManager.appendToSummary({
-        session,
-        errorStatus,
-        data: {
-          file: data.reviewerPdfFile,
-          user: { id: data.user_id }
-        },
-        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
-        reportURL,
-        graphValue,
-        reportVersion,
-        articleId: data.document_id || ""
-      });
-    } catch (summaryError) {
-      session.addLog(`Error logging to summary: ${summaryError.message}`);
-      console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
+    // Note: Genshare summary + system user logging is handled by processPDF
+
+    // Log to publication-specific Google Sheet - ERROR case (internal user)
+    if (data.publication_code) {
+      try {
+        await genshareManager.appendToUserLog({
+          session,
+          userId: data.publication_code,
+          filteredData: [],
+          reportURL,
+          filename: data.reviewerPdfFile ? data.reviewerPdfFile.originalname : 'N/A',
+          genshareVersionAlias: genshareConfig.defaultVersion,
+          reportVersion,
+          graphValue,
+          articleId: data.document_id || ""
+        });
+      } catch (pubLogError) {
+        session.addLog(`[EM] Error logging to publication Google Sheet (${data.publication_code}): ${pubLogError.message}`);
+      }
     }
-    
+
     try {
       // Save session data with error information
+      session.setResult('error', errorStatus && errorStatus !== 'No' ? errorStatus : error.message);
       await session.saveToS3();
     } catch (saveError) {
       console.error(`[${job.request_id}] Error in error handling:`, saveError);
@@ -1098,5 +1132,6 @@ module.exports = {
   handleProcessEmSubmissionJobCompletion,
   handleProcessEmSubmissionJobFailure,
   createSupplementaryFilesZip,
-  getGraphValue
+  getGraphValue,
+  getGoogleSheetsConfig
 };

@@ -12,7 +12,7 @@
         "latest"
       ],
       "defaultVersion": "latest",
-      "fieldOrder": [],
+      "returnedFields": [],
       "availableFields": [],
       "restrictedFields": [
         "data_on_request__gs",
@@ -24,6 +24,10 @@
         "editorial_policy": {
           "available": ["PLOS", "TFOD", "SURR"],
           "default": "TFOD"
+        },
+        "no_cache": {
+          "available": [true, false],
+          "default": false
         }
       }
     },
@@ -48,14 +52,15 @@
     "googleSheets": {
       "enabled": true,
       "spreadsheetId": "your_spreadsheet_id_here",
-      "sheetName": "SnapShot Response"
+      "templateSheetName": "Template",
+      "folderId": "your-google-drive-folder-id"
     },
     "genshare": {
       "authorizedVersions": [
         "latest"
       ],
       "defaultVersion": "",
-      "fieldOrder": [],
+      "returnedFields": [],
       "availableFields": [],
       "restrictedFields": [
         "data_on_request__gs",
@@ -67,6 +72,10 @@
         "editorial_policy": {
           "available": ["PLOS", "TFOD", "SURR"],
           "default": "TFOD"
+        },
+        "no_cache": {
+          "available": [false],
+          "default": false
         }
       }
     },

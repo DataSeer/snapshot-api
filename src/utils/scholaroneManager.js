@@ -421,7 +421,8 @@ const processScholaroneSubmissionJob = async (job) => {
   session.setOrigin('external', 'scholarone');
   
   const tempFilePaths = [];
-  
+  let scholaroneJournalName = null;
+
   try {
     session.addLog(`[Job] Starting ScholarOne submission job processing`);
     session.addLog(`[Job] Site: ${data.siteName}, Submission ID: ${data.submissionId}`);
@@ -435,6 +436,7 @@ const processScholaroneSubmissionJob = async (job) => {
     }
     
     session.addLog(`[Job] Metadata retrieved successfully`);
+    scholaroneJournalName = submissionsFullMetadata.journalName || null;
 
     let submissionFiles = [];
     if (Array.isArray(submissionsFullMetadata.submissionFiles)) {
@@ -583,7 +585,7 @@ const processScholaroneSubmissionJob = async (job) => {
     let genshareResult = null;
     try {
       // Process the PDF with GenShare - DON'T log to summary here (pass false)
-      genshareResult = await genshareManager.processPDF(genshareData, session, false);
+      genshareResult = await genshareManager.processPDF(genshareData, session);
       session.addLog(`GenShare processing completed with status: ${genshareResult.status}`);
       
       if (supplementaryFilesZip) {
@@ -604,6 +606,10 @@ const processScholaroneSubmissionJob = async (job) => {
     session.addLog(`[Job] GenShare processing completed successfully`);
     
     // ===== SAVE SESSION BEFORE CLEANUP =====
+    session.setResult(
+      errorStatus && errorStatus !== 'No' ? 'error' : 'success',
+      errorStatus && errorStatus !== 'No' ? errorStatus : null
+    );
     await session.saveToS3();
     session.addLog(`[Job] Session data saved to S3`);
     // ===== END SAVE SESSION =====
@@ -613,26 +619,27 @@ const processScholaroneSubmissionJob = async (job) => {
       await dbManager.updateRequestReportData(job.request_id, session.report);
     }
 
-    // Log to summary sheet ONCE at the end - SUCCESS case
-    try {
-      await genshareManager.appendToSummary({
-        session,
-        errorStatus,
-        data: {
-          file: mainFile,
-          user: { id: data.userId }
-        },
-        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
-        reportURL,
-        graphValue,
-        reportVersion,
-        articleId: genshareOptions.article_id
-      });
-    } catch (summaryError) {
-      session.addLog(`Error logging to summary: ${summaryError.message}`);
-      console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
+    // Note: Genshare summary + system user logging is handled by processPDF
+
+    // Log to journal-specific Google Sheet - SUCCESS case (internal user: journalName)
+    if (scholaroneJournalName) {
+      try {
+        await genshareManager.appendToUserLog({
+          session,
+          userId: scholaroneJournalName,
+          filteredData: genshareResult ? genshareResult.data : [],
+          reportURL,
+          filename: mainFile ? mainFile.originalname : 'N/A',
+          genshareVersionAlias: genshareResult?.activeGenShareVersion || genshareConfig.defaultVersion,
+          reportVersion,
+          graphValue,
+          articleId: genshareOptions.article_id
+        });
+      } catch (journalLogError) {
+        session.addLog(`[ScholarOne] Error logging to journal Google Sheet (${scholaroneJournalName}): ${journalLogError.message}`);
+      }
     }
-    
+
     // ===== CLEAN UP AFTER EVERYTHING IS DONE =====
     session.addLog(`[Job] Cleaning up ${tempFilePaths.length} temporary file(s)`);
     for (const filePath of tempFilePaths) {
@@ -660,6 +667,7 @@ const processScholaroneSubmissionJob = async (job) => {
     
     // ===== SAVE SESSION BEFORE CLEANUP (even on error) =====
     try {
+      session.setResult('error', errorStatus && errorStatus !== 'No' ? errorStatus : error.message);
       await session.saveToS3();
       session.addLog(`[Job] Session data saved to S3 (with error)`);
     } catch (s3Error) {
@@ -668,24 +676,25 @@ const processScholaroneSubmissionJob = async (job) => {
     }
     // ===== END SAVE SESSION =====
     
-    // Log to summary sheet ONCE at the end - ERROR case
-    try {
-      await genshareManager.appendToSummary({
-        session,
-        errorStatus,
-        data: {
-          file: mainFile,
-          user: { id: data.userId }
-        },
-        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
-        reportURL,
-        graphValue,
-        reportVersion,
-        articleId: data.submissionId || ""
-      });
-    } catch (summaryError) {
-      session.addLog(`Error logging to summary: ${summaryError.message}`);
-      console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
+    // Note: Genshare summary + system user logging is handled by processPDF
+
+    // Log to journal-specific Google Sheet - ERROR case (internal user)
+    if (scholaroneJournalName) {
+      try {
+        await genshareManager.appendToUserLog({
+          session,
+          userId: scholaroneJournalName,
+          filteredData: [],
+          reportURL,
+          filename: mainFile ? mainFile.originalname : 'N/A',
+          genshareVersionAlias: genshareConfig.defaultVersion,
+          reportVersion,
+          graphValue,
+          articleId: data.submissionId || ""
+        });
+      } catch (journalLogError) {
+        session.addLog(`[ScholarOne] Error logging to journal Google Sheet (${scholaroneJournalName}): ${journalLogError.message}`);
+      }
     }
     
     // ===== CLEAN UP AFTER EVERYTHING IS DONE (even on error) =====

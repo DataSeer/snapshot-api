@@ -6,7 +6,7 @@ module.exports = {
   },
   extends: [
     'eslint:recommended',
-    'plugin:node/recommended',
+    'plugin:n/recommended',
     'prettier'
   ],
   parserOptions: {
@@ -14,21 +14,32 @@ module.exports = {
   },
   plugins: [
     'import',
-    'node'
+    'n'
+  ],
+  overrides: [
+    {
+      files: ['test/**/*.js'],
+      env: {
+        jest: true
+      },
+      rules: {
+        'n/no-unpublished-require': 'off'
+      }
+    }
   ],
   rules: {
-    'node/no-unsupported-features/node-builtins': ['error', {
+    'n/no-unsupported-features/node-builtins': ['error', {
       version: '>=20.0.0'  // Added this to match your Node version
     }],
-    'node/exports-style': ['error', 'module.exports'],
-    'node/file-extension-in-import': ['error', 'always'],
-    'node/prefer-global/buffer': ['error', 'always'],
-    'node/prefer-global/console': ['error', 'always'],
-    'node/prefer-global/process': ['error', 'always'],
-    'node/prefer-global/url-search-params': ['error', 'always'],
-    'node/prefer-global/url': ['error', 'always'],
-    'node/prefer-promises/dns': 'error',
-    'node/prefer-promises/fs': 'error',
+    'n/exports-style': ['error', 'module.exports'],
+    'n/file-extension-in-import': ['error', 'always'],
+    'n/prefer-global/buffer': ['error', 'always'],
+    'n/prefer-global/console': ['error', 'always'],
+    'n/prefer-global/process': ['error', 'always'],
+    'n/prefer-global/url-search-params': ['error', 'always'],
+    'n/prefer-global/url': ['error', 'always'],
+    'n/prefer-promises/dns': 'error',
+    'n/prefer-promises/fs': 'error',
     'no-unused-vars': ['error', { 'argsIgnorePattern': '^_' }],
     'import/no-unresolved': 'error',
     'import/named': 'error',

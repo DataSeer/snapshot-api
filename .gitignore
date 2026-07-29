@@ -13,5 +13,16 @@ output/*/*/*.csv
 tmp/
 
 log/*.log
+*.log
 
 .idea
+
+coverage/
+
+# This repository is PUBLIC. The files below are internal-only and must never be
+# committed here; they are kept outside the repository.
+SNAPSHOT_FIELDS.md
+SNAPSHOT_OPERATIONS_GUIDE.md
+SNAPSHOT_PLATFORM_OVERVIEW.md
+CLAUDE.md
+.claudeignore

@@ -3,6 +3,9 @@ const fs = require('fs').promises;
 const snapshotMailsManager = require('../utils/snapshotMailsManager');
 const genshareManager = require('../utils/genshareManager');
 const { ProcessingSession } = require('../utils/s3Storage');
+const config = require('../config');
+const { watchConfig } = require('../utils/configWatcher');
+const genshareConfig = watchConfig(config.genshareConfigPath);
 
 /**
  * Handle POST /snapshot-mails/submissions
@@ -86,7 +89,11 @@ module.exports.postSubmissions = async (req, res) => {
     
     // Store the API response
     session.setAPIResponse(result);
-    
+    session.setResult(
+      result.status === 'Success' ? 'success' : 'error',
+      result.status === 'Success' ? null : (result.error_message || null)
+    );
+
     // Save all data to S3
     await session.saveToS3();
     
@@ -115,41 +122,35 @@ module.exports.postSubmissions = async (req, res) => {
       status: "Error",
       error_message: error.message
     });
-    
-    // Append error to summary (Google Sheets logging)
-    try {
-      // Parse submission data to get article_id from user_parameters if available
-      let submissionData = {};
-      if (req.body.submission_data) {
-        try {
-          submissionData = typeof req.body.submission_data === 'string' 
-            ? JSON.parse(req.body.submission_data) 
-            : req.body.submission_data;
-        } catch (parseError) {
-          submissionData = {};
+    session.setResult('error', error.message);
+
+    // Log to Google Sheets if the manager job processor didn't already log (pre-processing errors)
+    if (!session.loggedToSummary) {
+      try {
+        let submissionData = {};
+        if (req.body.submission_data) {
+          try {
+            submissionData = typeof req.body.submission_data === 'string'
+              ? JSON.parse(req.body.submission_data)
+              : req.body.submission_data;
+          } catch { submissionData = {}; }
         }
+        const userParameters = submissionData.user_parameters || {};
+        await genshareManager.appendToSummary({
+          session,
+          errorStatus: error.message,
+          data: { file: { originalname: 'N/A' }, user: { id: req.user.id } },
+          genshareVersionAlias: genshareConfig.defaultVersion,
+          reportURL: '',
+          graphValue: userParameters.editorial_policy || '',
+          reportVersion: '',
+          articleId: userParameters.article_id || ''
+        });
+      } catch (appendError) {
+        session.addLog(`Error appending to summary: ${appendError.message}`);
       }
-      
-      const userParameters = submissionData.user_parameters || {};
-      
-      await genshareManager.appendToSummary({
-        session,
-        errorStatus: error.message,
-        data: {
-          file: { originalname: "N/A" },
-          user: { id: req.user.id }
-        },
-        genshareVersion: session.getGenshareVersion() || null,
-        reportURL: "",
-        graphValue: userParameters.editorial_policy || "",
-        reportVersion: "",
-        articleId: userParameters.article_id || ""
-      });
-    } catch (appendError) {
-      session.addLog(`Error appending to summary: ${appendError.message}`);
-      console.error(`[${session.requestId}] Error appending to summary:`, appendError);
     }
-    
+
     try {
       // Save session data with error information
       await session.saveToS3();

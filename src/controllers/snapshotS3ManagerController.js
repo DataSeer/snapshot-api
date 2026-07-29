@@ -2,7 +2,34 @@
 const fs = require('fs');
 const axios = require('axios');
 const config = require('../config');
-const { getAllUsers, getUserById, updateUser } = require('../utils/userManager');
+const { getAllUsers, getUserById, updateUser, replaceUser } = require('../utils/userManager');
+
+/**
+ * User fields that must never be exposed over the admin API nor overwritten via
+ * the full-document update endpoint. Reading these back would leak credentials;
+ * the JWT token in particular must stay in sync with JWT_SECRET, so it is
+ * managed only through the dedicated CLI refresh flows.
+ */
+const PROTECTED_USER_FIELDS = ['token', 'client_secret'];
+
+/**
+ * Build a client-safe copy of a user, omitting protected credential fields and
+ * keeping every other field (rateLimit, genshare, reports, role, googleSheets,
+ * and any future config keys) so the admin UI can display and edit them.
+ * @param {string} id - The user ID
+ * @param {Object} userData - The raw user object (may include protected fields)
+ * @returns {Object} - Safe user object with `id` and all non-protected fields
+ */
+const toSafeUser = (id, userData) => {
+  const safeUser = { id };
+  Object.keys(userData).forEach((key) => {
+    if (key === 'id' || PROTECTED_USER_FIELDS.includes(key)) {
+      return;
+    }
+    safeUser[key] = userData[key];
+  });
+  return safeUser;
+};
 
 /**
  * Get snapshot-reports base URL and API key from reports config
@@ -52,6 +79,23 @@ const saveGenshareConfig = (genshareConfig) => {
 };
 
 /**
+ * Reload email alerts config from disk (to get fresh data)
+ * @returns {Object} - Email alerts configuration
+ */
+const loadEmailAlertsConfig = () => {
+  delete require.cache[require.resolve(config.emailAlertsConfigPath)];
+  return require(config.emailAlertsConfigPath);
+};
+
+/**
+ * Save email alerts config to disk
+ * @param {Object} emailAlertsConfig - Configuration to save
+ */
+const saveEmailAlertsConfig = (emailAlertsConfig) => {
+  fs.writeFileSync(config.emailAlertsConfigPath, JSON.stringify(emailAlertsConfig, null, 2));
+};
+
+/**
  * Get all users (admin endpoint)
  * GET /api/snapshot-s3-manager/users
  */
@@ -59,14 +103,9 @@ const getUsers = async (req, res) => {
   try {
     const users = getAllUsers();
 
-    // Remove sensitive data (tokens, client_secrets)
-    const safeUsers = Object.entries(users).map(([id, userData]) => ({
-      id,
-      rateLimit: userData.rateLimit,
-      genshare: userData.genshare,
-      reports: userData.reports,
-      googleSheets: userData.googleSheets
-    }));
+    // Expose every field except protected credentials so the admin UI can edit
+    // the full configuration (role, googleSheets, custom keys, ...).
+    const safeUsers = Object.entries(users).map(([id, userData]) => toSafeUser(id, userData));
 
     return res.json({
       success: true,
@@ -92,14 +131,8 @@ const getUser = async (req, res) => {
     const { userId } = req.params;
     const user = getUserById(userId);
 
-    // Remove sensitive data
-    const safeUser = {
-      id: user.id,
-      rateLimit: user.rateLimit,
-      genshare: user.genshare,
-      reports: user.reports,
-      googleSheets: user.googleSheets
-    };
+    // Expose every field except protected credentials.
+    const safeUser = toSafeUser(userId, user);
 
     return res.json({
       success: true,
@@ -132,37 +165,32 @@ const updateUserComplete = async (req, res) => {
     const { userId } = req.params;
     const updates = req.body;
 
-    // Get current user to verify it exists
+    if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+      return res.status(400).json({
+        success: false,
+        error: 'invalid_payload',
+        message: 'Request body must be a user configuration object'
+      });
+    }
+
+    // Get current user to verify it exists and to preserve protected fields
     const user = getUserById(userId);
 
-    // Build the update object with only allowed fields
-    const allowedUpdates = {};
+    // Full-document replace: the submitted object becomes the new user config,
+    // so removing a field in the editor removes it on disk. Protected
+    // credentials are never accepted from the client and `id` is the map key,
+    // not a stored property — strip them, then re-inject the stored secrets so
+    // they are preserved untouched.
+    const newUserData = { ...updates };
+    delete newUserData.id;
+    PROTECTED_USER_FIELDS.forEach((field) => {
+      delete newUserData[field];
+      if (user[field] !== undefined) {
+        newUserData[field] = user[field];
+      }
+    });
 
-    if (updates.rateLimit) {
-      allowedUpdates.rateLimit = {
-        ...user.rateLimit,
-        ...updates.rateLimit
-      };
-    }
-
-    if (updates.genshare) {
-      allowedUpdates.genshare = {
-        ...user.genshare,
-        ...updates.genshare
-      };
-    }
-
-    if (updates.reports) {
-      allowedUpdates.reports = {
-        ...user.reports,
-        ...updates.reports
-      };
-    }
-
-    // Update user with allowed fields only
-    if (Object.keys(allowedUpdates).length > 0) {
-      updateUser(userId, allowedUpdates);
-    }
+    replaceUser(userId, newUserData);
 
     // Get updated user data
     const updatedUser = getUserById(userId);
@@ -170,12 +198,7 @@ const updateUserComplete = async (req, res) => {
     return res.json({
       success: true,
       message: 'User updated successfully',
-      data: {
-        id: userId,
-        rateLimit: updatedUser.rateLimit,
-        genshare: updatedUser.genshare,
-        reports: updatedUser.reports
-      }
+      data: toSafeUser(userId, updatedUser)
     });
   } catch (error) {
     if (error.message.includes('not found')) {
@@ -302,8 +325,7 @@ const getGenshareVersions = async (req, res) => {
       version: versionConfig.version,
       processPdfUrl: versionConfig.processPDF?.url,
       healthUrl: versionConfig.health?.url,
-      hasApiKey: !!versionConfig.processPDF?.apiKey,
-      googleSheets: versionConfig.googleSheets
+      hasApiKey: !!versionConfig.processPDF?.apiKey
     }));
 
     return res.json({
@@ -353,7 +375,6 @@ const getGenshareVersion = async (req, res) => {
           hasApiKey: !!versionConfig.processPDF?.apiKey
         },
         health: versionConfig.health,
-        googleSheets: versionConfig.googleSheets,
         responseMapping: versionConfig.responseMapping
       }
     });
@@ -408,13 +429,6 @@ const updateGenshareVersion = async (req, res) => {
       currentConfig.processPDF.apiKey = updates.apiKey;
     }
 
-    if (updates.googleSheets) {
-      currentConfig.googleSheets = {
-        ...currentConfig.googleSheets,
-        ...updates.googleSheets
-      };
-    }
-
     // Save the updated config
     saveGenshareConfig(genshareConfig);
 
@@ -425,8 +439,7 @@ const updateGenshareVersion = async (req, res) => {
         alias,
         version: currentConfig.version,
         processPdfUrl: currentConfig.processPDF?.url,
-        healthUrl: currentConfig.health?.url,
-        googleSheets: currentConfig.googleSheets
+        healthUrl: currentConfig.health?.url
       }
     });
   } catch (error) {
@@ -582,17 +595,240 @@ const updateReportKind = async (req, res) => {
   }
 };
 
+// ============================================================================
+// REQUESTS ENDPOINTS (for s3-manager sync)
+// ============================================================================
+
+const dbManager = require('../utils/dbManager');
+
+/**
+ * Search requests with flexible filters
+ * GET /snapshot-s3-manager/requests?since=<ISO>&request_id=<id>&article_id=<id>&user_name=<name>&limit=<n>&offset=<n>
+ */
+const getRequests = async (req, res) => {
+  try {
+    const filters = {
+      since: req.query.since || null,
+      request_id: req.query.request_id || null,
+      article_id: req.query.article_id || null,
+      user_name: req.query.user_name || null,
+      limit: Math.min(parseInt(req.query.limit) || 500, 1000),
+      offset: parseInt(req.query.offset) || 0
+    };
+
+    const result = await dbManager.searchRequestsFiltered(filters);
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    console.error('Error searching requests for s3-manager:', error);
+    res.status(500).json({ error: 'Failed to search requests' });
+  }
+};
+
+/**
+ * Get email alerts configuration
+ * GET /api/snapshot-s3-manager/email-alerts
+ */
+const getEmailAlertsConfig = async (req, res) => {
+  try {
+    const emailAlertsConfig = loadEmailAlertsConfig();
+    return res.json({
+      success: true,
+      data: emailAlertsConfig
+    });
+  } catch (error) {
+    console.error('Error getting email alerts config:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'internal_error',
+      message: 'Failed to get email alerts configuration'
+    });
+  }
+};
+
+/**
+ * Update email alerts configuration
+ * PATCH /api/snapshot-s3-manager/email-alerts
+ */
+const updateEmailAlertsConfig = async (req, res) => {
+  try {
+    const currentConfig = loadEmailAlertsConfig();
+    const updates = req.body;
+
+    // Validate fields
+    const allowedFields = ['enabled', 'recipients', 'watchedUsers', 'watchAll'];
+    const invalidFields = Object.keys(updates).filter(key => !allowedFields.includes(key));
+    if (invalidFields.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'invalid_fields',
+        message: `Invalid fields: ${invalidFields.join(', ')}. Allowed: ${allowedFields.join(', ')}`
+      });
+    }
+
+    // Validate types
+    if (updates.enabled !== undefined && typeof updates.enabled !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'validation_error', message: '"enabled" must be a boolean' });
+    }
+    if (updates.watchAll !== undefined && typeof updates.watchAll !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'validation_error', message: '"watchAll" must be a boolean' });
+    }
+    if (updates.recipients !== undefined && (!Array.isArray(updates.recipients) || !updates.recipients.every(r => typeof r === 'string'))) {
+      return res.status(400).json({ success: false, error: 'validation_error', message: '"recipients" must be an array of strings' });
+    }
+    if (updates.watchedUsers !== undefined && (!Array.isArray(updates.watchedUsers) || !updates.watchedUsers.every(u => typeof u === 'string'))) {
+      return res.status(400).json({ success: false, error: 'validation_error', message: '"watchedUsers" must be an array of strings' });
+    }
+    const updatedConfig = { ...currentConfig, ...updates };
+    saveEmailAlertsConfig(updatedConfig);
+
+    return res.json({
+      success: true,
+      data: updatedConfig,
+      message: 'Email alerts configuration updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating email alerts config:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'internal_error',
+      message: 'Failed to update email alerts configuration'
+    });
+  }
+};
+
+/**
+ * Get instance configuration
+ * GET /api/snapshot-s3-manager/instance
+ */
+const getInstanceConfig = async (req, res) => {
+  try {
+    delete require.cache[require.resolve(config.instanceConfigPath)];
+    const instanceConf = require(config.instanceConfigPath);
+    return res.json({ success: true, data: instanceConf });
+  } catch (error) {
+    console.error('Error getting instance config:', error);
+    return res.status(500).json({ success: false, error: 'internal_error', message: 'Failed to get instance configuration' });
+  }
+};
+
+/**
+ * Update instance configuration
+ * PATCH /api/snapshot-s3-manager/instance
+ */
+const updateInstanceConfig = async (req, res) => {
+  try {
+    delete require.cache[require.resolve(config.instanceConfigPath)];
+    const currentConfig = require(config.instanceConfigPath);
+    const updates = req.body;
+
+    const allowedFields = ['name', 's3ManagerUrl'];
+    const invalidFields = Object.keys(updates).filter(key => !allowedFields.includes(key));
+    if (invalidFields.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'invalid_fields',
+        message: `Invalid fields: ${invalidFields.join(', ')}. Allowed: ${allowedFields.join(', ')}`
+      });
+    }
+
+    const updatedConfig = { ...currentConfig, ...updates };
+    fs.writeFileSync(config.instanceConfigPath, JSON.stringify(updatedConfig, null, 2));
+
+    return res.json({ success: true, data: updatedConfig, message: 'Instance configuration updated successfully' });
+  } catch (error) {
+    console.error('Error updating instance config:', error);
+    return res.status(500).json({ success: false, error: 'internal_error', message: 'Failed to update instance configuration' });
+  }
+};
+
+/**
+ * Get Google Sheets logs configuration
+ * GET /api/snapshot-s3-manager/logs/config
+ */
+const getGoogleSheetsLogsConfig = async (req, res) => {
+  try {
+    delete require.cache[require.resolve(config.googleSheetsLogsConfigPath)];
+    const logsConfig = require(config.googleSheetsLogsConfigPath);
+    return res.json({ success: true, data: logsConfig });
+  } catch (error) {
+    console.error('Error getting Google Sheets logs config:', error);
+    return res.status(500).json({ success: false, error: 'internal_error', message: 'Failed to get Google Sheets logs configuration' });
+  }
+};
+
+/**
+ * Rebuild admin Google Sheets logs into a new spreadsheet
+ * POST /api/snapshot-s3-manager/logs/rebuild-admin
+ */
+const rebuildAdminLogs = async (req, res) => {
+  try {
+    const { rebuildAdminLogs: doRebuild } = require('../utils/googleSheetsRebuild');
+    const result = await doRebuild();
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error rebuilding admin logs:', error);
+    return res.status(500).json({ success: false, error: 'internal_error', message: error.message });
+  }
+};
+
+/**
+ * Rebuild user Google Sheets logs into a new spreadsheet
+ * POST /api/snapshot-s3-manager/logs/rebuild-user
+ */
+const rebuildUserLogs = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'userId is required' });
+    }
+    const { rebuildUserLogs: doRebuild } = require('../utils/googleSheetsRebuild');
+    const result = await doRebuild(userId);
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error rebuilding user logs:', error);
+    return res.status(500).json({ success: false, error: 'internal_error', message: error.message });
+  }
+};
+
+/**
+ * Rebuild all Google Sheets logs (admin + all users)
+ * POST /api/snapshot-s3-manager/logs/rebuild-all
+ */
+const rebuildAllLogs = async (req, res) => {
+  try {
+    const { rebuildAllLogs: doRebuildAll } = require('../utils/googleSheetsRebuild');
+    const result = await doRebuildAll();
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error rebuilding all logs:', error);
+    return res.status(500).json({ success: false, error: 'internal_error', message: error.message });
+  }
+};
+
 module.exports = {
   getUsers,
   getUser,
   updateUserComplete,
   updateUserGenshare,
   updateUserReports,
+  getInstanceConfig,
+  updateInstanceConfig,
   getGenshareVersions,
   getGenshareVersion,
   updateGenshareVersion,
   setDefaultGenshareVersion,
   getReports,
   getReportKinds,
-  updateReportKind
+  updateReportKind,
+  getRequests,
+  getEmailAlertsConfig,
+  updateEmailAlertsConfig,
+  getGoogleSheetsLogsConfig,
+  rebuildAdminLogs,
+  rebuildUserLogs,
+  rebuildAllLogs
 };

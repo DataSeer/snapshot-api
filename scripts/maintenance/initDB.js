@@ -164,6 +164,10 @@ const main = async () => {
       }
 
       case 'refresh': {
+        // Read-only DB refresh: mirrors S3 metadata (report, pdf_hash,
+        // cache_key) into the DB. PDF hashing lives in the dedicated
+        // `npm run s3:refresh:rehash` script — run that first if S3
+        // metadata is missing `sha256`.
         console.log('Refreshing requests from S3...');
         await refreshRequestsFromS3();
         console.log('Requests refreshed successfully');
@@ -309,7 +313,8 @@ const main = async () => {
       default: {
         console.log('Usage:');
         console.log('  npm run db:init                - Initialize database');
-        console.log('  npm run db:refresh             - Refresh requests from S3');
+        console.log('  npm run db:refresh             - Refresh DB from existing S3 metadata (read-only on S3)');
+        console.log('  npm run s3:refresh:rehash      - (separate script) rehash missing PDF SHA-256 on S3');
         console.log('  npm run db:check <userName> <articleId> - Check request IDs for an article');
         console.log('');
         console.log('ScholarOne Submissions commands:');

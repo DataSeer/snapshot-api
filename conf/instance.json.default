@@ -1,0 +1,4 @@
+{
+  "name": "dev",
+  "s3ManagerUrl": "http://localhost:3333"
+}

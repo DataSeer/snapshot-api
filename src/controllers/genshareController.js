@@ -4,6 +4,9 @@ const genshareManager = require('../utils/genshareManager');
 const queueManager = require('../utils/queueManager');
 const { ProcessingSession } = require('../utils/s3Storage');
 const { getUserById, isAdmin } = require('../utils/userManager');
+const config = require('../config');
+const { watchConfig } = require('../utils/configWatcher');
+const genshareConfig = watchConfig(config.genshareConfigPath);
 
 /**
  * Add editorial_policy to options based on article_id prefix for specific users
@@ -54,6 +57,9 @@ function addEditorialPolicyForUser(options, userId, session) {
  * @param {Object} req - Express request
  * @param {Object} res - Express response
  */
+// Export for unit testing
+module.exports.addEditorialPolicyForUser = addEditorialPolicyForUser;
+
 module.exports.getGenShareHealth = async (req, res) => {
   try {
     const user = getUserById(req.user.id);
@@ -74,12 +80,25 @@ module.exports.getGenShareHealth = async (req, res) => {
  * @param {Object} res - Express response
  */
 module.exports.processPDF = async (req, res) => {
+  // Curator-mode requests (POST /processPDF/demo) tag the resulting requests
+  // row with is_demo = 1 and reach genshare normally — they're the ones
+  // creating the demo-flagged source. Regular requests are intercepted by the
+  // demo bypass at genshareManager.processPDF (the chokepoint shared with
+  // the async/EM/ScholarOne/snapshot-mails workflows), which creates a fully
+  // logged session and substitutes the curator's response for genshare's.
+  const isCuratorDemo = req.isCuratorDemo === true;
+
   // Initialize processing session
   const session = new ProcessingSession(req.user.id);
-  
-  // Set origin as direct API request
-  session.setOrigin('direct');
-  
+
+  // Set origin — 'external/demo' for curator-mode so dashboards can filter
+  // these out of end-user stats, 'direct' for everything else.
+  if (isCuratorDemo) {
+    session.setOrigin('external', 'demo');
+  } else {
+    session.setOrigin('direct');
+  }
+
   try {
     // Store API request
     session.setAPIRequest({
@@ -87,7 +106,7 @@ module.exports.processPDF = async (req, res) => {
       path: req.path,
       query: req.query,
       body: req.body,
-      files: req.files ? Object.entries(req.files).flatMap(([fieldname, files]) => 
+      files: req.files ? Object.entries(req.files).flatMap(([fieldname, files]) =>
         files.map(file => ({
           fieldname: fieldname,
           originalname: file.originalname,
@@ -96,11 +115,11 @@ module.exports.processPDF = async (req, res) => {
         }))
       ) : []
     });
-    
+
     // Find the main PDF file and supplementary files
     let mainFile = null;
     let supplementaryFile = null;
-    
+
     if (req.files) {
       // When using upload.fields(), files are in req.files object with field names as keys
       if (req.files.file && req.files.file.length > 0) {
@@ -110,7 +129,7 @@ module.exports.processPDF = async (req, res) => {
         supplementaryFile = req.files.supplementary_file[0];
       }
     }
-    
+
     // Add main file if present
     if (mainFile) {
       session.addFile(mainFile, 'api');
@@ -166,7 +185,8 @@ module.exports.processPDF = async (req, res) => {
       user: {
         id: req.user.id
       },
-      options: parsedOptions
+      options: parsedOptions,
+      isCuratorDemo
     };
     
     // Add any additional request body fields except 'options'
@@ -184,10 +204,16 @@ module.exports.processPDF = async (req, res) => {
       status: result.status,
       data: result.data
     });
-    
+
+    // Record terminal outcome for process.json
+    session.setResult(
+      result.errorStatus && result.errorStatus !== 'No' ? 'error' : 'success',
+      result.errorStatus && result.errorStatus !== 'No' ? result.errorStatus : null
+    );
+
     // Save session data to S3
     await session.saveToS3();
-    
+
     // Now that ALL processing is complete, we can safely clean up the temporary files
     const filesToCleanup = [mainFile, supplementaryFile].filter(f => f && f.path);
     await Promise.all(filesToCleanup.map(file => 
@@ -208,36 +234,32 @@ module.exports.processPDF = async (req, res) => {
     session.addLog(`Error processing request: ${error.message}`);
     session.addLog(`Stack: ${error.stack}`);
 
-    // Append error to summary (Google Sheets logging)
-    try {
-      // Parse options to get article_id if available
-      let parsedOptions = {};
-      if (req.body.options) {
-        try {
-          parsedOptions = typeof req.body.options === 'string' 
-            ? JSON.parse(req.body.options) 
-            : req.body.options;
-        } catch (parseError) {
-          parsedOptions = {};
+    // Log to Google Sheets if processPDF didn't already log (pre-processing errors)
+    if (!session.loggedToSummary) {
+      try {
+        let parsedOptions = {};
+        if (req.body.options) {
+          try {
+            parsedOptions = typeof req.body.options === 'string'
+              ? JSON.parse(req.body.options)
+              : req.body.options;
+          } catch { parsedOptions = {}; }
         }
+        const user = getUserById(req.user.id);
+        const versionAlias = user.genshare?.defaultVersion || genshareConfig.defaultVersion;
+        await genshareManager.appendToSummary({
+          session,
+          errorStatus: error.message,
+          data: { file: req.files?.file?.[0] || { originalname: 'N/A' }, user: { id: req.user.id } },
+          genshareVersionAlias: versionAlias,
+          reportURL: '',
+          graphValue: parsedOptions.editorial_policy || '',
+          reportVersion: '',
+          articleId: parsedOptions.article_id || ''
+        });
+      } catch (appendError) {
+        session.addLog(`Error appending to summary: ${appendError.message}`);
       }
-      
-      await genshareManager.appendToSummary({
-        session,
-        errorStatus: error.message,
-        data: {
-          file: { originalname: "N/A" },
-          user: { id: req.user.id }
-        },
-        genshareVersion: session.getGenshareVersion() || null,
-        reportURL: "",
-        graphValue: parsedOptions.editorial_policy || "",
-        reportVersion: "",
-        articleId: parsedOptions.article_id || ""
-      });
-    } catch (appendError) {
-      session.addLog(`Error appending to summary: ${appendError.message}`);
-      console.error(`[${session.requestId}] Error appending to summary:`, appendError);
     }
 
     try {
@@ -246,7 +268,8 @@ module.exports.processPDF = async (req, res) => {
         status: 'error',
         error: error.message
       });
-      
+      session.setResult('error', error.message);
+
       // Save session data with error information
       await session.saveToS3();
 
@@ -472,3 +495,15 @@ module.exports.getJobStatus = async (req, res) => {
     });
   }
 };
+
+/**
+ * Curator-mode variant of `processPDF`. Gated by `conf/permissions.json` on
+ * `POST /processPDF/demo` (admin + snapshot-s3-manager roles). Sets a flag on
+ * the request object so `processPDF` knows to (a) skip the demo bypass check
+ * and (b) flag the resulting `requests` row with `is_demo = 1`.
+ */
+module.exports.processPDFDemo = async (req, res) => {
+  req.isCuratorDemo = true;
+  return module.exports.processPDF(req, res);
+};
+

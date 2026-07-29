@@ -3,6 +3,21 @@
   "versions": {
     "previous": {
       "version": "v81.2.1",
+      "editorialPolicyOptions": {
+        "AUTH": { "suggested_das_generation": true, "funding_statement": true },
+        "TFOD": { "suggested_das_generation": false, "funding_statement": true },
+        "PLOS": { "suggested_das_generation": false, "funding_statement": true },
+        "JID": { "suggested_das_generation": false, "funding_statement": true },
+        "SURR": { "suggested_das_generation": false, "funding_statement": true },
+        "default": { "suggested_das_generation": false, "funding_statement": false }
+      },
+      "cache": {
+        "enabled": true,
+        "ttlAfterZeroConsumersMs": 172800000,
+        "gcIntervalMs": 3600000,
+        "s3Prefix": "_cache",
+        "patchHistoryLimit": 0
+      },
       "processPDF": {
         "url": "http://localhost:5000/snapshot",
         "method": "POST",
@@ -11,10 +26,6 @@
       "health": {
         "url": "http://localhost:5000/health",
         "method": "GET"
-      },
-      "googleSheets": {
-        "spreadsheetId": "your-spreadsheet-id-for-v1",
-        "sheetName": "v1_Sheet"
       },
       "responseMapping": {
         "getPath": [
@@ -42,6 +53,14 @@
     },
     "latest": {
       "version": "v81.3.0",
+      "editorialPolicyOptions": {
+        "AUTH": { "suggested_das_generation": true, "funding_statement": true },
+        "TFOD": { "suggested_das_generation": false, "funding_statement": true },
+        "PLOS": { "suggested_das_generation": false, "funding_statement": true },
+        "JID": { "suggested_das_generation": false, "funding_statement": true },
+        "SURR": { "suggested_das_generation": false, "funding_statement": true },
+        "default": { "suggested_das_generation": false, "funding_statement": false }
+      },
       "processPDF": {
         "url": "http://localhost:5001/snapshot",
         "method": "POST",
@@ -53,7 +72,8 @@
       },
       "googleSheets": {
         "spreadsheetId": "your-spreadsheet-id-for-v2",
-        "sheetName": "v2_Sheet"
+        "templateSheetName": "Template",
+        "folderId": "your-google-drive-folder-id"
       },
       "responseMapping": {
         "getPath": [

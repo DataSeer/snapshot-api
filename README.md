@@ -1,6 +1,12 @@
 # Snapshot API
 
-A Node.js REST API for processing PDF documents through OSI (Open Science Indicators) verification system. This API integrates with GenShare (DataSeer AI), GROBID, and DataStet services to analyze scientific documents, detect data statements, and generate reports. It features JWT authentication, user-specific rate limiting, S3 storage for complete request traceability, SQLite database for request mapping, Google Sheets integration for reporting, and an asynchronous job queue system for background processing.
+A Node.js REST API for processing PDF documents through OSI (Open Science Indicators) verification system. This API integrates with GenShare (DataSeer AI) and GROBID to analyze scientific documents, detect data statements, and generate reports. It features JWT authentication, user-specific rate limiting, S3 storage for complete request traceability, SQLite database for request mapping, Google Sheets integration for reporting, and an asynchronous job queue system for background processing.
+
+### Related documentation
+
+| Document | Covers |
+|---|---|
+| [`USER_DOCUMENTATION.md`](./USER_DOCUMENTATION.md) | the API contract — endpoints, request options, response fields, errors |
 
 ## Table of Contents
 
@@ -42,8 +48,9 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - **Job status tracking and retry mechanism** with exponential backoff
 - **Event-driven job completion callbacks** for reliable external notifications
 - **Configurable graph parameters** for publication-specific GenShare processing
-- Comprehensive logging system
-- SQLite database for article-request mapping and job queue management
+- **GenShare cache substitution layer** — when genshare-service reports a cache hit, snapshot-api serves a curator-patched canonical response from a shared `_cache/<key>/` S3 prefix and keeps consumer tracking + TTL-based garbage collection
+- **Prefixed session logs** (`[S3]`, `[cache]`, `[GenShare]`, `[Reports]`, …) make the process log and combined log greppable by subsystem
+- SQLite database for article-request mapping, job queue management, and cache consumer bookkeeping
 - Endpoints for report retrieval by article ID or request ID
 
 ## Prerequisites
@@ -54,7 +61,6 @@ A Node.js REST API for processing PDF documents through OSI (Open Science Indica
 - Google Cloud Account (for Google Sheets API)
 - Access to:
   - GROBID service
-  - DataStet service
   - GenShare service (multiple versions supported)
 
 ## Installation
@@ -105,6 +111,34 @@ NODE_ENV=production    # 'development' or 'production'
 NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 ```
 
+### Hot-reloaded vs. restart-required configuration
+
+`src/utils/configWatcher.js` watches a subset of `conf/*.json` and reloads them in place. Everything
+else is `require`d once at boot and needs a process restart to take effect.
+
+| File | Hot-reloaded | Controls |
+|---|---|---|
+| `conf/users.json` | ✅ | users, tokens, rate limits, field/option permissions |
+| `conf/permissions.json` | ✅ | per-route access control |
+| `conf/genshare.json` | ✅ | engine aliases, per-policy flags, cache settings, Sheets mapping |
+| `conf/reports.json` | ✅ | report kinds and the snapshot-reports endpoint |
+| `conf/emailAlerts.json` | ✅ | alert recipients / watched users |
+| `conf/instance.json` | ✅ | instance name, admin console URL |
+| `conf/em.json` | ❌ | Editorial Manager integration |
+| `conf/scholarone.json` | ❌ | ScholarOne integration |
+| `conf/queueManager.json` | ❌ | queue concurrency, retries, backoff |
+| `conf/aws.s3.json` | ❌ | bucket, region, prefix |
+| `conf/smtp.json` | ❌ | outbound alert mail |
+| `conf/snapshotMails.json` | ❌ | snapshot-mails callback target |
+| `conf/grobid.json` | ❌ | GROBID health endpoint |
+| `conf/googleSheets.credentials.json` | ❌ | Google service-account key |
+| `conf/googleSheets.logs.json` | ❌ | Drive folder + spreadsheet IDs |
+| `.env` | ❌ | `JWT_SECRET`, `TOKEN_EXPIRATION`, `PORT`, `NODE_ENV`, `NO_DB_REFRESH` |
+
+> `conf/scholarone.json` is the one exception worth knowing: `notifications.endpoint_on_hold` **is**
+> flipped at runtime by `npm run scholarone:hold:on|off`. Use those commands rather than editing
+> the file by hand.
+
 ### Required Configuration Files
 
 1. **Queue Manager Configuration:**
@@ -141,12 +175,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
         "url": "https://genshare-service/health",
         "method": "GET"
       },
-      "googleSheets": {
-        "spreadsheetId": "your-spreadsheet-id",
-        "sheetName": "Sheet1"
-      },
       "responseMapping": {
-        "getPath": ["Path element", "Score", "Other fields"],
         "getResponse": {
           "article_id": 0,
           "das_presence": 1,
@@ -169,18 +198,11 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-4. **DataStet Configuration:**
-```json
-// conf/datastet.json
-{
-  "health": {
-    "url": "https://datastet-service/health",
-    "method": "GET"
-  }
-}
-```
+> **Note:** `conf/datastet.json` may still exist on deployed instances. It is **inert** — DataStet is
+> no longer health-checked by snapshot-api and there is no `/datastet/health` route. `GET /ping`
+> reports GenShare and GROBID only.
 
-5. **Users Configuration:**
+4. **Users Configuration:**
 ```json
 // conf/users.json
 {
@@ -195,9 +217,9 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
     "genshare": {
       "authorizedVersions": ["v1.0.0", "v2.0.0"],
       "defaultVersion": "v1.0.0",
-      "fieldOrder": [],
       "availableFields": [],
-      "restrictedFields": []
+      "restrictedFields": [],
+      "returnedFields": []
     },
     "reports": {
       "authorizedVersions": ["Report v1"],
@@ -214,9 +236,9 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
     "genshare": {
       "authorizedVersions": ["v1.0.0"],
       "defaultVersion": "v1.0.0",
-      "fieldOrder": [],
       "availableFields": [],
-      "restrictedFields": []
+      "restrictedFields": [],
+      "returnedFields": []
     },
     "reports": {
       "authorizedVersions": ["Report v1"],
@@ -226,7 +248,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-6. **Reports Configuration:**
+5. **Reports Configuration:**
 ```json
 // conf/reports.json
 {
@@ -247,7 +269,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-7. **Permissions Configuration:**
+6. **Permissions Configuration:**
 ```json
 // conf/permissions.json
 {
@@ -291,7 +313,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-8. **AWS S3 Configuration:**
+7. **AWS S3 Configuration:**
 ```json
 // conf/aws.s3.json
 {
@@ -303,7 +325,7 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-9. **Editorial Manager Configuration:**
+8. **Editorial Manager Configuration:**
 ```json
 // conf/em.json
 {
@@ -343,48 +365,53 @@ NO_DB_REFRESH=false    # Set to 'true' to skip S3 refresh on startup
 }
 ```
 
-### Response Filtering and Sorting
+### Response Filtering, Sorting, and Shaping
 
-The API provides granular control over GenShare response data through user-specific filtering and sorting configurations. This allows different clients to receive customized response formats tailored to their needs.
+GenShare response handling separates two distinct concerns:
+
+- **Data access (security)** — what a user is *allowed* to see. Controlled by `availableFields` / `restrictedFields`, and enforced on **every** path, including the snapshot-reports view.
+- **Response shaping (presentation)** — what a client *wants returned*, and in what order. Controlled by `returnedFields`. This is a convenience for clients that cannot filter or sort the response array on their own side; it is **not** a security mechanism.
+
+> In a normal workflow clients filter and sort the response themselves. `returnedFields` exists only for clients that cannot, so it is empty for almost every user.
 
 #### Configuration Options
 
-Each user in `conf/users.json` can configure their GenShare response handling through three properties:
+Each user in `conf/users.json` configures their GenShare response handling through three properties:
 ```json
 {
   "username": {
     "genshare": {
-      "availableFields": [],      // Whitelist: only include these fields
-      "restrictedFields": [],     // Blacklist: exclude these fields
-      "fieldOrder": []            // Custom sort order for response fields
+      "availableFields": [],    // Security whitelist: only these fields are accessible
+      "restrictedFields": [],   // Security blacklist: these fields are never accessible
+      "returnedFields": []      // Presentation: ordered whitelist applied to the client response only
     }
   }
 }
 ```
 
-#### Field Filtering
+#### Field Access (security)
 
-Two mutually exclusive filtering modes are available:
+`availableFields` and `restrictedFields` define the maximum set of fields a user is allowed to see. They are mutually exclusive:
 
 1. **Whitelist Mode** (`availableFields`):
-   - Only fields listed in `availableFields` will be included in the response
-   - Use this when you want to explicitly control which fields are returned
+   - Only fields listed in `availableFields` are accessible.
    - Example: `["article_id__gs", "title__gs", "authors__gs"]`
 
 2. **Blacklist Mode** (`restrictedFields`):
-   - All fields except those listed in `restrictedFields` will be included
-   - Use this when you want to exclude specific sensitive fields
+   - All fields except those listed are accessible.
    - Example: `["data_on_request__gs", "data_url__gs"]`
 
-> **Note**: Field names in `availableFields` and `restrictedFields` must include the `__gs` suffix (internal field naming convention).
+These boundaries are enforced everywhere, including the snapshot-reports report view.
 
-#### Response Sorting
+> **Note**: Field names must include the `__gs` suffix (internal field naming convention).
 
-The `fieldOrder` property allows you to customize the order in which fields appear in the response:
+#### Response Shaping (`returnedFields`)
+
+`returnedFields` is an **ordered strict whitelist** that both *selects* and *sorts* the fields returned in the response. It only ever narrows an already access-checked set — it can never re-introduce a field excluded by `restrictedFields` or absent from `availableFields`.
 ```json
 {
   "genshare": {
-    "fieldOrder": [
+    "returnedFields": [
       "article_id__gs",
       "title__gs",
       "authors__gs",
@@ -395,20 +422,32 @@ The `fieldOrder` property allows you to customize the order in which fields appe
 }
 ```
 
-**Sorting Behavior:**
-- Fields listed in `fieldOrder` appear first, in the specified order
-- Fields not listed in `fieldOrder` appear after, maintaining their original order
-- Sorting is applied to internal field names (with `__gs` suffix)
-- Field name cleanup happens after sorting, so clients receive clean field names
+**Behavior:**
+- Only the listed fields are returned, in the exact order given (this is also the only place server-side ordering happens).
+- Fields not listed are dropped — unlike a pure sort, there is no "remaining fields appended at the end".
+- A listed field that is not present in the access-checked response is simply skipped.
+- Applied to internal field names (with the `__gs` suffix); suffix cleanup happens afterward, so clients still receive clean field names.
+- Leave `returnedFields` empty (`[]`, the default) to return the full access-checked set in GenShare's native order — the case for every client that manages filtering/sorting itself.
+
+> **Where it applies:** `returnedFields` shapes the client-facing API response (e.g. `POST /processPDF`). It is **bypassed by default** for the snapshot-reports view, so reports always render every field the user is allowed to see. See the `apply_returned_fields` query parameter below.
 
 #### Processing Pipeline
 
-The response goes through the following pipeline:
+1. **Access filtering (security)**: apply `availableFields` / `restrictedFields`.
+2. **Response shaping (presentation)**: apply the `returnedFields` ordered whitelist — client response only; skipped for snapshot-reports.
+3. **Field Name Cleanup**: remove internal suffixes (e.g. `__gs`) for client consumption.
+4. **Report Link Addition**: append `report_link` field if applicable.
 
-1. **Filtering**: Apply whitelist or blacklist rules based on user configuration
-2. **Sorting**: Reorder fields according to `fieldOrder` configuration
-3. **Field Name Cleanup**: Remove internal suffixes (e.g., `__gs`) for client consumption
-4. **Report Link Addition**: Append `report_link` field if applicable
+#### snapshot-reports endpoint: `apply_returned_fields`
+
+`GET /snapshot-reports/:requestId/genshare` exposes both views through a single query parameter:
+
+| Request | Returns |
+| --- | --- |
+| `…/genshare` (default) | Access-filtered data only (`returnedFields` bypassed) — the report view |
+| `…/genshare?apply_returned_fields=true` | The exact client-facing response (`returnedFields` applied) |
+
+The response `meta.returned_fields_applied` boolean reports which mode was used. Defaulting to bypass means snapshot-api can be deployed independently without the report view losing fields.
 
 #### Example Configuration
 ```json
@@ -425,7 +464,7 @@ The response goes through the following pipeline:
         "data_url__gs",
         "non-functional_urls__gs"
       ],
-      "fieldOrder": [
+      "returnedFields": [
         "article_id__gs",
         "title__gs",
         "authors__gs",
@@ -439,17 +478,18 @@ The response goes through the following pipeline:
 ```
 
 This configuration will:
-1. Exclude the four restricted fields
-2. Return remaining fields with `article_id` first, followed by `title`, `authors`, etc.
-3. Any other fields not in `fieldOrder` will appear after, in their original order
-4. All field names will have their `__gs` suffix removed in the final response
+1. Make the four restricted fields inaccessible (security) — they never appear, in any view.
+2. For the client-facing response, return **only** the six `returnedFields`, in that exact order.
+3. For the snapshot-reports view, return every accessible field (the `returnedFields` shaping is bypassed).
+4. Remove the `__gs` suffix from all field names in the final response.
 
 #### Implementation Details
 
-- **Function**: `filterAndSortResponseForUser()` in `src/utils/genshareManager.js`
-- **Helper**: `sortResponseData()` handles the sorting logic
-- **Validation**: Empty or missing `fieldOrder` arrays are handled gracefully
-- **Performance**: Sorting uses a Map-based approach for O(n log n) complexity
+- **Function**: `filterAndSortResponseForUser(responseData, user, { applyReturnedFields = true })` in `src/utils/genshareManager.js`
+- **Access filter**: `filterResponseData()` — enforces `availableFields` / `restrictedFields`
+- **Response shaping**: `filterByReturnedFields()` — ordered whitelist; `applyReturnedFields` defaults to `true` and is set to `false` by the snapshot-reports controller
+- **Validation**: empty or missing `returnedFields` arrays are handled gracefully (the full access-checked set is returned)
+- **Performance**: shaping uses a Map-based lookup, O(n) over the response fields
 
 ### Report Configuration
 
@@ -485,9 +525,16 @@ The Editorial Manager and ScholarOne configurations support publication-specific
 #### How Graph Selection Works:
 
 1. **Custom Mapping Check**: System first checks if the submission's `publication_code` has a custom mapping in the `graph.custom` object
-2. **Default Fallback**: If no custom mapping exists (or is not avaialble), the system uses the value from `graph.default`  
+2. **Default Fallback**: If no custom mapping exists (or is not available), the system uses the value from `graph.default`
 3. **Validation**: The selected graph value is validated against the `graph.available` array
-4. **GenShare Integration**: The graph value is included in the GenShare request options as `"graph": "<selected_value>"`
+4. **GenShare Integration**: The selected value is included in the GenShare request options as
+   **`"editorial_policy": "<selected_value>"`**
+
+> **Naming note:** the configuration key is historically called `graph`, but the option sent to
+> genshare-service is `editorial_policy`. The two names refer to the same thing — a journal policy
+> decision graph. `editorial_policy` is the name used everywhere else (API options, response field,
+> per-user config), so prefer it in conversation; `graph` survives only as the `em.json` /
+> `scholarone.json` config key.
 
 #### Example Graph Configuration:
 
@@ -520,7 +567,7 @@ The system provides comprehensive logging for graph configuration:
 - Tracks when graph values are sent to GenShare
 - Handles configuration errors gracefully with fallback behavior
 
-10. **ScholarOne Configuration:**
+9. **ScholarOne Configuration:**
 ```json
 // conf/scholarone.json
 {
@@ -585,7 +632,7 @@ The system provides comprehensive logging for graph configuration:
 }
 ```
 
-11. **Google Sheets Credentials:**
+10. **Google Sheets Credentials:**
 ```json
 // conf/googleSheets.credentials.json
 {
@@ -601,6 +648,37 @@ The system provides comprehensive logging for graph configuration:
   "client_x509_cert_url": "your-client-cert-url"
 }
 ```
+
+11. **Google Sheets Logs Configuration:**
+```json
+// conf/googleSheets.logs.json
+{
+  "folderId": "GOOGLE_DRIVE_FOLDER_ID",
+  "templates": {
+    "genshare": {
+      "spreadsheetId": "GOOGLE_TEMPLATE_SPREADSHEET_ID",
+      "sheetName": "Template"
+    },
+    "users": {
+      "spreadsheetId": "GOOGLE_TEMPLATE_SPREADSHEET_ID",
+      "sheetName": "Template"
+    }
+  },
+  "genshare": {},
+  "users": {
+    "KWG": {}
+  }
+}
+```
+
+- **`folderId`**: Google Drive folder where all log spreadsheets are stored.
+- **`templates.genshare`**: Template spreadsheet copied to create the genshare (admin) log file. `sheetName` is the tab duplicated for new log pages.
+- **`templates.users`**: Template spreadsheet copied to create per-user log files.
+- **`genshare.spreadsheetId`**: Auto-populated when the genshare log spreadsheet is created from the template.
+- **`users.<userId>.folderId`**: Auto-populated when a subfolder is created for the user inside the main folder.
+- **`users.<userId>.spreadsheetId`**: Auto-populated when the user's log spreadsheet is created from the template.
+
+Google Sheets logging is **automatic**: when a user or genshare entry exists in the config, the system creates the necessary Google Drive folders and spreadsheets on first use. Use `node scripts/rebuild_logs.js --init` to pre-create all resources.
 
 ## API Architecture
 
@@ -622,13 +700,13 @@ POST   /processPDF/sync                  - Process a PDF file synchronously
 POST   /processPDF/async                 - Process a PDF file asynchronously with callback
 GET    /jobs/:requestId                  - Get job status for async processing
 GET    /requests/search                  - Search for reports by article_id or request_id
+GET    /requests/:requestId              - Get a single request record
 POST   /requests/refresh                 - Refresh article-request ID mapping from S3
 DELETE /requests/:requestId              - Delete a request and all associated data
 
 # Service health checks
 GET    /genshare/health                  - Check GenShare service health
 GET    /grobid/health                    - Check GROBID service health
-GET    /datastet/health                  - Check DataStet service health
 
 # Editorial Manager integration
 POST   /editorial-manager/submissions    - Handle submissions from Editorial Manager (asynchronous)
@@ -653,6 +731,31 @@ POST   /snapshot-mails/retry/:requestId  - Retry a failed email submission job
 
 # Snapshot Reports endpoints
 GET    /snapshot-reports/:requestId/genshare - Get GenShare data for a request
+
+# Snapshot S3 Manager admin (admin + snapshot-s3-manager roles)
+PUT    /snapshot-s3-manager/users/:userId                - Replace a user's full configuration
+GET    /snapshot-s3-manager/instance                     - Get the instance config (name, console URL)
+PATCH  /snapshot-s3-manager/instance                     - Update the instance config
+GET    /snapshot-s3-manager/requests                     - List requests (console log dashboard)
+GET    /snapshot-s3-manager/email-alerts                 - Get the email-alert configuration
+PATCH  /snapshot-s3-manager/email-alerts                 - Update the email-alert configuration
+GET    /snapshot-s3-manager/logs/config                  - Get the Google Sheets logs configuration
+POST   /snapshot-s3-manager/logs/rebuild-all             - Rebuild every log spreadsheet from S3
+POST   /snapshot-s3-manager/logs/rebuild-admin           - Rebuild the admin/genshare log spreadsheet
+POST   /snapshot-s3-manager/logs/rebuild-user            - Rebuild one user's log spreadsheet
+
+# Snapshot S3 Manager cache (admin + snapshot-s3-manager roles)
+GET    /snapshot-s3-manager/cache                        - List cache entries with consumer counts
+GET    /snapshot-s3-manager/cache/:cache_key             - Detail view (meta, current response, patches, consumers)
+GET    /snapshot-s3-manager/cache/:cache_key/original    - Immutable original full genshare payload
+PATCH  /snapshot-s3-manager/cache/:cache_key             - Update the canonical response; optional propagate_to[]
+DELETE /snapshot-s3-manager/cache/:cache_key             - Force-purge a cache entry (admin only)
+
+# Curator demo-bypass (admin + snapshot-s3-manager roles)
+POST   /processPDF/demo                                  - Curator-mode PDF processing that flags the resulting request as a demo
+GET    /snapshot-s3-manager/demo-requests                - List every request currently flagged as a demo
+GET    /snapshot-s3-manager/demo-requests/:request_id    - Get a single request row (for the demo-requests UI)
+PATCH  /snapshot-s3-manager/demo-requests/:request_id    - Toggle the is_demo flag (body: { is_demo: boolean })
 ```
 
 ## Queue System
@@ -1097,7 +1200,7 @@ npm run manage-users -- remove snapshot-mails
 npm run manage-genshare -- list
 
 # Add a new GenShare version
-npm run manage-genshare -- add v2.0.0 "https://genshare-service/snapshot" "https://genshare-service/health" "spreadsheet-id" "Sheet1" "api-key"
+npm run manage-genshare -- add v2.0.0 "https://genshare-service/snapshot" "https://genshare-service/health" "api-key"
 
 # Update a GenShare version
 npm run manage-genshare -- update v2.0.0 --processPdfUrl "https://new-genshare-service/snapshot"
@@ -1149,11 +1252,8 @@ npm run db:check-notification
 # List all ScholarOne notifications
 npm run db:list-notifications
 
-# View job queue status
-npm run queue:status
-
-# Clean up old completed jobs
-npm run queue:cleanup
+# Note: Job queue data is stored in the processing_jobs table in SQLite
+# Use db:check to inspect database records
 ```
 
 ### ScholarOne Management
@@ -1200,6 +1300,31 @@ Output includes:
 - All GenShare response fields based on version configuration
 - Proper CSV formatting with special character handling
 
+### Google Sheets Logs Management
+
+Initialize, rebuild, or manage Google Sheets log files:
+
+```bash
+# Initialize all log files from templates (creates folders, spreadsheets, and updates config)
+node scripts/rebuild_logs.js --init
+
+# Rebuild all logs (admin + all configured users) from S3 data
+node scripts/rebuild_logs.js --all
+
+# Rebuild admin/genshare logs only
+node scripts/rebuild_logs.js --admin
+
+# Rebuild logs for a specific user
+node scripts/rebuild_logs.js --user KWG
+```
+
+The `--init` command:
+- Creates a Google Drive subfolder per user inside the main logs folder
+- Creates genshare and user log spreadsheets by copying the configured templates
+- Persists the created folder IDs and spreadsheet IDs back to `googleSheets.logs.json`
+
+The rebuild commands (`--all`, `--admin`, `--user`) create new spreadsheets from S3 data. They also auto-create any missing folders or spreadsheets before rebuilding.
+
 ### Log Analysis
 
 ```bash
@@ -1208,9 +1333,6 @@ npm run analyze-logs
 
 # Analyze specific log file
 npm run analyze-logs -- path/to/logfile.log
-
-# Analyze queue performance
-npm run analyze-queue-logs
 ```
 
 ## Development
@@ -1241,7 +1363,8 @@ snapshot-api/
 │   ├── controllers/       # Request handlers
 │   │   ├── apiController.js
 │   │   ├── authController.js
-│   │   ├── datastetController.js
+│   │   ├── cacheController.js   # Genshare cache substitution layer
+│   │   ├── demoRequestsController.js # Curator demo-bypass requests
 │   │   ├── emController.js      # Editorial Manager with queue integration
 │   │   ├── genshareController.js
 │   │   ├── grobidController.js
@@ -1251,6 +1374,7 @@ snapshot-api/
 │   │   ├── scholaroneNotificationsController.js # ScholarOne webhook controller
 │   │   ├── snapshotMailsController.js # Snapshot mails controller
 │   │   ├── snapshotReportsController.js # Snapshot reports controller
+│   │   ├── snapshotS3ManagerController.js # Admin console endpoints
 │   │   └── versionsController.js
 │   ├── middleware/        # Express middleware
 │   │   ├── auth.js
@@ -1258,16 +1382,23 @@ snapshot-api/
 │   ├── routes/            # API routes
 │   │   └── index.js
 │   ├── utils/             # Utility functions
+│   │   ├── cacheGcWorker.js     # TTL garbage collection for the cache layer
+│   │   ├── cacheManager.js      # Shared canonical response store
+│   │   ├── configWatcher.js     # Hot-reload for watched conf/*.json files
 │   │   ├── dbManager.js
+│   │   ├── demoBypassManager.js # Curator demo-mode processing
+│   │   ├── emailAlertManager.js # Outbound alert e-mails
 │   │   ├── emManager.js
 │   │   ├── genshareManager.js # Updated exports for DS logs
-│   │   ├── googleSheets.js # Updated with CSV utilities
+│   │   ├── googleSheets.js # Google Sheets & Drive API integration
+│   │   ├── googleSheetsRebuild.js # Rebuild log spreadsheets from S3 data
 │   │   ├── jwtManager.js
 │   │   ├── logger.js
 │   │   ├── permissionsManager.js
 │   │   ├── queueManager.js      # Job queue system
 │   │   ├── rateLimiter.js
 │   │   ├── requestsManager.js
+│   │   ├── s3DataRefresher.js   # Rebuilds the request index from S3
 │   │   ├── s3Storage.js
 │   │   ├── scholaroneManager.js # ScholarOne submissions manager
 │   │   ├── scholaroneNotificationsManager.js # ScholarOne notifications manager

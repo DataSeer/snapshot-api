@@ -5,10 +5,17 @@ const { getUserById } = require('../utils/userManager');
 const requestsManager = require('../utils/requestsManager');
 
 /**
- * Get filtered GenShare response data for a specific request
- * This endpoint is designed to be used by the snapshot-reports service
- * to display data in a GUI with filters applied based on the original user's settings
- * 
+ * Get filtered GenShare response data for a specific request.
+ * This endpoint is designed to be used by the snapshot-reports service to
+ * display data in a GUI based on the original user's settings.
+ *
+ * Data-access boundaries (availableFields/restrictedFields) are always
+ * enforced. The user's presentation-only returnedFields whitelist is, by
+ * default, NOT applied — the report view must show everything the user is
+ * allowed to see. Callers that want the exact client-facing response (with
+ * returnedFields applied) can opt in via the `apply_returned_fields=true`
+ * query parameter.
+ *
  * @param {Object} req - Express request
  * @param {Object} res - Express response
  */
@@ -66,9 +73,12 @@ const getGenshareData = async (req, res) => {
       });
     }
 
-    // Extract the response data from the GenShare response file
-    // The file structure should contain: { status, headers, data: { response: [...] } }
-    const responseData = genshareResponseData.data?.response;
+    // Extract the response array from the GenShare response file.
+    // New (slim) shape: { response: [...] }
+    // Legacy shape (pre-cache refactor): { status, headers, data: { response: [...] } }
+    const responseData = Array.isArray(genshareResponseData.response)
+      ? genshareResponseData.response
+      : genshareResponseData.data?.response;
     
     if (!responseData) {
       return res.status(404).json({ 
@@ -79,8 +89,17 @@ const getGenshareData = async (req, res) => {
       });
     }
 
-    // Apply filtering based on the original user's permissions
-    const filteredData = filterAndSortResponseForUser(responseData, originalUser);
+    // Presentation-only returnedFields whitelist is bypassed by default so the
+    // report view shows everything the user is allowed to see. Opt in to the
+    // exact client-facing response with ?apply_returned_fields=true.
+    const applyReturnedFields = String(req.query.apply_returned_fields).toLowerCase() === 'true';
+
+    // Apply filtering based on the original user's permissions. Data-access
+    // boundaries (availableFields/restrictedFields) are always enforced;
+    // returnedFields is applied only when explicitly requested.
+    const filteredData = filterAndSortResponseForUser(responseData, originalUser, {
+      applyReturnedFields
+    });
 
     // Return the filtered data with metadata
     res.json({
@@ -90,6 +109,7 @@ const getGenshareData = async (req, res) => {
         requesting_user_id: currentUserId,
         article_id: searchResult.article_id,
         has_filters_applied: !!(originalUser.genshare?.availableFields || originalUser.genshare?.restrictedFields),
+        returned_fields_applied: applyReturnedFields,
         created_at: searchResult.meta.created_at,
         updated_at: searchResult.meta.updated_at
       },

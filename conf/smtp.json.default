@@ -1,0 +1,21 @@
+{
+  "host": "smtp.gmail.com",
+  "port": 587,
+  "secure": false,
+  "pool": true,
+  "maxConnections": 3,
+  "maxMessages": 10,
+  "rateLimit": 5,
+  "socketTimeout": 30000,
+  "greetingTimeout": 10000,
+  "connectionTimeout": 30000,
+  "auth": {
+    "type": "OAuth2",
+    "user": "snapshot@dataseer.ai",
+    "clientId": "xxx",
+    "clientSecret": "xxx",
+    "refreshToken": "xxx"
+  },
+  "from": "Snapshot Service <snapshot@dataseer.ai>",
+  "replyTo": "snapshot@dataseer.ai"
+}

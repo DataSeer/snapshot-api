@@ -8,8 +8,6 @@ const config = require('../config');
 const queueManager = require('./queueManager');
 const { ProcessingSession } = require('./s3Storage');
 
-// Load the genshare configuration
-const genshareConfig = require(config.genshareConfigPath);
 const snapshotMailsConfig = require(config.snapshotMailsConfigPath);
 
 /**
@@ -202,9 +200,6 @@ const processMailSubmissionJob = async (job) => {
   
   // Variables for summary logging
   let errorStatus = "No";
-  let reportURL = "";
-  let graphValue = "";
-  let reportVersion = "";
   
   try {
     // Set origin as external service (snapshot-mails)
@@ -261,13 +256,8 @@ const processMailSubmissionJob = async (job) => {
       
       try {
         // Process the PDF with GenShare - DON'T log to summary here (pass false)
-        genshareResult = await genshareManager.processPDF(genshareData, session, false);
+        genshareResult = await genshareManager.processPDF(genshareData, session);
         session.addLog(`GenShare processing completed with status: ${genshareResult.status}`);
-        
-        // Extract values from GenShare result for summary
-        reportURL = genshareResult.reportURL || "";
-        graphValue = genshareResult.activeGenShareGraphValue || "";
-        reportVersion = genshareResult.activeReportVersion || "";
         
       } catch (genshareError) {
         session.addLog(`Error processing with GenShare: ${genshareError.message}`);
@@ -277,8 +267,12 @@ const processMailSubmissionJob = async (job) => {
     }
     
     // Save session to S3
+    session.setResult(
+      errorStatus && errorStatus !== 'No' ? 'error' : 'success',
+      errorStatus && errorStatus !== 'No' ? errorStatus : null
+    );
     await session.saveToS3();
-    
+
     // Update request with report data if available
     if (session.report) {
       try {
@@ -289,26 +283,8 @@ const processMailSubmissionJob = async (job) => {
       }
     }
     
-    // Log to summary sheet ONCE at the end - SUCCESS case
-    try {
-      await genshareManager.appendToSummary({
-        session,
-        errorStatus,
-        data: {
-          file: data.pdfFile,
-          user: { id: data.user_id }
-        },
-        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
-        reportURL,
-        graphValue,
-        reportVersion,
-        articleId: data.keywords?.article_id || ""
-      });
-    } catch (summaryError) {
-      session.addLog(`Error logging to summary: ${summaryError.message}`);
-      console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
-    }
-    
+    // Note: Genshare summary + user logging is handled by processPDF
+
     // NOTE: Notification will be sent in the completion callback
     // after the job is marked as completed in the database
     
@@ -342,28 +318,11 @@ const processMailSubmissionJob = async (job) => {
       errorStatus = `Job Error: ${error.message}`;
     }
     
-    // Log to summary sheet ONCE at the end - ERROR case
-    try {
-      await genshareManager.appendToSummary({
-        session,
-        errorStatus,
-        data: {
-          file: data.pdfFile,
-          user: { id: data.user_id }
-        },
-        genshareVersion: session.getGenshareVersion() || genshareConfig.defaultVersion,
-        reportURL,
-        graphValue,
-        reportVersion,
-        articleId: data.keywords?.article_id || ""
-      });
-    } catch (summaryError) {
-      session.addLog(`Error logging to summary: ${summaryError.message}`);
-      console.error(`[${job.request_id}] Error logging to summary:`, summaryError);
-    }
-    
+    // Note: Genshare summary + user logging is handled by processPDF
+
     try {
       // Save session data with error information
+      session.setResult('error', errorStatus && errorStatus !== 'No' ? errorStatus : error.message);
       await session.saveToS3();
     } catch (saveError) {
       console.error(`[${job.request_id}] Error in error handling:`, saveError);
