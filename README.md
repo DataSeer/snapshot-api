@@ -1193,6 +1193,35 @@ npm run manage-users -- update-genshare snapshot-mails '{"authorizedVersions": [
 npm run manage-users -- remove snapshot-mails
 ```
 
+#### Rate limit semantics
+
+Rate limiting is per user, configured in `conf/users.json` under `rateLimit`:
+
+| Setting | Meaning |
+|---|---|
+| `max: <n>` | At most `n` requests per window. Request `n + 1` gets **429**. |
+| `max: 0` | **Every request is rejected with 429.** Use this to suspend an account without deleting it. |
+| `max` absent | Falls back to the default of 100 requests per window. |
+| `windowMs: 0` | **Rate limiting disabled** — unlimited requests. Takes precedence over `max: 0`. |
+| `message` | Body returned with the 429. Optional; a default message is used otherwise. |
+
+```bash
+# Suspend an account (every call answers 429)
+npm run manage-users -- update-limit snapshot-mails '{"max": 0}'
+
+# Restore it
+npm run manage-users -- update-limit snapshot-mails '{"max": 100}'
+```
+
+Two implementation details worth knowing before editing `src/utils/rateLimiter.js`:
+
+- `max: 0` is handled by a guard that runs **before** `express-rate-limit`. The installed version (v5)
+  skips its own check when `max` is falsy (`if (max && current > max)`), so without that guard a max
+  of 0 would let every request through instead of blocking it.
+- `windowMs` is only read per user to detect the `0` (disabled) case. The window length itself is
+  fixed at 15 minutes for everyone — a user configured with, say, `windowMs: 60000` still gets a
+  15-minute window.
+
 ### GenShare Version Management
 
 ```bash
