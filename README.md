@@ -1193,6 +1193,75 @@ npm run manage-users -- update-genshare snapshot-mails '{"authorizedVersions": [
 npm run manage-users -- remove snapshot-mails
 ```
 
+#### Rate limit semantics
+
+Rate limiting is per user, configured in `conf/users.json` under `rateLimit`:
+
+| Setting | Meaning |
+|---|---|
+| `max: <n>` | At most `n` requests per window. Request `n + 1` gets **429**. |
+| `max: 0` | **Every request is rejected with 429.** Use this to suspend an account without deleting it. |
+| `max` absent | Falls back to the default of 100 requests per window. |
+| `windowMs: 0` | **Rate limiting disabled** — unlimited requests. Takes precedence over `max: 0`. |
+| `message` | Body returned with the 429. Optional; a default message is used otherwise. |
+
+```bash
+# Suspend an account (every call answers 429)
+npm run manage-users -- update-limit snapshot-mails '{"max": 0}'
+
+# Restore it
+npm run manage-users -- update-limit snapshot-mails '{"max": 100}'
+```
+
+Two implementation details worth knowing before editing `src/utils/rateLimiter.js`:
+
+- `max: 0` is handled by a guard that runs **before** `express-rate-limit`. The installed version (v5)
+  skips its own check when `max` is falsy (`if (max && current > max)`), so without that guard a max
+  of 0 would let every request through instead of blocking it.
+- `windowMs` is only read per user to detect the `0` (disabled) case. The window length itself is
+  fixed at 15 minutes for everyone — a user configured with, say, `windowMs: 60000` still gets a
+  15-minute window.
+
+### Missing Report URLs (recovery patch)
+
+When snapshot-reports is unavailable, `createReport` fails and the error is deliberately swallowed —
+a report failure must never fail the request itself. Those requests end up with no report URL
+(`requests.report_data` is NULL, no `report_link` in the archived response). This script generates
+the missing URLs after the fact.
+
+It is a **patch tool, not part of the normal flow**. It only ever adds a missing report URL — it
+never replaces an existing one and never re-runs the analysis. Whether a given request deserves a
+report (cached? demo? stale?) is the operator's judgement: start with a dry run and read the list.
+
+```bash
+# Dry run (default — nothing is written): what is missing a report URL?
+npm run reports:missing -- --all
+npm run reports:missing -- --user acme
+npm run reports:missing -- --request 16d2bb78c7901c527b8e1b43b8f38b5c
+
+# Apply
+npm run reports:generate -- --request 16d2bb78c7901c527b8e1b43b8f38b5c
+npm run reports:generate -- --user acme --limit 50
+npm run reports:generate -- --all
+
+# Override the report kind for users with no reports.defaultVersion
+npm run reports:generate -- --user acme --report-kind v3
+
+# Machine-readable output
+npm run reports:missing -- --all --json
+```
+
+For each patched request three artifacts are updated, mirroring the normal processing path:
+`requests.report_data` (SQLite), `<user>/<request>/report/report.json` (S3), and `report_link`
+injected into the archived `<user>/<request>/response.json` (S3).
+
+Requests are skipped — never failed — when they already have a report URL, when the owning user has
+no `reports.defaultVersion` (pass `--report-kind` to override), when the user is absent from the
+users configuration, or when `genshare/response.json` is missing from S3 (there is nothing to build a
+report from). A skip of the last kind prints an S3 `NoSuchKey` line from the shared S3 helper before
+the skip is reported — that is expected noise, not a failure. The script exits non-zero only when at
+least one request genuinely failed.
+
 ### GenShare Version Management
 
 ```bash
@@ -1459,6 +1528,76 @@ docker run -d \
   --name snapshot-api \
   snapshot-api:latest
 ```
+
+### Deployment on EC2 (systemd)
+
+On the `snapshot-dev` and `snapshot-prod` instances the container is **managed by systemd**, not by
+the `docker run` snippet above and not by any compose file. The unit is
+`/etc/systemd/system/snapshot-api.service`; it runs the ECR image in the foreground
+(`docker run --rm --name snapshot-api-instance --init --network host …`) with `Type=simple`, so
+systemd supervises the `docker run` client rather than the container itself.
+
+Manage it through systemd, never through Docker directly:
+
+```bash
+sudo systemctl status snapshot-api
+sudo systemctl restart snapshot-api
+sudo systemctl stop snapshot-api          # NOT `docker stop snapshot-api-instance`
+journalctl -u snapshot-api -b --no-pager  # container stdout/stderr for this boot
+```
+
+`docker stop snapshot-api-instance` is undone by systemd within seconds (see the restart policy
+below), and because the unit uses `--rm` there is no exited container left to inspect — the journal
+is the only post-mortem source.
+
+#### Restart policy
+
+The unit files ship with no `Restart=` directive, which means systemd defaults to `Restart=no`: a
+container that exits for any reason — crash, forced instance stop, or losing the race against
+`dockerd` at boot — stays down permanently. In August 2026 this took snapshot-reports offline long
+enough that report URLs stopped being created.
+
+The policy is supplied by a drop-in rather than by editing the unit, so the unit file is untouched
+and rollback is deleting one file:
+
+```ini
+# /etc/systemd/system/snapshot-api.service.d/10-restart.conf
+[Unit]
+StartLimitIntervalSec=0
+
+[Service]
+Restart=always
+RestartSec=5
+```
+
+```bash
+sudo mkdir -p /etc/systemd/system/snapshot-api.service.d
+sudo tee /etc/systemd/system/snapshot-api.service.d/10-restart.conf >/dev/null <<'EOF'
+[Unit]
+StartLimitIntervalSec=0
+
+[Service]
+Restart=always
+RestartSec=5
+EOF
+sudo systemctl daemon-reload
+
+# Verify
+systemctl show snapshot-api -p Restart -p RestartUSec -p StartLimitIntervalUSec
+# expect: Restart=always  RestartUSec=5s  StartLimitIntervalUSec=0
+
+# Roll back
+sudo rm -rf /etc/systemd/system/snapshot-api.service.d && sudo systemctl daemon-reload
+```
+
+`daemon-reload` only re-reads configuration — it does not stop, start or restart the running
+container, so this is safe to apply at any time. `StartLimitIntervalSec=0` is required, not
+cosmetic: without it systemd's default limit of 5 starts in 10 s puts a fast-failing unit into
+`failed` permanently, which is the exact failure the policy is meant to prevent.
+
+Known limitation: if an unclean shutdown leaves a container holding the `--name`, restarts loop on a
+name conflict. Adding `ExecStartPre=-/usr/bin/docker rm -f snapshot-api-instance` to the drop-in
+covers it.
 
 ### Environment Variables for Production
 
