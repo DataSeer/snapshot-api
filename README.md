@@ -1529,6 +1529,76 @@ docker run -d \
   snapshot-api:latest
 ```
 
+### Deployment on EC2 (systemd)
+
+On the `snapshot-dev` and `snapshot-prod` instances the container is **managed by systemd**, not by
+the `docker run` snippet above and not by any compose file. The unit is
+`/etc/systemd/system/snapshot-api.service`; it runs the ECR image in the foreground
+(`docker run --rm --name snapshot-api-instance --init --network host …`) with `Type=simple`, so
+systemd supervises the `docker run` client rather than the container itself.
+
+Manage it through systemd, never through Docker directly:
+
+```bash
+sudo systemctl status snapshot-api
+sudo systemctl restart snapshot-api
+sudo systemctl stop snapshot-api          # NOT `docker stop snapshot-api-instance`
+journalctl -u snapshot-api -b --no-pager  # container stdout/stderr for this boot
+```
+
+`docker stop snapshot-api-instance` is undone by systemd within seconds (see the restart policy
+below), and because the unit uses `--rm` there is no exited container left to inspect — the journal
+is the only post-mortem source.
+
+#### Restart policy
+
+The unit files ship with no `Restart=` directive, which means systemd defaults to `Restart=no`: a
+container that exits for any reason — crash, forced instance stop, or losing the race against
+`dockerd` at boot — stays down permanently. In August 2026 this took snapshot-reports offline long
+enough that report URLs stopped being created.
+
+The policy is supplied by a drop-in rather than by editing the unit, so the unit file is untouched
+and rollback is deleting one file:
+
+```ini
+# /etc/systemd/system/snapshot-api.service.d/10-restart.conf
+[Unit]
+StartLimitIntervalSec=0
+
+[Service]
+Restart=always
+RestartSec=5
+```
+
+```bash
+sudo mkdir -p /etc/systemd/system/snapshot-api.service.d
+sudo tee /etc/systemd/system/snapshot-api.service.d/10-restart.conf >/dev/null <<'EOF'
+[Unit]
+StartLimitIntervalSec=0
+
+[Service]
+Restart=always
+RestartSec=5
+EOF
+sudo systemctl daemon-reload
+
+# Verify
+systemctl show snapshot-api -p Restart -p RestartUSec -p StartLimitIntervalUSec
+# expect: Restart=always  RestartUSec=5s  StartLimitIntervalUSec=0
+
+# Roll back
+sudo rm -rf /etc/systemd/system/snapshot-api.service.d && sudo systemctl daemon-reload
+```
+
+`daemon-reload` only re-reads configuration — it does not stop, start or restart the running
+container, so this is safe to apply at any time. `StartLimitIntervalSec=0` is required, not
+cosmetic: without it systemd's default limit of 5 starts in 10 s puts a fast-failing unit into
+`failed` permanently, which is the exact failure the policy is meant to prevent.
+
+Known limitation: if an unclean shutdown leaves a container holding the `--name`, restarts loop on a
+name conflict. Adding `ExecStartPre=-/usr/bin/docker rm -f snapshot-api-instance` to the drop-in
+covers it.
+
 ### Environment Variables for Production
 
 For production deployments, make sure to set the following environment variables:
