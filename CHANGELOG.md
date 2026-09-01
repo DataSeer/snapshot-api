@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.18.0](https://github.com/DataSeer/snapshot-api/compare/v3.17.1...v3.18.0) (2026-09-01)
+
+
+### Features
+
+* **reports:** generate missing report URLs on demand ([7816df8](https://github.com/DataSeer/snapshot-api/commits/7816df81e6c156a5d9779cbb7e314562df5c5ad6))
+
+
+### Bug Fixes
+
+* **rate-limit:** reject every request when a user max is 0 ([9c8aade](https://github.com/DataSeer/snapshot-api/commits/9c8aade851a7916305c684204b23681d69f0aedd))
+
+
+### Documentation
+
+* **deploy:** document the systemd deployment and restart policy ([cc5e02b](https://github.com/DataSeer/snapshot-api/commits/cc5e02bf2746d780bfa20ba8a9413eba43439e85))
+* refresh API documentation and guard internal-only files ([5e11e95](https://github.com/DataSeer/snapshot-api/commits/5e11e95413933664014656ea5c86eceab5bf8a8d))
+
 ### [3.17.1](https://github.com/DataSeer/snapshot-api/compare/v3.17.0...v3.17.1) (2026-07-14)
 
 
