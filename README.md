@@ -1222,6 +1222,46 @@ Two implementation details worth knowing before editing `src/utils/rateLimiter.j
   fixed at 15 minutes for everyone — a user configured with, say, `windowMs: 60000` still gets a
   15-minute window.
 
+### Missing Report URLs (recovery patch)
+
+When snapshot-reports is unavailable, `createReport` fails and the error is deliberately swallowed —
+a report failure must never fail the request itself. Those requests end up with no report URL
+(`requests.report_data` is NULL, no `report_link` in the archived response). This script generates
+the missing URLs after the fact.
+
+It is a **patch tool, not part of the normal flow**. It only ever adds a missing report URL — it
+never replaces an existing one and never re-runs the analysis. Whether a given request deserves a
+report (cached? demo? stale?) is the operator's judgement: start with a dry run and read the list.
+
+```bash
+# Dry run (default — nothing is written): what is missing a report URL?
+npm run reports:missing -- --all
+npm run reports:missing -- --user acme
+npm run reports:missing -- --request 16d2bb78c7901c527b8e1b43b8f38b5c
+
+# Apply
+npm run reports:generate -- --request 16d2bb78c7901c527b8e1b43b8f38b5c
+npm run reports:generate -- --user acme --limit 50
+npm run reports:generate -- --all
+
+# Override the report kind for users with no reports.defaultVersion
+npm run reports:generate -- --user acme --report-kind v3
+
+# Machine-readable output
+npm run reports:missing -- --all --json
+```
+
+For each patched request three artifacts are updated, mirroring the normal processing path:
+`requests.report_data` (SQLite), `<user>/<request>/report/report.json` (S3), and `report_link`
+injected into the archived `<user>/<request>/response.json` (S3).
+
+Requests are skipped — never failed — when they already have a report URL, when the owning user has
+no `reports.defaultVersion` (pass `--report-kind` to override), when the user is absent from the
+users configuration, or when `genshare/response.json` is missing from S3 (there is nothing to build a
+report from). A skip of the last kind prints an S3 `NoSuchKey` line from the shared S3 helper before
+the skip is reported — that is expected noise, not a failure. The script exits non-zero only when at
+least one request genuinely failed.
+
 ### GenShare Version Management
 
 ```bash

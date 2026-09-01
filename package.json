@@ -33,6 +33,8 @@
     "db:check": "node scripts/maintenance/initDB.js check",
     "db:check-notification": "node scripts/maintenance/initDB.js check-scholarone-notifications",
     "db:list-notifications": "node scripts/maintenance/initDB.js list-scholarone-notifications",
+    "reports:missing": "node scripts/maintenance/generate_missing_reports.js",
+    "reports:generate": "node scripts/maintenance/generate_missing_reports.js --apply",
     "s3:audit": "node scripts/maintenance/refresh_s3_data.js",
     "s3:refresh": "node scripts/maintenance/refresh_s3_data.js --apply",
     "s3:refresh:rehash": "node scripts/maintenance/refresh_s3_data.js --apply --rehash",
