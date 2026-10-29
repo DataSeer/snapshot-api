@@ -2684,6 +2684,59 @@ const findDemoRequestByPdfHash = async (pdfHash) => {
 };
 
 /**
+ * List requests that carry no report URL, for the on-demand report backfill.
+ *
+ * `report_data` is a JSON blob whose `report_link` key holds the URL, so a row
+ * is a candidate when the blob is absent, empty, or has no `report_link` at
+ * all. The LIKE guard is a coarse pre-filter — reportBackfiller re-checks each
+ * blob by parsing it, which also catches malformed JSON.
+ *
+ * Exactly one of `requestId` / `userId` narrows the scope; passing neither
+ * scans every user.
+ *
+ * @param {Object} options
+ * @param {string|null} [options.requestId] - restrict to a single request
+ * @param {string|null} [options.userId] - restrict to one user's requests
+ * @param {number|null} [options.limit] - cap the number of rows returned
+ * @returns {Promise<Array<Object>>} candidate rows, oldest first
+ */
+const listRequestsWithoutReportUrl = async ({ requestId = null, userId = null, limit = null } = {}) => {
+  const db = await getDBConnection();
+  try {
+    const conditions = [
+      `(report_data IS NULL OR report_data = '' OR report_data NOT LIKE '%"report_link"%')`
+    ];
+    const params = [];
+
+    if (requestId) {
+      conditions.push('request_id = ?');
+      params.push(requestId);
+    }
+    if (userId) {
+      conditions.push('user_name = ?');
+      params.push(userId);
+    }
+
+    let sql =
+      `SELECT id, user_name, article_id, request_id, report_data, created_at, updated_at
+       FROM requests
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY created_at ASC`;
+
+    if (Number.isInteger(limit) && limit > 0) {
+      sql += ' LIMIT ?';
+      params.push(limit);
+    }
+
+    return await new Promise((resolve, reject) => {
+      db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows || [])));
+    });
+  } finally {
+    await new Promise((resolve) => db.close(() => resolve()));
+  }
+};
+
+/**
  * List every request currently flagged as a demo (for the s3-manager UI).
  */
 const listDemoRequests = async () => {
@@ -2817,5 +2870,6 @@ module.exports = {
   setRequestBypassSource,
   findDemoRequestByPdfHash,
   listDemoRequests,
+  listRequestsWithoutReportUrl,
   getRequestByRequestIdAnyUser
 };
