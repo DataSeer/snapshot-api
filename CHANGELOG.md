@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.18.1](https://github.com/DataSeer/snapshot-api/compare/v3.18.0...v3.18.1) (2026-11-02)
+
+
+### Chores
+
+* **deps:** clear all 20 npm advisories ([df4b978](https://github.com/DataSeer/snapshot-api/commits/df4b9784f7fa59a1284ddc10ebc7c0ad081b6a29))
+* **runtime:** move to Node 24.22.1 (LTS) ([ea0d712](https://github.com/DataSeer/snapshot-api/commits/ea0d71219384e30a77c8af08b683fc11f2085752))
+
 ## [3.18.0](https://github.com/DataSeer/snapshot-api/compare/v3.17.1...v3.18.0) (2026-09-01)
 
 
