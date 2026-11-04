@@ -84,13 +84,14 @@ const genshareTarget = () => {
  * canonical response, then propagate to the chosen consumers. Shared by every
  * curation action.
  */
-const refreshIntoCache = async (entry, who, { reason = null, propagate_to: propagateTo = [] } = {}) => {
+const refreshIntoCache = async (entry, who, { reason = null, patch_reason: patchReason = null, propagate_to: propagateTo = [] } = {}) => {
   const target = genshareTarget();
   const signals = await ni.refreshSignals(target.baseUrl, target.apiKey, entry.reportId);
   const next = ni.applySignalsToResponse(entry.response, signals);
   await cacheManager.patchCacheResponse(entry.cacheKey, next, {
     actor: who.curator ? `${who.actor} (${who.curator})` : who.actor,
-    reason: reason || null,
+    // patch_reason is the cache page's reason; an override's own reason doubles as the patch reason when there is none
+    reason: patchReason || reason || null,
     propagated_to: Array.isArray(propagateTo) ? propagateTo : [],
     summary: { items: next.length, numerical_integrity: entry.reportId, signals: [...signals.positive, ...signals.negative].map((s) => `${s.id}:${s.severity}`) }
   });
@@ -183,7 +184,7 @@ const rerunChecks = async (req, res) => {
 
 /**
  * POST .../numerical-integrity/refresh
- * Body: { reason?: string, propagate_to?: string[], curator?: string }
+ * Body: { reason?: string (or patch_reason), propagate_to?: string[], curator?: string }
  * Rebuild the signals from the report as it is now and write them into the cache. 409 while a re-run is running.
  */
 const refreshSignals = async (req, res) => {

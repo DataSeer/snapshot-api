@@ -121,7 +121,7 @@ describe('override, note and share actions refresh the cached signals', () => {
     dbManager.getCacheConsumerOwner.mockResolvedValueOnce('user1').mockResolvedValueOnce(null);
     const res = createMockRes();
     await controller.overrideCheck(
-      req({ params: { cache_key: 'key1', check: 'grim' }, body: { verdict: 'fail', reason: 'by hand', curator: 'A Curator', propagate_to: ['r1', 'r2'], reason_: null } }),
+      req({ params: { cache_key: 'key1', check: 'grim' }, body: { verdict: 'fail', reason: 'by hand', curator: 'A Curator', propagate_to: ['r1', 'r2'], patch_reason: 'curation session' } }),
       res
     );
     expect(ni.setOverride).toHaveBeenCalledWith(REPORT, 'grim', expect.objectContaining({ verdict: 'fail', reason: 'by hand' }), 'A Curator');
@@ -133,6 +133,7 @@ describe('override, note and share actions refresh the cached signals', () => {
     expect(by.negative_signals__lm.map((s) => s.id)).toEqual(['statistical_inconsistencies']);
     expect(by.statistical_checks__lm).toEqual(signals.checks);
     expect(audit.actor).toBe('snapshot-s3-manager (A Curator)');
+    expect(audit.reason).toBe('curation session');
     expect(audit.propagated_to).toEqual(['r1', 'r2']);
     expect(cacheManager.propagateResponseToRequest).toHaveBeenCalledWith('user1', 'r1', next);
     const body = res.json.mock.calls[0][0];
