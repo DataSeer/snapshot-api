@@ -121,6 +121,7 @@ else is `require`d once at boot and needs a process restart to take effect.
 | `conf/users.json` | ✅ | users, tokens, rate limits, field/option permissions |
 | `conf/permissions.json` | ✅ | per-route access control |
 | `conf/genshare.json` | ✅ | engine aliases, per-policy flags, cache settings, Sheets mapping |
+| `conf/numericalIntegrity.json` | ❌ | Numerical Integrity service (statistical checks curation): URL, API client name, private key |
 | `conf/reports.json` | ✅ | report kinds and the snapshot-reports endpoint |
 | `conf/emailAlerts.json` | ✅ | alert recipients / watched users |
 | `conf/instance.json` | ✅ | instance name, admin console URL |
@@ -750,6 +751,14 @@ GET    /snapshot-s3-manager/cache/:cache_key             - Detail view (meta, cu
 GET    /snapshot-s3-manager/cache/:cache_key/original    - Immutable original full genshare payload
 PATCH  /snapshot-s3-manager/cache/:cache_key             - Update the canonical response; optional propagate_to[]
 DELETE /snapshot-s3-manager/cache/:cache_key             - Force-purge a cache entry (admin only)
+GET    /snapshot-s3-manager/cache/:cache_key/numerical-integrity                        - The Numerical Integrity report behind a TNQ entry (model output, overrides, effective values)
+POST   /snapshot-s3-manager/cache/:cache_key/numerical-integrity/rerun                  - Re-run checks on the service with the PDF from S3 (202; poll GET until settled)
+POST   /snapshot-s3-manager/cache/:cache_key/numerical-integrity/refresh                - Rebuild the statistical_* signals and write them into the cache (+ propagate_to[])
+PUT    /snapshot-s3-manager/cache/:cache_key/numerical-integrity/checks/:check/override - Override one check (verdict/recommendation/summary, reason), then refresh
+DELETE /snapshot-s3-manager/cache/:cache_key/numerical-integrity/checks/:check/override - Remove the override, then refresh
+PUT    /snapshot-s3-manager/cache/:cache_key/numerical-integrity/note                   - The curator's note on the report, then refresh
+POST   /snapshot-s3-manager/cache/:cache_key/numerical-integrity/share/revoke           - Revoke the report's share link (cached URL becomes null)
+POST   /snapshot-s3-manager/cache/:cache_key/numerical-integrity/share/rotate           - New share link, written into the cache
 
 # Curator demo-bypass (admin + snapshot-s3-manager roles)
 POST   /processPDF/demo                                  - Curator-mode PDF processing that flags the resulting request as a demo
@@ -757,6 +766,27 @@ GET    /snapshot-s3-manager/demo-requests                - List every request cu
 GET    /snapshot-s3-manager/demo-requests/:request_id    - Get a single request row (for the demo-requests UI)
 PATCH  /snapshot-s3-manager/demo-requests/:request_id    - Toggle the is_demo flag (body: { is_demo: boolean })
 ```
+
+### Numerical Integrity curation (TNQ statistical checks)
+
+For the TNQ policy, genshare-service runs the statistical checks on the Numerical Integrity service
+([DataSeer/forensic-checks](https://github.com/DataSeer/forensic-checks)) and puts the report's id and share URL in the
+response (`statistical_report_id__lm`, `statistical_report_url__lm`); snapshot-reports links to that report instead of
+rendering the checks. Curation happens on the service, driven from snapshot-s3-manager's cache page through the routes
+above (`src/controllers/numericalIntegrityController.js`, `src/utils/numericalIntegrityManager.js`):
+
+- every action is relayed to the service with snapshot-api's own API client (`conf/numericalIntegrity.json`: `url`,
+  `client`, `privateKey` or `privateKeyFile`; the admin page of the service generates the pair, section "API clients"),
+  signed EdDSA tokens, `X-Curator` carrying the s3-manager user's name;
+- then genshare-service rebuilds the four `statistical_*` signals from the report's effective verdicts
+  (`POST /numerical-integrity/signals` on the default genshare version) and they are written into the shared canonical
+  response with `patchCacheResponse` (the other signals stay, `statistical_checks__lm` and `statistical_report_url__lm`
+  follow the report), with the same `propagate_to` semantics as a hand patch and an entry in `patches.ndjson`;
+- a re-run needs the PDF: it is read from the first consumer request whose main file is still on S3 with the entry's
+  `pdf_hash` (the service keeps no PDF). The route answers 202; the page polls `GET .../numerical-integrity` and calls
+  `.../refresh` once `report.status` is no longer `running`.
+
+Without `conf/numericalIntegrity.json` the routes answer 503 and everything else works as before.
 
 ## Queue System
 

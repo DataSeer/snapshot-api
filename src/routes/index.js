@@ -76,6 +76,16 @@ const {
   getDemoRequest,
   patchDemoRequest
 } = require('../controllers/demoRequestsController');
+const {
+  getNumericalIntegrity,
+  rerunChecks,
+  refreshSignals,
+  overrideCheck,
+  removeCheckOverride,
+  setReportNote,
+  revokeReportShare,
+  rotateReportShare
+} = require('../controllers/numericalIntegrityController');
 const { authenticateToken } = require('../middleware/auth');
 const { checkPermissions } = require('../middleware/permissions');
 const rateLimiter = require('../utils/rateLimiter');
@@ -263,6 +273,16 @@ authenticatedRouter.get('/snapshot-s3-manager/cache/:cache_key/original', getCac
 authenticatedRouter.get('/snapshot-s3-manager/cache/:cache_key', getCacheEntry);
 authenticatedRouter.patch('/snapshot-s3-manager/cache/:cache_key', patchCacheEntry);
 authenticatedRouter.delete('/snapshot-s3-manager/cache/:cache_key', deleteCacheEntry);
+
+// Curation of the statistical checks (Numerical Integrity service) behind a TNQ cache entry
+authenticatedRouter.get('/snapshot-s3-manager/cache/:cache_key/numerical-integrity', getNumericalIntegrity);
+authenticatedRouter.post('/snapshot-s3-manager/cache/:cache_key/numerical-integrity/rerun', rerunChecks);
+authenticatedRouter.post('/snapshot-s3-manager/cache/:cache_key/numerical-integrity/refresh', refreshSignals);
+authenticatedRouter.put('/snapshot-s3-manager/cache/:cache_key/numerical-integrity/checks/:check/override', overrideCheck);
+authenticatedRouter.delete('/snapshot-s3-manager/cache/:cache_key/numerical-integrity/checks/:check/override', removeCheckOverride);
+authenticatedRouter.put('/snapshot-s3-manager/cache/:cache_key/numerical-integrity/note', setReportNote);
+authenticatedRouter.post('/snapshot-s3-manager/cache/:cache_key/numerical-integrity/share/revoke', revokeReportShare);
+authenticatedRouter.post('/snapshot-s3-manager/cache/:cache_key/numerical-integrity/share/rotate', rotateReportShare);
 
 // Mount the authenticated router
 unauthenticatedRouter.use('/', authenticatedRouter);

@@ -11,6 +11,7 @@ module.exports = {
   tokenExpiration: process.env.TOKEN_EXPIRATION || 3600, // Default: 1 hour in seconds
   permissionsConfigPath: path.join(__dirname, `../conf/permissions${testSuffix('permissions')}`),
   genshareConfigPath: path.join(__dirname, '../conf/genshare.json'),
+  numericalIntegrityConfigPath: path.join(__dirname, '../conf/numericalIntegrity.json'),
   grobidConfigPath: path.join(__dirname, '../conf/grobid.json'),
   reportsConfigPath: path.join(__dirname, '../conf/reports.json'),
   usersPath: path.join(__dirname, `../conf/users${testSuffix('users')}`),
