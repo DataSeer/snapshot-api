@@ -61,7 +61,9 @@ const getConfig = () => {
       client: String(raw.client),
       key,
       deadlineMs: Number(raw.deadlineMs) || 900000,
-      pollMs: Number(raw.pollMs) || 5000
+      pollMs: Number(raw.pollMs) || 5000,
+      // Optional: where a cache entry is curated in snapshot-s3-manager, with {cache_key} standing for the key
+      curationUrl: typeof raw.curationUrl === 'string' && raw.curationUrl.includes('{cache_key}') ? raw.curationUrl.trim() : ''
     };
     logger.info(`[NumericalIntegrity] client '${cached.client}' at ${cached.url}`);
     return cached;
@@ -211,6 +213,20 @@ const setNote = async (reportId, note, curator = '') => {
   return call('PUT', `/api/reports/${reportId}/note`, { body: { note, curator }, curator });
 };
 
+/** The s3-manager page of a cache entry, from the configured template; '' when none is configured. */
+const curationUrlOf = (cacheKey) => {
+  const conf = getConfig();
+  if (!conf || !conf.curationUrl || !cacheKey) return '';
+  return conf.curationUrl.replace('{cache_key}', encodeURIComponent(String(cacheKey)));
+};
+
+/** Tell the service where the report is curated on the snapshot side (the s3-manager cache entry). */
+const setCurationUrl = async (reportId, url) => {
+  assertReportId(reportId);
+  if (typeof url !== 'string') throw new NumericalIntegrityError(400, 'url must be a string');
+  return call('PUT', `/api/reports/${reportId}/curation`, { body: { url } });
+};
+
 /** Tell the service where the report is embedded (the snapshot report page), so its shared view can lead back there. */
 const setBackUrl = async (reportId, url) => {
   assertReportId(reportId);
@@ -321,6 +337,8 @@ module.exports = {
   removeOverride,
   setNote,
   setBackUrl,
+  curationUrlOf,
+  setCurationUrl,
   revokeShare,
   rotateShare,
   refreshSignals,

@@ -4,5 +4,6 @@
   "privateKeyFile": "/path/to/snapshot-api.pem",
   "privateKey": "",
   "deadlineMs": 900000,
-  "pollMs": 5000
+  "pollMs": 5000,
+  "curationUrl": "https://s3-manager.example.org/cache/{cache_key}?instance=dev"
 }

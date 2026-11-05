@@ -777,7 +777,10 @@ above (`src/controllers/numericalIntegrityController.js`, `src/utils/numericalIn
 
 - once the snapshot-reports link of a TNQ request exists, it is recorded on the Numerical Integrity report
   (`PUT /api/reports/<id>/back`, best effort in `genshareManager`), so the report's shared view leads back to the
-  snapshot report even when opened from the bare share URL;
+  snapshot report even when opened from the bare share URL; with `curationUrl` set in `conf/numericalIntegrity.json`
+  (a template with `{cache_key}`, e.g. `https://s3-manager…/cache/{cache_key}?instance=dev`) the report also learns
+  the s3-manager page of its cache entry (`PUT /api/reports/<id>/curation`, at processing time and on every
+  curation action), which the service shows to its admins as "Curate in S3 Manager";
 - every action is relayed to the service with snapshot-api's own API client (`conf/numericalIntegrity.json`: `url`,
   `client`, `privateKey` or `privateKeyFile`; the admin page of the service generates the pair, section "API clients"),
   signed EdDSA tokens, `X-Curator` carrying the s3-manager user's name;

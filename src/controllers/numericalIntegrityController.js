@@ -85,6 +85,11 @@ const genshareTarget = () => {
  * curation action.
  */
 const refreshIntoCache = async (entry, who, { reason = null, patch_reason: patchReason = null, propagate_to: propagateTo = [] } = {}, fallback = 'Numerical Integrity signals refreshed') => {
+  // The report learns where it is curated (entries processed before the setting existed catch up here)
+  const curationUrl = ni.curationUrlOf(entry.cacheKey);
+  if (curationUrl) {
+    await ni.setCurationUrl(entry.reportId, curationUrl).catch((error) => logger.warn(`[NumericalIntegrity] could not set the curation link of report ${entry.reportId}: ${error.message}`));
+  }
   const target = genshareTarget();
   const signals = await ni.refreshSignals(target.baseUrl, target.apiKey, entry.reportId);
   const next = ni.applySignalsToResponse(entry.response, signals);

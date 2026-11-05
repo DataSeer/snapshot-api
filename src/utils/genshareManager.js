@@ -14,11 +14,12 @@ const cacheManager = require('./cacheManager');
 const numericalIntegrityManager = require('./numericalIntegrityManager');
 
 /**
- * Best effort: when the TNQ response names a Numerical Integrity report, record the snapshot report URL on it as
- * its back link. Never fails the request.
+ * Best effort: when the TNQ response names a Numerical Integrity report, record on it the snapshot report URL as
+ * its back link and, when configured, the s3-manager page of its cache entry as its curation link. Never fails
+ * the request.
  * @param {Array} responseArray - The genshare response items
  * @param {string} reportURL - The snapshot-reports URL of this request
- * @param {Object} session - Processing session, for the log
+ * @param {Object} session - Processing session, for the log (its cacheKey names the cache entry)
  */
 async function linkNumericalIntegrityReport(responseArray, reportURL, session) {
   if (!reportURL || !numericalIntegrityManager.isConfigured()) return;
@@ -29,6 +30,14 @@ async function linkNumericalIntegrityReport(responseArray, reportURL, session) {
     session.addLog(`[NumericalIntegrity] report ${reportId} now leads back to ${reportURL}`);
   } catch (error) {
     session.addLog(`[NumericalIntegrity] could not set the back link of report ${reportId}: ${error.message}`, 'WARN');
+  }
+  const curationUrl = numericalIntegrityManager.curationUrlOf(session.cacheKey);
+  if (!curationUrl) return;
+  try {
+    await numericalIntegrityManager.setCurationUrl(reportId, curationUrl);
+    session.addLog(`[NumericalIntegrity] report ${reportId} is curated at ${curationUrl}`);
+  } catch (error) {
+    session.addLog(`[NumericalIntegrity] could not set the curation link of report ${reportId}: ${error.message}`, 'WARN');
   }
 }
 // demoBypassManager is lazy-required inside processPDF to avoid the circular
