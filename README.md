@@ -782,8 +782,8 @@ changes only when a curator **publishes** the report's current state from snapsh
 
 | File | Numerical Integrity content |
 |------|-----------------------------|
-| `genshare/response.json` | genshare's output: the field list with the `__lm` suffixes (the four fields above and the statistical signals; what snapshot-reports reads; rewritten by a publish propagated to this request) and, at its root beside `timeline` and `cache`, `numerical_integrity`: what the service answered during the processing (outcome, error, duration, the report as returned without the tool runs), kept for debugging and never delivered to the client. |
-| `genshare/response.original.json` | The same as genshare produced it, never rewritten. |
+| `genshare/response.json` | The field list of genshare's output with the `__lm` suffixes: the four fields above and the statistical signals. What snapshot-reports reads. Rewritten by a publish propagated to this request. |
+| `genshare/response.original.json` | The whole answer of genshare as it produced it, never rewritten: the field list and its root keys (`timeline`, `cache`, `process_logs`, `modal_stats`…), among them `numerical_integrity`: what the service answered during the processing (`service`, `outcome` done / failed / refused / deadline_reached / not_configured, `error`, `duration_s`, `from_cache`, and `report`, the service's JSON without the tool runs). The place to look when the statistical fields are empty or wrong; never delivered to the client. |
 | `response.json` | The API response as delivered to the client (suffixes stripped, plus `report_link`). Rewritten by a propagated publish. `response.original.json` keeps the delivered one. |
 | `report/report.json` | The JSON report of the request's report kind (`report_link` and the fields that kind selects). |
 | `cache-ref.json` | The key of the cache entry this request consumed. |
