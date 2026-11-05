@@ -775,6 +775,9 @@ response (`statistical_report_id__lm`, `statistical_report_url__lm`); snapshot-r
 rendering the checks. Curation happens on the service, driven from snapshot-s3-manager's cache page through the routes
 above (`src/controllers/numericalIntegrityController.js`, `src/utils/numericalIntegrityManager.js`):
 
+- once the snapshot-reports link of a TNQ request exists, it is recorded on the Numerical Integrity report
+  (`PUT /api/reports/<id>/back`, best effort in `genshareManager`), so the report's shared view leads back to the
+  snapshot report even when opened from the bare share URL;
 - every action is relayed to the service with snapshot-api's own API client (`conf/numericalIntegrity.json`: `url`,
   `client`, `privateKey` or `privateKeyFile`; the admin page of the service generates the pair, section "API clients"),
   signed EdDSA tokens, `X-Curator` carrying the s3-manager user's name;

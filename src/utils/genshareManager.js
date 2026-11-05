@@ -11,6 +11,26 @@ const requestsManager = require('./requestsManager');
 const emailAlertManager = require('./emailAlertManager');
 const snapshotReportsManager = require('./snapshotReportsManager');
 const cacheManager = require('./cacheManager');
+const numericalIntegrityManager = require('./numericalIntegrityManager');
+
+/**
+ * Best effort: when the TNQ response names a Numerical Integrity report, record the snapshot report URL on it as
+ * its back link. Never fails the request.
+ * @param {Array} responseArray - The genshare response items
+ * @param {string} reportURL - The snapshot-reports URL of this request
+ * @param {Object} session - Processing session, for the log
+ */
+async function linkNumericalIntegrityReport(responseArray, reportURL, session) {
+  if (!reportURL || !numericalIntegrityManager.isConfigured()) return;
+  const reportId = numericalIntegrityManager.reportIdOf(responseArray);
+  if (!reportId) return;
+  try {
+    await numericalIntegrityManager.setBackUrl(reportId, reportURL);
+    session.addLog(`[NumericalIntegrity] report ${reportId} now leads back to ${reportURL}`);
+  } catch (error) {
+    session.addLog(`[NumericalIntegrity] could not set the back link of report ${reportId}: ${error.message}`, 'WARN');
+  }
+}
 // demoBypassManager is lazy-required inside processPDF to avoid the circular
 // dependency with this module's filterAndSortResponseForUser export.
 const dbManager = require('./dbManager');
@@ -1294,6 +1314,9 @@ const processPDF = async (data, session) => {
 
         // Store JSON Report
         session.setReport(jsonReport);
+
+        // Tell the Numerical Integrity service where its report is embedded, so its shared view leads back here
+        await linkNumericalIntegrityReport(response.data.response, reportURL, session);
 
       } catch (reportCreationError) {
         session.addLog(`[Reports] Error creating snapshot-reports report: ${reportCreationError.message}`, 'ERROR');

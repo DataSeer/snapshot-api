@@ -211,6 +211,13 @@ const setNote = async (reportId, note, curator = '') => {
   return call('PUT', `/api/reports/${reportId}/note`, { body: { note, curator }, curator });
 };
 
+/** Tell the service where the report is embedded (the snapshot report page), so its shared view can lead back there. */
+const setBackUrl = async (reportId, url) => {
+  assertReportId(reportId);
+  if (typeof url !== 'string') throw new NumericalIntegrityError(400, 'url must be a string');
+  return call('PUT', `/api/reports/${reportId}/back`, { body: { url } });
+};
+
 const revokeShare = async (reportId, curator = '') => {
   assertReportId(reportId);
   return call('POST', `/api/reports/${reportId}/share/revoke`, { curator });
@@ -313,6 +320,7 @@ module.exports = {
   setOverride,
   removeOverride,
   setNote,
+  setBackUrl,
   revokeShare,
   rotateShare,
   refreshSignals,
