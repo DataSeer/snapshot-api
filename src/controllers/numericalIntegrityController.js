@@ -84,14 +84,15 @@ const genshareTarget = () => {
  * canonical response, then propagate to the chosen consumers. Shared by every
  * curation action.
  */
-const refreshIntoCache = async (entry, who, { reason = null, patch_reason: patchReason = null, propagate_to: propagateTo = [] } = {}) => {
+const refreshIntoCache = async (entry, who, { reason = null, patch_reason: patchReason = null, propagate_to: propagateTo = [] } = {}, fallback = 'Numerical Integrity signals refreshed') => {
   const target = genshareTarget();
   const signals = await ni.refreshSignals(target.baseUrl, target.apiKey, entry.reportId);
   const next = ni.applySignalsToResponse(entry.response, signals);
   await cacheManager.patchCacheResponse(entry.cacheKey, next, {
     actor: who.curator ? `${who.actor} (${who.curator})` : who.actor,
-    // patch_reason is the cache page's reason; an override's own reason doubles as the patch reason when there is none
-    reason: patchReason || reason || null,
+    // patch_reason is the cache page's reason; an override's own reason doubles as the patch reason when there is
+    // none, and the action names itself when neither was given
+    reason: patchReason || reason || fallback,
     propagated_to: Array.isArray(propagateTo) ? propagateTo : [],
     summary: { items: next.length, numerical_integrity: entry.reportId, signals: [...signals.positive, ...signals.negative].map((s) => `${s.id}:${s.severity}`) }
   });
@@ -200,14 +201,14 @@ const refreshSignals = async (req, res) => {
   }
 };
 
-/** An action on the service followed by the refresh into the cache. */
-const curate = (where, action) => async (req, res) => {
+/** An action on the service followed by the refresh into the cache; `describe(req)` labels the patch when no reason was sent. */
+const curate = (where, action, describe) => async (req, res) => {
   const entry = await loadEntry(req, res);
   if (!entry) return;
   const who = whoIs(req);
   try {
     const outcome = await action(entry, who, req);
-    const result = await refreshIntoCache(entry, who, req.body || {});
+    const result = await refreshIntoCache(entry, who, req.body || {}, describe ? describe(req) : undefined);
     res.json({ success: true, report_id: entry.reportId, ...outcome, signals: result.signals, skipped: result.skipped });
   } catch (error) {
     onError(res, where, error);
@@ -217,28 +218,28 @@ const curate = (where, action) => async (req, res) => {
 /** PUT .../checks/:check/override  Body: { verdict?, recommendation?, summary?, reason, curator?, reason?, propagate_to? } */
 const overrideCheck = curate('overrideCheck', async (entry, who, req) => ({
   override: (await ni.setOverride(entry.reportId, req.params.check, req.body || {}, who.curator)).override
-}));
+}), (req) => `Override of ${req.params.check}`);
 
 /** DELETE .../checks/:check/override */
 const removeCheckOverride = curate('removeCheckOverride', async (entry, who, req) => {
   await ni.removeOverride(entry.reportId, req.params.check, who.curator);
   return { override: null };
-});
+}, (req) => `Override removed from ${req.params.check}`);
 
 /** PUT .../note  Body: { note, curator? } */
 const setReportNote = curate('setReportNote', async (entry, who, req) => ({
   note: (await ni.setNote(entry.reportId, req.body?.note, who.curator)).note
-}));
+}), () => 'Report note updated');
 
 /** POST .../share/revoke: the share link stops working; the cached statistical_report_url becomes null. */
 const revokeReportShare = curate('revokeReportShare', async (entry, who) => ({
   share_url: (await ni.revokeShare(entry.reportId, who.curator)).share_url
-}));
+}), () => 'Share link revoked');
 
 /** POST .../share/rotate: a new share link, written into the cache. */
 const rotateReportShare = curate('rotateReportShare', async (entry, who) => ({
   share_url: (await ni.rotateShare(entry.reportId, who.curator)).share_url
-}));
+}), () => 'Share link rotated');
 
 module.exports = {
   getNumericalIntegrity,
