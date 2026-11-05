@@ -32,11 +32,7 @@ jest.mock('../../../src/utils/numericalIntegrityManager', () => {
     isConfigured: jest.fn(() => true),
     getReport: jest.fn(),
     rerun: jest.fn(),
-    setOverride: jest.fn(),
-    removeOverride: jest.fn(),
-    setNote: jest.fn(),
-    revokeShare: jest.fn(),
-    rotateShare: jest.fn(),
+    setCurationUrl: jest.fn(),
     refreshSignals: jest.fn()
   };
 });
@@ -115,49 +111,47 @@ describe('entry lookup', () => {
   });
 });
 
-describe('override, note and share actions refresh the cached signals', () => {
-  test('PUT override calls the service, genshare, patches the cache and propagates', async () => {
-    ni.setOverride.mockResolvedValue({ override: { verdict: 'fail', reason: 'by hand' } });
+describe('diff and publish', () => {
+  test('GET diff lists the changes without writing anything', async () => {
+    ni.getReport.mockResolvedValue({ status: 'done' });
+    const res = createMockRes();
+    await controller.getSignalsDiff(req(), res);
+    expect(ni.refreshSignals).toHaveBeenCalledWith('http://genshare:5000', 'k', REPORT);
+    expect(cacheManager.patchCacheResponse).not.toHaveBeenCalled();
+    const body = res.json.mock.calls[0][0];
+    expect(body.success).toBe(true);
+    expect(body.changes.map((c) => c.key)).toEqual(['check:grim', 'signal:statistical_consistency', 'signal:statistical_inconsistencies']);
+  });
+
+  test('refresh with a selection publishes only those changes, propagates, and logs them', async () => {
+    ni.getReport.mockResolvedValue({ status: 'done' });
     dbManager.getCacheConsumerOwner.mockResolvedValueOnce('user1').mockResolvedValueOnce(null);
     const res = createMockRes();
-    await controller.overrideCheck(
-      req({ params: { cache_key: 'key1', check: 'grim' }, body: { verdict: 'fail', reason: 'by hand', curator: 'A Curator', propagate_to: ['r1', 'r2'], patch_reason: 'curation session' } }),
+    await controller.refreshSignals(
+      req({ body: { changes: ['check:grim', 'bogus key'], reason: 'publish the GRIM verdict', propagate_to: ['r1', 'r2'] }, headers: { 'x-curator': 'A Curator' } }),
       res
     );
-    expect(ni.setOverride).toHaveBeenCalledWith(REPORT, 'grim', expect.objectContaining({ verdict: 'fail', reason: 'by hand' }), 'A Curator');
-    expect(ni.refreshSignals).toHaveBeenCalledWith('http://genshare:5000', 'k', REPORT);
     const [key, next, audit] = cacheManager.patchCacheResponse.mock.calls[0];
     expect(key).toBe('key1');
     const by = Object.fromEntries(next.map((f) => [f.name, f.value]));
-    expect(by.positive_signals__lm.map((s) => s.id)).toEqual(['das_present']);
-    expect(by.negative_signals__lm.map((s) => s.id)).toEqual(['statistical_inconsistencies']);
-    expect(by.statistical_checks__lm).toEqual(signals.checks);
+    expect(by.statistical_checks__lm).toEqual([{ id: 'grim', name: 'GRIM', verdict: 'fail', advisory: false }]);
+    expect(by.positive_signals__lm.map((x) => x.id)).toEqual(['statistical_consistency', 'das_present']);
+    expect(by.negative_signals__lm).toEqual([]);
     expect(audit.actor).toBe('snapshot-s3-manager (A Curator)');
-    expect(audit.reason).toBe('curation session');
+    expect(audit.reason).toBe('publish the GRIM verdict');
+    expect(audit.summary.changes).toEqual(['check:grim']);
     expect(audit.propagated_to).toEqual(['r1', 'r2']);
     expect(cacheManager.propagateResponseToRequest).toHaveBeenCalledWith('user1', 'r1', next);
     const body = res.json.mock.calls[0][0];
     expect(body.success).toBe(true);
-    expect(body.override.verdict).toBe('fail');
     expect(body.skipped).toEqual([{ request_id: 'r2', reason: 'cache_key_mismatch_or_not_found' }]);
   });
 
-  test('revoke writes a null URL into the cache', async () => {
-    ni.revokeShare.mockResolvedValue({ share_url: null, share_revoked: true });
-    ni.refreshSignals.mockResolvedValue({ ...signals, report_url: null });
-    const res = createMockRes();
-    await controller.revokeReportShare(req({ headers: { 'x-curator': 'B' } }), res);
-    expect(ni.revokeShare).toHaveBeenCalledWith(REPORT, 'B');
-    const next = cacheManager.patchCacheResponse.mock.calls[0][1];
-    expect(next.find((f) => f.name === 'statistical_report_url__lm').value).toBeNull();
-    expect(res.json.mock.calls[0][0].share_url).toBeNull();
-  });
-
   test('a genshare failure leaves the cache untouched and answers 502', async () => {
-    ni.setNote.mockResolvedValue({ note: 'n' });
+    ni.getReport.mockResolvedValue({ status: 'done' });
     ni.refreshSignals.mockRejectedValue(new ni.NumericalIntegrityError(502, 'genshare did not answer: refused'));
     const res = createMockRes();
-    await controller.setReportNote(req({ body: { note: 'n' } }), res);
+    await controller.refreshSignals(req({ body: {} }), res);
     expect(res.status).toHaveBeenCalledWith(502);
     expect(cacheManager.patchCacheResponse).not.toHaveBeenCalled();
   });

@@ -7,10 +7,12 @@
 // and share URL in the TNQ response (statistical_report_id__lm,
 // statistical_report_url__lm). A curator, from snapshot-s3-manager's cache page,
 // may then re-run checks, override a result, set a note or revoke the share
-// link: this module calls the service for that (its own API client, EdDSA
+// link: this module reads the report from the service (its own API client, EdDSA
 // tokens signed here with node:crypto, no dependency), asks genshare-service to
-// rebuild the four signals from the report's effective verdicts, and
-// `applySignalsToResponse` writes them into the cached genshare response.
+// rebuild the four signals from the report's effective verdicts, `diffSignals`
+// compares them with the cached genshare response and `applySignalsToResponse`
+// writes them into it, all of them or a selection. Curation itself (overrides,
+// notes, share links) happens on the service; this side only publishes its state.
 //
 // Configuration: conf/numericalIntegrity.json (see .default). Without it, every
 // call answers "not configured" and the controller returns 503.
@@ -174,45 +176,6 @@ const waitForReport = async (reportId, { deadlineMs, pollMs } = {}) => {
   return report;
 };
 
-/** Validate the override body before sending it: the service checks too, but a clear 400 is better here. */
-const checkOverrideBody = (body) => {
-  if (!body || typeof body !== 'object') throw new NumericalIntegrityError(400, 'Send a JSON object');
-  const { verdict, recommendation, summary, reason } = body;
-  if (verdict !== undefined && verdict !== null && !VERDICTS.includes(verdict)) {
-    throw new NumericalIntegrityError(400, `verdict must be one of ${VERDICTS.join(', ')}`);
-  }
-  if ([recommendation, summary].some((v) => v !== undefined && v !== null && typeof v !== 'string')) {
-    throw new NumericalIntegrityError(400, 'recommendation and summary must be strings');
-  }
-  if (typeof reason !== 'string' || !reason.trim()) throw new NumericalIntegrityError(400, 'A reason is required');
-  if ((verdict === undefined || verdict === null) && !recommendation && !summary) {
-    throw new NumericalIntegrityError(400, 'Give at least one of verdict, recommendation or summary');
-  }
-};
-
-const setOverride = async (reportId, checkId, body, curator = '') => {
-  assertReportId(reportId);
-  if (!CHECK_ID.test(String(checkId || ''))) throw new NumericalIntegrityError(400, 'Malformed check id');
-  checkOverrideBody(body);
-  const { verdict = null, recommendation = null, summary = null, reason } = body;
-  return call('PUT', `/api/reports/${reportId}/checks/${checkId}/override`, {
-    body: { verdict, recommendation, summary, reason, curator },
-    curator
-  });
-};
-
-const removeOverride = async (reportId, checkId, curator = '') => {
-  assertReportId(reportId);
-  if (!CHECK_ID.test(String(checkId || ''))) throw new NumericalIntegrityError(400, 'Malformed check id');
-  return call('DELETE', `/api/reports/${reportId}/checks/${checkId}/override`, { curator });
-};
-
-const setNote = async (reportId, note, curator = '') => {
-  assertReportId(reportId);
-  if (typeof note !== 'string') throw new NumericalIntegrityError(400, 'note must be a string');
-  return call('PUT', `/api/reports/${reportId}/note`, { body: { note, curator }, curator });
-};
-
 /** The s3-manager page of a cache entry, from the configured template; '' when none is configured. */
 const curationUrlOf = (cacheKey) => {
   const conf = getConfig();
@@ -232,16 +195,6 @@ const setBackUrl = async (reportId, url) => {
   assertReportId(reportId);
   if (typeof url !== 'string') throw new NumericalIntegrityError(400, 'url must be a string');
   return call('PUT', `/api/reports/${reportId}/back`, { body: { url } });
-};
-
-const revokeShare = async (reportId, curator = '') => {
-  assertReportId(reportId);
-  return call('POST', `/api/reports/${reportId}/share/revoke`, { curator });
-};
-
-const rotateShare = async (reportId, curator = '') => {
-  assertReportId(reportId);
-  return call('POST', `/api/reports/${reportId}/share/rotate`, { curator });
 };
 
 /**
@@ -297,30 +250,87 @@ const reportIdOf = (responseArray) => {
  * @param {Object} signals - genshare's answer: {report_id, report_url, checks, positive, negative}
  * @returns {Array} a new array
  */
-const applySignalsToResponse = (responseArray, signals) => {
+const applySignalsToResponse = (responseArray, signals, selection = null) => {
   const items = JSON.parse(JSON.stringify(Array.isArray(responseArray) ? responseArray : []));
+  const wanted = Array.isArray(selection) ? new Set(selection.map(String)) : null;
+  const take = (key) => !wanted || wanted.has(key);
   const isStatistical = (signal) => signal && SIGNAL_IDS.includes(signal.id);
-  const order = (list) => [...list].sort((a, b) => rank(a.severity) - rank(b.severity));
   const rank = (severity) => ({ strong: 0, moderate: 1, weak: 2 })[severity] ?? 3;
+  const order = (list) => [...list].sort((a, b) => rank(a.severity) - rank(b.severity));
+  const fresh = { positive: Array.isArray(signals.positive) ? signals.positive : [], negative: Array.isArray(signals.negative) ? signals.negative : [] };
 
-  const replace = (base, fresh) => {
-    const field = findField(items, base);
-    if (!field) return;
-    const kept = (Array.isArray(field.value) ? field.value : []).filter((signal) => !isStatistical(signal));
-    field.value = order([...kept, ...(Array.isArray(fresh) ? fresh : [])]);
-  };
-  replace('positive_signals', signals.positive);
-  replace('negative_signals', signals.negative);
+  // Signals: every statistical signal, or only the selected ids; a selected id absent from the fresh lists is removed
+  for (const side of ['positive', 'negative']) {
+    const field = findField(items, `${side}_signals`);
+    if (!field) continue;
+    const current = Array.isArray(field.value) ? field.value : [];
+    const kept = current.filter((signal) => !isStatistical(signal) || !take(`signal:${signal.id}`));
+    const added = fresh[side].filter((signal) => take(`signal:${signal.id}`));
+    field.value = order([...kept, ...added]);
+  }
 
   const set = (base, value, description) => {
     const field = findField(items, base);
     if (field) field.value = value;
     else if (description) items.push({ name: `${base}__lm`, description, value });
   };
-  set('statistical_checks', Array.isArray(signals.checks) ? signals.checks : [], 'The applicable statistical checks behind the statistical_* signals (id, name, verdict, advisory)');
-  set('statistical_report_url', signals.report_url || null, 'Share URL of the Numerical Integrity report');
-  if (signals.report_id) set('statistical_report_id', signals.report_id, 'Id of the Numerical Integrity report');
+  // Checks: the whole list, or the selected ids merged into the cached list
+  const freshChecks = Array.isArray(signals.checks) ? signals.checks : [];
+  if (!wanted) {
+    set('statistical_checks', freshChecks, 'The applicable statistical checks behind the statistical_* signals (id, name, verdict, advisory)');
+  } else {
+    const field = findField(items, 'statistical_checks');
+    const current = field && Array.isArray(field.value) ? field.value : [];
+    const merged = current.filter((check) => !take(`check:${check.id}`));
+    for (const check of freshChecks) if (take(`check:${check.id}`)) merged.push(check);
+    const position = (check) => { const i = freshChecks.findIndex((c) => c.id === check.id); return i < 0 ? Number.MAX_SAFE_INTEGER : i; };
+    set('statistical_checks', merged.sort((a, b) => position(a) - position(b)), 'The applicable statistical checks behind the statistical_* signals (id, name, verdict, advisory)');
+  }
+  if (take('report_url')) set('statistical_report_url', signals.report_url || null, 'Share URL of the Numerical Integrity report');
+  if (signals.report_id && take('report_id')) set('statistical_report_id', signals.report_id, 'Id of the Numerical Integrity report');
   return items;
+};
+
+/**
+ * What differs between the cached response and the signals genshare builds now: one entry per atomic change the
+ * curator may take or leave (`key` is what `applySignalsToResponse` accepts in its selection).
+ * @param {Array} responseArray - The cached genshare response items
+ * @param {Object} signals - genshare's answer for the report as it is now
+ * @returns {Array<{key:string, kind:string, id:string|null, label:string, cached:*, current:*}>}
+ */
+const diffSignals = (responseArray, signals) => {
+  const items = Array.isArray(responseArray) ? responseArray : [];
+  const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const changes = [];
+  const value = (base) => findField(items, base)?.value;
+
+  const cachedUrl = value('statistical_report_url') ?? null;
+  const currentUrl = signals.report_url || null;
+  if (!same(cachedUrl, currentUrl)) changes.push({ key: 'report_url', kind: 'report_url', id: null, label: 'Share URL of the report', cached: cachedUrl, current: currentUrl });
+  const cachedId = value('statistical_report_id') ?? null;
+  if (signals.report_id && !same(cachedId, signals.report_id)) changes.push({ key: 'report_id', kind: 'report_id', id: null, label: 'Report id', cached: cachedId, current: signals.report_id });
+
+  const cachedChecks = Array.isArray(value('statistical_checks')) ? value('statistical_checks') : [];
+  const currentChecks = Array.isArray(signals.checks) ? signals.checks : [];
+  const ids = [...new Set([...currentChecks.map((c) => c.id), ...cachedChecks.map((c) => c.id)])];
+  for (const id of ids) {
+    const before = cachedChecks.find((c) => c.id === id) ?? null;
+    const after = currentChecks.find((c) => c.id === id) ?? null;
+    if (!same(before, after)) changes.push({ key: `check:${id}`, kind: 'check', id, label: (after ?? before).name || id, cached: before, current: after });
+  }
+
+  const statistical = (base) => (Array.isArray(value(base)) ? value(base) : []).filter((signal) => signal && SIGNAL_IDS.includes(signal.id));
+  const cachedSignals = [...statistical('positive_signals').map((x) => ({ ...x, side: 'positive' })), ...statistical('negative_signals').map((x) => ({ ...x, side: 'negative' }))];
+  const currentSignals = [
+    ...(Array.isArray(signals.positive) ? signals.positive : []).map((x) => ({ ...x, side: 'positive' })),
+    ...(Array.isArray(signals.negative) ? signals.negative : []).map((x) => ({ ...x, side: 'negative' }))
+  ];
+  for (const id of SIGNAL_IDS) {
+    const before = cachedSignals.find((x) => x.id === id) ?? null;
+    const after = currentSignals.find((x) => x.id === id) ?? null;
+    if (!same(before, after)) changes.push({ key: `signal:${id}`, kind: 'signal', id, label: (after ?? before).label || id, cached: before, current: after });
+  }
+  return changes;
 };
 
 module.exports = {
@@ -333,17 +343,13 @@ module.exports = {
   getReport,
   rerun,
   waitForReport,
-  setOverride,
-  removeOverride,
-  setNote,
   setBackUrl,
   curationUrlOf,
   setCurationUrl,
-  revokeShare,
-  rotateShare,
   refreshSignals,
   genshareBaseUrlOf,
   findField,
   reportIdOf,
-  applySignalsToResponse
+  applySignalsToResponse,
+  diffSignals
 };

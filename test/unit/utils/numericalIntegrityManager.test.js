@@ -76,22 +76,20 @@ describe('calls to the service', () => {
     expect(call.headers['Content-Type']).toBe('application/pdf');
   });
 
-  test('validates ids and override bodies before calling', async () => {
+  test('validates ids before calling', async () => {
     await expect(ni.getReport('nope')).rejects.toMatchObject({ status: 400 });
     await expect(ni.rerun('12345678-1234-4123-8123-123456789012', Buffer.from(''), { checks: ['bad id'] })).rejects.toMatchObject({ status: 400 });
-    await expect(ni.setOverride('12345678-1234-4123-8123-123456789012', 'grim', { reason: 'x' })).rejects.toMatchObject({ status: 400, message: /at least one/ });
-    await expect(ni.setOverride('12345678-1234-4123-8123-123456789012', 'grim', { verdict: 'pass' })).rejects.toMatchObject({ status: 400, message: /reason/ });
-    await expect(ni.setOverride('12345678-1234-4123-8123-123456789012', 'grim', { verdict: 'maybe', reason: 'x' })).rejects.toMatchObject({ status: 400, message: /verdict/ });
+    await expect(ni.setBackUrl('nope', 'https://x')).rejects.toMatchObject({ status: 400 });
     expect(axios).not.toHaveBeenCalled();
   });
 
-  test('sends the override with the curator and the X-Curator header', async () => {
-    axios.mockResolvedValue({ status: 200, data: { override: { verdict: 'minor' } } });
-    await ni.setOverride('12345678-1234-4123-8123-123456789012', 'grim', { verdict: 'minor', reason: 'last digit' }, 'A Curator');
+  test('the back and curation links are PUT to the service', async () => {
+    axios.mockResolvedValue({ status: 200, data: { back_url: 'https://reports.example/r/t' } });
+    await ni.setBackUrl('12345678-1234-4123-8123-123456789012', 'https://reports.example/r/t');
     const call = axios.mock.calls[0][0];
     expect(call.method).toBe('PUT');
-    expect(call.data).toEqual({ verdict: 'minor', recommendation: null, summary: null, reason: 'last digit', curator: 'A Curator' });
-    expect(call.headers['X-Curator']).toBe('A Curator');
+    expect(call.url).toMatch(/\/api\/reports\/12345678-1234-4123-8123-123456789012\/back$/);
+    expect(call.data).toEqual({ url: 'https://reports.example/r/t' });
   });
 
   test('waitForReport polls until the report has settled', async () => {
@@ -159,6 +157,37 @@ describe('applySignalsToResponse', () => {
     expect(by.statistical_report_url__lm).toBeNull();
     expect(by.statistical_report_id__lm).toBe(signals.report_id);
     expect(by.statistical_checks__lm).toEqual(signals.checks);
+  });
+
+  test('a selection publishes only the chosen changes', () => {
+    const fresh = {
+      ...signals,
+      checks: [{ id: 'grim', name: 'GRIM', verdict: 'fail', advisory: false }, { id: 'sprite', name: 'SPRITE', verdict: 'pass', advisory: false }],
+      positive: [{ id: 'statistical_consistency', label: 'Consistent', severity: 'moderate' }],
+      negative: [{ id: 'statistical_inconsistencies', label: 'Inconsistent', severity: 'strong', polarity: 'negative' }]
+    };
+    const next = ni.applySignalsToResponse(response, fresh, ['check:sprite', 'signal:statistical_inconsistencies']);
+    const by = Object.fromEntries(next.map((f) => [f.name, f.value]));
+    // the chosen check is added, the other keeps its cached verdict; the chosen signal is added, the other keeps its cached severity
+    expect(by.statistical_checks__lm).toEqual([{ id: 'grim', name: 'GRIM', verdict: 'pass', advisory: false }, { id: 'sprite', name: 'SPRITE', verdict: 'pass', advisory: false }]);
+    expect(by.negative_signals__lm.map((x) => x.id)).toEqual(['statistical_inconsistencies', 'broken_url']);
+    expect(by.positive_signals__lm.find((x) => x.id === 'statistical_consistency').severity).toBe('strong');
+    expect(by.statistical_report_url__lm).toBe('https://ni.example/r/x?k=old');
+  });
+
+  test('diffSignals lists the share URL, each check and each statistical signal that differ', () => {
+    const fresh = {
+      ...signals,
+      checks: [{ id: 'grim', name: 'GRIM', verdict: 'fail', advisory: false }, { id: 'sprite', name: 'SPRITE', verdict: 'pass', advisory: false }],
+      positive: [],
+      negative: [{ id: 'statistical_inconsistencies', label: 'Inconsistent', severity: 'strong', polarity: 'negative' }]
+    };
+    const keys = ni.diffSignals(response, fresh).map((c) => c.key);
+    expect(keys).toEqual(['report_url', 'check:grim', 'check:sprite', 'signal:statistical_consistency', 'signal:statistical_inconsistencies']);
+    const grim = ni.diffSignals(response, fresh).find((c) => c.key === 'check:grim');
+    expect(grim.cached.verdict).toBe('pass');
+    expect(grim.current.verdict).toBe('fail');
+    expect(ni.diffSignals(ni.applySignalsToResponse(response, fresh), fresh)).toEqual([]);
   });
 
   test('reportIdOf reads the id with or without the suffix', () => {

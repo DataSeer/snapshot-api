@@ -84,7 +84,8 @@ const genshareTarget = () => {
  * canonical response, then propagate to the chosen consumers. Shared by every
  * curation action.
  */
-const refreshIntoCache = async (entry, who, { reason = null, patch_reason: patchReason = null, propagate_to: propagateTo = [] } = {}, fallback = 'Numerical Integrity signals refreshed') => {
+const refreshIntoCache = async (entry, who, { reason = null, patch_reason: patchReason = null, propagate_to: propagateTo = [], changes = null } = {}, fallback = 'Numerical Integrity signals published') => {
+  const selection = Array.isArray(changes) ? changes.map(String).filter((key) => /^(report_url|report_id|check:[a-z0-9_]{1,64}|signal:[a-z_]{1,64})$/.test(key)) : null;
   // The report learns where it is curated (entries processed before the setting existed catch up here)
   const curationUrl = ni.curationUrlOf(entry.cacheKey);
   if (curationUrl) {
@@ -92,14 +93,14 @@ const refreshIntoCache = async (entry, who, { reason = null, patch_reason: patch
   }
   const target = genshareTarget();
   const signals = await ni.refreshSignals(target.baseUrl, target.apiKey, entry.reportId);
-  const next = ni.applySignalsToResponse(entry.response, signals);
+  const next = ni.applySignalsToResponse(entry.response, signals, selection);
   await cacheManager.patchCacheResponse(entry.cacheKey, next, {
     actor: who.curator ? `${who.actor} (${who.curator})` : who.actor,
     // patch_reason is the cache page's reason; an override's own reason doubles as the patch reason when there is
     // none, and the action names itself when neither was given
     reason: patchReason || reason || fallback,
     propagated_to: Array.isArray(propagateTo) ? propagateTo : [],
-    summary: { items: next.length, numerical_integrity: entry.reportId, signals: [...signals.positive, ...signals.negative].map((s) => `${s.id}:${s.severity}`) }
+    summary: { items: next.length, numerical_integrity: entry.reportId, signals: [...signals.positive, ...signals.negative].map((s) => `${s.id}:${s.severity}`), changes: selection ?? 'all' }
   });
   const skipped = [];
   for (const requestId of Array.isArray(propagateTo) ? propagateTo : []) {
@@ -189,9 +190,29 @@ const rerunChecks = async (req, res) => {
 };
 
 /**
+ * GET .../numerical-integrity/diff
+ * The report as it is now against the cached copy: the signals genshare builds from it, and the list of atomic
+ * changes (share URL, each check, each statistical signal) a curator may publish or leave. Nothing is written.
+ */
+const getSignalsDiff = async (req, res) => {
+  const entry = await loadEntry(req, res);
+  if (!entry) return;
+  try {
+    const report = await ni.getReport(entry.reportId);
+    const target = genshareTarget();
+    const signals = await ni.refreshSignals(target.baseUrl, target.apiKey, entry.reportId);
+    res.json({ success: true, report_id: entry.reportId, status: report.status, current: signals, changes: ni.diffSignals(entry.response, signals) });
+  } catch (error) {
+    onError(res, 'getSignalsDiff', error);
+  }
+};
+
+/**
  * POST .../numerical-integrity/refresh
- * Body: { reason?: string (or patch_reason), propagate_to?: string[], curator?: string }
- * Rebuild the signals from the report as it is now and write them into the cache. 409 while a re-run is running.
+ * Body: { reason?: string (or patch_reason), propagate_to?: string[], changes?: string[] (keys from GET .../diff;
+ * absent = everything), curator?: string }
+ * Publish the report's current state into the cache: rebuild the signals and write all of them, or only the
+ * selected changes. 409 while a re-run is running.
  */
 const refreshSignals = async (req, res) => {
   const entry = await loadEntry(req, res);
@@ -206,53 +227,9 @@ const refreshSignals = async (req, res) => {
   }
 };
 
-/** An action on the service followed by the refresh into the cache; `describe(req)` labels the patch when no reason was sent. */
-const curate = (where, action, describe) => async (req, res) => {
-  const entry = await loadEntry(req, res);
-  if (!entry) return;
-  const who = whoIs(req);
-  try {
-    const outcome = await action(entry, who, req);
-    const result = await refreshIntoCache(entry, who, req.body || {}, describe ? describe(req) : undefined);
-    res.json({ success: true, report_id: entry.reportId, ...outcome, signals: result.signals, skipped: result.skipped });
-  } catch (error) {
-    onError(res, where, error);
-  }
-};
-
-/** PUT .../checks/:check/override  Body: { verdict?, recommendation?, summary?, reason, curator?, reason?, propagate_to? } */
-const overrideCheck = curate('overrideCheck', async (entry, who, req) => ({
-  override: (await ni.setOverride(entry.reportId, req.params.check, req.body || {}, who.curator)).override
-}), (req) => `Override of ${req.params.check}`);
-
-/** DELETE .../checks/:check/override */
-const removeCheckOverride = curate('removeCheckOverride', async (entry, who, req) => {
-  await ni.removeOverride(entry.reportId, req.params.check, who.curator);
-  return { override: null };
-}, (req) => `Override removed from ${req.params.check}`);
-
-/** PUT .../note  Body: { note, curator? } */
-const setReportNote = curate('setReportNote', async (entry, who, req) => ({
-  note: (await ni.setNote(entry.reportId, req.body?.note, who.curator)).note
-}), () => 'Report note updated');
-
-/** POST .../share/revoke: the share link stops working; the cached statistical_report_url becomes null. */
-const revokeReportShare = curate('revokeReportShare', async (entry, who) => ({
-  share_url: (await ni.revokeShare(entry.reportId, who.curator)).share_url
-}), () => 'Share link revoked');
-
-/** POST .../share/rotate: a new share link, written into the cache. */
-const rotateReportShare = curate('rotateReportShare', async (entry, who) => ({
-  share_url: (await ni.rotateShare(entry.reportId, who.curator)).share_url
-}), () => 'Share link rotated');
-
 module.exports = {
   getNumericalIntegrity,
+  getSignalsDiff,
   rerunChecks,
-  refreshSignals,
-  overrideCheck,
-  removeCheckOverride,
-  setReportNote,
-  revokeReportShare,
-  rotateReportShare
+  refreshSignals
 };
