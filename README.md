@@ -782,7 +782,7 @@ changes only when a curator **publishes** the report's current state from snapsh
 
 | File | Numerical Integrity content |
 |------|-----------------------------|
-| `genshare/response.json` | genshare's output with the `__lm` suffixes; the four fields above and the statistical signals. What snapshot-reports reads. Rewritten by a publish propagated to this request. |
+| `genshare/response.json` | genshare's output: the field list with the `__lm` suffixes (the four fields above and the statistical signals; what snapshot-reports reads; rewritten by a publish propagated to this request) and, at its root beside `timeline` and `cache`, `numerical_integrity`: what the service answered during the processing (outcome, error, duration, the report as returned without the tool runs), kept for debugging and never delivered to the client. |
 | `genshare/response.original.json` | The same as genshare produced it, never rewritten. |
 | `response.json` | The API response as delivered to the client (suffixes stripped, plus `report_link`). Rewritten by a propagated publish. `response.original.json` keeps the delivered one. |
 | `report/report.json` | The JSON report of the request's report kind (`report_link` and the fields that kind selects). |
