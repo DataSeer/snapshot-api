@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.20.1](https://github.com/DataSeer/snapshot-api/compare/v3.20.0...v3.20.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **numerical-integrity:** a refusal of this instance's client by the service is a 502 naming what to check, not a 401 that snapshot-s3-manager reads as an ended session ([1afe7dc](https://github.com/DataSeer/snapshot-api/commits/1afe7dcfcfb94689f528a91f2ababd22d80ccfd5))
+
 ## [3.20.0](https://github.com/DataSeer/snapshot-api/compare/v3.19.0...v3.20.0) (2026-11-06)
 
 
