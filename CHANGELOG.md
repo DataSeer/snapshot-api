@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.20.0](https://github.com/DataSeer/snapshot-api/compare/v3.19.0...v3.20.0) (2026-11-06)
+
+
+### Features
+
+* **numerical-integrity:** read the Numerical Integrity report behind a TNQ cache entry, compare it with the cached copy and publish the selected changes; re-run its checks with the PDF kept on S3 ([d323821](https://github.com/DataSeer/snapshot-api/commits/d323821a174d78abd72813b42ae3bb8d91529b01))
+* **numerical-integrity:** record the snapshot report link and the snapshot-s3-manager page of the cache entry on the report ([9aa62d7](https://github.com/DataSeer/snapshot-api/commits/9aa62d7a9e131ca8e31d49ca88aa8bf855e967cc)) ([15077d5](https://github.com/DataSeer/snapshot-api/commits/15077d5cdbb942332fe3f51ec1c6d375aee71db0))
+* **cache:** the patch log names the person and the fields changed ([2686ffe](https://github.com/DataSeer/snapshot-api/commits/2686ffe5ea999897f99f380029d470c7cbcbf366))
+
+
+### Bug Fixes
+
+* **numerical-integrity:** compare the cached checks with the report whatever the order of their keys ([633669c](https://github.com/DataSeer/snapshot-api/commits/633669cc82e84af9fd4965a02c15a3473c35a407))
+
+
+### Documentation
+
+* **numerical-integrity:** who stores what, the publish flow and the configuration (`conf/numericalIntegrity.json`, four permission routes) ([d52cc70](https://github.com/DataSeer/snapshot-api/commits/d52cc70a476df60158f2784777429d480f9c8c22))
+
+## [3.19.0](https://github.com/DataSeer/snapshot-api/compare/v3.18.1...v3.19.0) (2026-11-02)
+
+### [3.18.1](https://github.com/DataSeer/snapshot-api/compare/v3.18.0...v3.18.1) (2026-11-02)
+
+
+### Chores
+
+* **deps:** clear all 20 npm advisories ([df4b978](https://github.com/DataSeer/snapshot-api/commits/df4b9784f7fa59a1284ddc10ebc7c0ad081b6a29))
+* **runtime:** move to Node 24.22.1 (LTS) ([ea0d712](https://github.com/DataSeer/snapshot-api/commits/ea0d71219384e30a77c8af08b683fc11f2085752))
+
+## [3.18.0](https://github.com/DataSeer/snapshot-api/compare/v3.17.1...v3.18.0) (2026-09-01)
+
+
+### Features
+
+* **reports:** generate missing report URLs on demand ([7816df8](https://github.com/DataSeer/snapshot-api/commits/7816df81e6c156a5d9779cbb7e314562df5c5ad6))
+
+
+### Bug Fixes
+
+* **rate-limit:** reject every request when a user max is 0 ([9c8aade](https://github.com/DataSeer/snapshot-api/commits/9c8aade851a7916305c684204b23681d69f0aedd))
+
+
+### Documentation
+
+* **deploy:** document the systemd deployment and restart policy ([cc5e02b](https://github.com/DataSeer/snapshot-api/commits/cc5e02bf2746d780bfa20ba8a9413eba43439e85))
+* refresh API documentation and guard internal-only files ([5e11e95](https://github.com/DataSeer/snapshot-api/commits/5e11e95413933664014656ea5c86eceab5bf8a8d))
+
 ### [3.17.1](https://github.com/DataSeer/snapshot-api/compare/v3.17.0...v3.17.1) (2026-07-14)
 
 

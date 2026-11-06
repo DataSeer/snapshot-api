@@ -76,6 +76,12 @@ const {
   getDemoRequest,
   patchDemoRequest
 } = require('../controllers/demoRequestsController');
+const {
+  getNumericalIntegrity,
+  getSignalsDiff,
+  rerunChecks,
+  refreshSignals
+} = require('../controllers/numericalIntegrityController');
 const { authenticateToken } = require('../middleware/auth');
 const { checkPermissions } = require('../middleware/permissions');
 const rateLimiter = require('../utils/rateLimiter');
@@ -263,6 +269,12 @@ authenticatedRouter.get('/snapshot-s3-manager/cache/:cache_key/original', getCac
 authenticatedRouter.get('/snapshot-s3-manager/cache/:cache_key', getCacheEntry);
 authenticatedRouter.patch('/snapshot-s3-manager/cache/:cache_key', patchCacheEntry);
 authenticatedRouter.delete('/snapshot-s3-manager/cache/:cache_key', deleteCacheEntry);
+
+// Curation of the statistical checks (Numerical Integrity service) behind a TNQ cache entry
+authenticatedRouter.get('/snapshot-s3-manager/cache/:cache_key/numerical-integrity', getNumericalIntegrity);
+authenticatedRouter.get('/snapshot-s3-manager/cache/:cache_key/numerical-integrity/diff', getSignalsDiff);
+authenticatedRouter.post('/snapshot-s3-manager/cache/:cache_key/numerical-integrity/rerun', rerunChecks);
+authenticatedRouter.post('/snapshot-s3-manager/cache/:cache_key/numerical-integrity/refresh', refreshSignals);
 
 // Mount the authenticated router
 unauthenticatedRouter.use('/', authenticatedRouter);
