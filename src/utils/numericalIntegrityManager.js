@@ -300,7 +300,9 @@ const applySignalsToResponse = (responseArray, signals, selection = null) => {
  */
 const diffSignals = (responseArray, signals) => {
   const items = Array.isArray(responseArray) ? responseArray : [];
-  const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  // Compared whatever the order of the keys: the pipeline and the signals endpoint do not serialise alike
+  const canon = (value) => JSON.stringify(value ?? null, (key, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v));
+  const same = (a, b) => canon(a) === canon(b);
   const changes = [];
   const value = (base) => findField(items, base)?.value;
 

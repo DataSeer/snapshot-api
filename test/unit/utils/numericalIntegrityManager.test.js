@@ -190,6 +190,12 @@ describe('applySignalsToResponse', () => {
     expect(ni.diffSignals(ni.applySignalsToResponse(response, fresh), fresh)).toEqual([]);
   });
 
+  test('diffSignals ignores the order of the keys', () => {
+    const cached = [{ name: 'statistical_checks__lm', value: [{ id: 'grim', name: 'GRIM', verdict: 'pass', advisory: false }] }, { name: 'statistical_report_url__lm', value: 'u' }, { name: 'negative_signals__lm', value: [{ id: 'statistical_inconsistencies', severity: 'weak', label: 'L' }] }];
+    const fresh = { report_url: 'u', checks: [{ advisory: false, verdict: 'pass', name: 'GRIM', id: 'grim' }], positive: [], negative: [{ label: 'L', severity: 'weak', id: 'statistical_inconsistencies' }] };
+    expect(ni.diffSignals(cached, fresh)).toEqual([]);
+  });
+
   test('reportIdOf reads the id with or without the suffix', () => {
     expect(ni.reportIdOf(response)).toBe('12345678-1234-4123-8123-123456789012');
     expect(ni.reportIdOf([{ name: 'statistical_report_id', value: '12345678-1234-4123-8123-123456789012' }])).toBe('12345678-1234-4123-8123-123456789012');
