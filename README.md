@@ -809,6 +809,9 @@ service's data is stored here. Overrides, notes and the audit trail exist only o
   canonical response with `patchCacheResponse` (the other signals stay) and propagated to the requests listed in
   `propagate_to[]` (their `genshare/response.json` and `response.json`); the patch log records the actor
   (`<user> (<X-Curator>)`), the reason and the changes.
+- A hand edit of the cached response (`PATCH /snapshot-s3-manager/cache/:cache_key`, the generic editor of
+  snapshot-s3-manager) is logged the same way: the actor with the person named by `X-Curator`, the reason, and in
+  `summary.changed` the names of the response items whose value changed, was added or was removed.
 - `POST .../rerun` sends the PDF of a consumer request (found on S3 by `pdf_hash`, the service keeps no PDF) to the
   service, for the listed checks or the whole analysis. It answers 202; the page polls `GET .../numerical-integrity`
   and offers the diff once `report.status` is no longer `running`.
