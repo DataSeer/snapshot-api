@@ -370,6 +370,34 @@
         "allowed": ["admin", "snapshot-s3-manager"],
         "blocked": []
       }
+    },
+    "/snapshot-s3-manager/cache/:cache_key/numerical-integrity": {
+      "GET": {
+        "description": "Numerical Integrity report behind a TNQ cache entry (model output, overrides, effective values)",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/cache/:cache_key/numerical-integrity/diff": {
+      "GET": {
+        "description": "The Numerical Integrity report as it is now against the cached copy: the changes a curator may publish",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/cache/:cache_key/numerical-integrity/rerun": {
+      "POST": {
+        "description": "Re-run chosen checks (or the whole analysis) on the Numerical Integrity service with the PDF from S3 (body: { checks?: string[], curator?: string })",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
+    },
+    "/snapshot-s3-manager/cache/:cache_key/numerical-integrity/refresh": {
+      "POST": {
+        "description": "Rebuild the statistical_* signals from the report as it is now and write them into the cache (body: { reason?, propagate_to?, curator? })",
+        "allowed": ["admin", "snapshot-s3-manager"],
+        "blocked": []
+      }
     }
   }
 }
