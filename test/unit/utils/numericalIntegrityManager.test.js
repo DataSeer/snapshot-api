@@ -203,3 +203,24 @@ describe('applySignalsToResponse', () => {
     expect(ni.reportIdOf([])).toBeNull();
   });
 });
+
+describe('the service refusing this instance', () => {
+  test('a 401 or 403 from the service is a bad gateway that says what to check, never a 401', async () => {
+    configure({ client: 'snapshot-api-dev' });
+    for (const [status, error] of [[401, 'Unknown or disabled client.'], [403, 'Only API clients and admins may curate a report.']]) {
+      axios.mockResolvedValue({ status, data: { error } });
+      await expect(ni.getReport('12345678-1234-4123-8123-123456789012')).rejects.toMatchObject({
+        status: 502,
+        message: expect.stringContaining(`refused this instance's client 'snapshot-api-dev' (${error})`)
+      });
+    }
+  });
+
+  test('the other statuses of the service are passed on as they are', async () => {
+    configure();
+    axios.mockResolvedValue({ status: 404, data: { error: 'No report with that id.' } });
+    await expect(ni.getReport('12345678-1234-4123-8123-123456789012')).rejects.toMatchObject({ status: 404, message: 'Numerical Integrity: No report with that id.' });
+    axios.mockResolvedValue({ status: 409, data: { error: 'The report is still running; wait for it to finish.' } });
+    await expect(ni.getReport('12345678-1234-4123-8123-123456789012')).rejects.toMatchObject({ status: 409 });
+  });
+});

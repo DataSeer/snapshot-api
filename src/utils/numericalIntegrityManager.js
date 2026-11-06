@@ -114,6 +114,7 @@ const assertReportId = (id) => {
  * One call to the service. Answers the parsed JSON; a non-2xx answer becomes a
  * NumericalIntegrityError carrying the service's status and message, so the
  * controller can pass them on (404 unknown report, 409 still running, ...).
+ * A 401 or 403 is about this instance's own client and becomes a 502.
  */
 const call = async (method, path, { body, headers = {}, curator = '', timeout = 60000 } = {}) => {
   const conf = requireConfig();
@@ -133,6 +134,15 @@ const call = async (method, path, { body, headers = {}, curator = '', timeout = 
     });
     if (response.status >= 200 && response.status < 300) return response.data;
     const message = (response.data && response.data.error) || `HTTP ${response.status}`;
+    // The service refusing OUR credentials is not the caller's authentication failing: passed on as 401 or
+    // 403 it reads as "your session has ended" (snapshot-s3-manager then leaves the page). It is a bad
+    // gateway, with what to check.
+    if (response.status === 401 || response.status === 403) {
+      throw new NumericalIntegrityError(
+        502,
+        `Numerical Integrity refused this instance's client '${conf.client}' (${message}): check "client" and the private key in conf/numericalIntegrity.json against the API clients registered on the service`
+      );
+    }
     throw new NumericalIntegrityError(response.status, `Numerical Integrity: ${message}`);
   } catch (error) {
     if (error instanceof NumericalIntegrityError) throw error;
